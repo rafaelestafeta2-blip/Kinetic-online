@@ -1,0 +1,325 @@
+{
+  "entities": {
+    "PlayerProfile": {
+      "title": "PlayerProfile",
+      "description": "Cloud-saved player profile, progression, unlocked arsenal, combat telemetry, custom avatar, and achievements.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the player."
+        },
+        "callsign": {
+          "type": "string",
+          "description": "In-game username / operator callsign (unique across all players)."
+        },
+        "callsignLocked": {
+          "type": "boolean",
+          "description": "True once unique callsign has been claimed, preventing any future changes."
+        },
+        "avatarDataUrl": {
+          "type": "string",
+          "description": "Custom uploaded compressed avatar DataURL or profile photo URL."
+        },
+        "playerXp": {
+          "type": "number",
+          "description": "Accumulated Warface progression XP."
+        },
+        "rankLevel": {
+          "type": "number",
+          "description": "Current military rank level (1 to 70)."
+        },
+        "rankTitle": {
+          "type": "string",
+          "description": "Current military rank title."
+        },
+        "playerCash": {
+          "type": "number",
+          "description": "Accumulated tactical cash bonus."
+        },
+        "activeWeapon": {
+          "type": "string",
+          "description": "Currently equipped primary weapon ID."
+        },
+        "unlockedWeapons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Array of unlocked WeaponId strings."
+        },
+        "totalKills": {
+          "type": "number",
+          "description": "Lifetime enemy eliminations."
+        },
+        "totalDeaths": {
+          "type": "number",
+          "description": "Lifetime deaths in combat."
+        },
+        "totalAssists": {
+          "type": "number",
+          "description": "Lifetime combat assists."
+        },
+        "totalHeadshots": {
+          "type": "number",
+          "description": "Lifetime critical headshot eliminations."
+        },
+        "matchesPlayed": {
+          "type": "number",
+          "description": "Total completed 5v5 bomb matches."
+        },
+        "matchesWon": {
+          "type": "number",
+          "description": "Total 5v5 bomb match victories."
+        },
+        "bombsPlanted": {
+          "type": "number",
+          "description": "Total C4 charges armed and planted."
+        },
+        "unlockedAchievements": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Array of unlocked tactical achievement IDs."
+        },
+        "economyVersion": {
+          "type": "number",
+          "description": "Economy schema version for balance resets."
+        },
+        "mmr": {
+          "type": "number",
+          "description": "Skill Rating (MMR) for Ranked 5v5 matchmaking."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp when profile was first created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp when profile was last synced."
+        }
+      },
+      "required": [
+        "uid",
+        "callsign",
+        "playerXp",
+        "rankLevel",
+        "rankTitle",
+        "playerCash",
+        "activeWeapon",
+        "unlockedWeapons",
+        "totalKills",
+        "totalDeaths",
+        "totalAssists",
+        "totalHeadshots",
+        "matchesPlayed",
+        "matchesWon",
+        "bombsPlanted",
+        "unlockedAchievements",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "UsernameRegistry": {
+      "title": "UsernameRegistry",
+      "description": "Ensures unique operator callsigns globally across all players.",
+      "type": "object",
+      "properties": {
+        "callsign": {
+          "type": "string",
+          "description": "The exact uppercase callsign claimed."
+        },
+        "uid": {
+          "type": "string",
+          "description": "The UID of the player who owns this callsign."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp when the callsign was claimed."
+        }
+      },
+      "required": ["callsign", "uid", "createdAt"]
+    },
+    "MultiplayerRoom": {
+      "title": "MultiplayerRoom",
+      "description": "Real-time 5v5 PvP room state, round score, C4 state, and active human operator telemetry.",
+      "type": "object",
+      "properties": {
+        "roomId": {
+          "type": "string",
+          "description": "6-character uppercase room code."
+        },
+        "hostUid": {
+          "type": "string",
+          "description": "UID of the room creator/host."
+        },
+        "arenaMode": {
+          "type": "string",
+          "description": "Selected 5v5 map mode (DUST2_BOMB_5V5, ASSAULT_BOMB_5V5, YARD_BOMB_5V5, INDUSTRIA_BOMB_5V5, HANGAR_BOMB_5V5, EASTERN_CITY_BOMB_5V5, MIRAGE_ANUBIS_BOMB_5V5)."
+        },
+        "isPrivate": {
+          "type": "boolean",
+          "description": "True if room is private (joinable only by code), false if open to matchmaking."
+        },
+        "queueType": {
+          "type": "string",
+          "description": "Queue mode for matchmaking: CASUAL or RANKED."
+        },
+        "averageMmr": {
+          "type": "number",
+          "description": "Target/average Skill Rating (MMR) of the room for Ranked matchmaking."
+        },
+        "status": {
+          "type": "string",
+          "description": "WAITING, PLAYING, or FINISHED."
+        },
+        "currentRound": {
+          "type": "number",
+          "description": "Current round number (1 to 6)."
+        },
+        "vanguardScore": {
+          "type": "number",
+          "description": "Vanguard team round wins."
+        },
+        "blackthornScore": {
+          "type": "number",
+          "description": "Blackthorn team round wins."
+        },
+        "bombStatus": {
+          "type": "string",
+          "description": "CARRIED, PLANTED, DEFUSED, or DETONATED."
+        },
+        "plantedSite": {
+          "type": "string",
+          "description": "NONE, A, or B."
+        },
+        "players": {
+          "type": "object",
+          "description": "Map of connected human players keyed by UID."
+        },
+        "lastHitEvent": {
+          "type": "object",
+          "description": "Latest combat hit or elimination event broadcast in the room."
+        },
+        "updatedAtMs": {
+          "type": "number",
+          "description": "Epoch milliseconds of last room state update."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp when room was created."
+        }
+      },
+      "required": [
+        "roomId",
+        "hostUid",
+        "arenaMode",
+        "isPrivate",
+        "status",
+        "currentRound",
+        "vanguardScore",
+        "blackthornScore",
+        "bombStatus",
+        "plantedSite",
+        "players",
+        "updatedAtMs",
+        "createdAt"
+      ]
+    },
+    "SocialInbox": {
+      "title": "SocialInbox",
+      "description": "Stores a player's friends list, incoming friend requests, and real-time 5v5 match invitations.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Owner player UID."
+        },
+        "friends": {
+          "type": "object",
+          "description": "Map of confirmed friends keyed by friend UID."
+        },
+        "requests": {
+          "type": "object",
+          "description": "Map of incoming friend requests keyed by sender UID."
+        },
+        "invites": {
+          "type": "object",
+          "description": "Map of active 5v5 room invites keyed by sender UID."
+        },
+        "updatedAtMs": {
+          "type": "number",
+          "description": "Epoch milliseconds of last social update."
+        }
+      },
+      "required": ["uid", "friends", "requests", "invites", "updatedAtMs"]
+    },
+    "DirectChat": {
+      "title": "DirectChat",
+      "description": "Real-time direct chat thread between two friends.",
+      "type": "object",
+      "properties": {
+        "chatId": {
+          "type": "string",
+          "description": "Sorted pair of UIDs joined by underscore."
+        },
+        "participants": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Two participant UIDs."
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "description": "Recent direct messages between the two operators."
+        },
+        "updatedAtMs": {
+          "type": "number",
+          "description": "Epoch milliseconds of last message."
+        }
+      },
+      "required": ["chatId", "participants", "messages", "updatedAtMs"]
+    }
+  },
+  "firestore": {
+    "/players/{userId}": {
+      "schema": {
+        "$ref": "#/entities/PlayerProfile"
+      },
+      "description": "Stores each authenticated player's persistent profile, progression, unlocked weapons, avatar, and achievements."
+    },
+    "/usernames/{usernameLower}": {
+      "schema": {
+        "$ref": "#/entities/UsernameRegistry"
+      },
+      "description": "Global unique registry mapping lowercase callsign to owning player UID."
+    },
+    "/rooms/{roomId}": {
+      "schema": {
+        "$ref": "#/entities/MultiplayerRoom"
+      },
+      "description": "Real-time 5v5 online multiplayer rooms for matchmaking and private code lobbies."
+    },
+    "/social_inboxes/{userId}": {
+      "schema": {
+        "$ref": "#/entities/SocialInbox"
+      },
+      "description": "Real-time social inbox for friends list, friend requests, and match invites."
+    },
+    "/direct_chats/{chatId}": {
+      "schema": {
+        "$ref": "#/entities/DirectChat"
+      },
+      "description": "Real-time direct messages between two friends."
+    }
+  }
+}
