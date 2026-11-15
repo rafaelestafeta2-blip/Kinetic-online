@@ -1,0 +1,585 @@
+import * as THREE from 'three';
+import { soundEngine } from '../audio/soundEngine';
+import { DrillMode } from '../types/game';
+import {
+  disposeAssaultMapGeometry,
+  loadAssaultMapGeometry,
+} from './assaultLevelBuilder';
+import {
+  attachProRifleCharacterToBot,
+  preloadProRifleBotCharacter,
+} from './botCharacterSystem';
+import {
+  disposeDust2MapGeometry,
+  Dust2LevelBundle,
+  loadDust2MapGeometry,
+} from './dust2LevelBuilder';
+import { TacticalGrenadeSystem } from './grenadeSystem';
+import {
+  disposeIndustriaMapGeometry,
+  loadIndustriaMapGeometry,
+} from './industriaLevelBuilder';
+import {
+  disposeHangarMapGeometry,
+  loadHangarMapGeometry,
+} from './hangarLevelBuilder';
+import {
+  disposeEasternCityMapGeometry,
+  loadEasternCityMapGeometry,
+} from './easternCityLevelBuilder';
+import {
+  disposeMirageAnubisMapGeometry,
+  loadMirageAnubisMapGeometry,
+} from './mirageAnubisLevelBuilder';
+import { TacticalLevelData } from './levelBuilder';
+import {
+  enableMapAssetCache,
+  prefetchMapAssetsForMode,
+} from './mapAssetCatalog';
+import {
+  markGroupStatic,
+  optimizeSceneGraph,
+  protectAnimatedSubtrees,
+} from './scenePerfOptimizer';
+import { TacticalSkySystem } from './skySystem';
+import {
+  loadStanderTiroMapGeometry,
+  StanderTiroBundle,
+} from './standerTiroBuilder';
+import { YardBotEntity } from './yardPropsBuilder';
+import { arenaAssetMode, isMapSpawnHarness } from './mapModeUtils';
+
+/** Block match start when GLB bake produced an empty / unready floor (→ white void). */
+function assertGlbFloorReady(label: string, bundle: Dust2LevelBundle): void {
+  const col = bundle.collider;
+  if (!bundle.isLoaded || !bundle.mapGeometryGroup) {
+    throw new Error(`[${label}] GLB not in scene after load — refusing match start`);
+  }
+  if (!col.ready || col.triangleCount < 1 || col.worldBounds.isEmpty()) {
+    throw new Error(
+      `[${label}] collider not proven (ready=${col.ready} tris=${col.triangleCount}) — refusing void spawn`
+    );
+  }
+}
+
+export interface MatchArenaPrepareParams {
+  mode: DrillMode;
+  renderer: THREE.WebGLRenderer;
+  scene: THREE.Scene;
+  camera: THREE.PerspectiveCamera;
+  isSoftwareGl: boolean;
+  standerTiroLevelData: TacticalLevelData;
+  facilityLevelData: TacticalLevelData;
+  yardLevelData: TacticalLevelData;
+  dust2LevelData: Dust2LevelBundle;
+  assaultLevelData: Dust2LevelBundle;
+  industriaLevelData: Dust2LevelBundle;
+  hangarLevelData: Dust2LevelBundle;
+  easternCityLevelData: Dust2LevelBundle;
+  mirageAnubisLevelData: Dust2LevelBundle;
+  skySystem: TacticalSkySystem;
+  grenadeSystem: TacticalGrenadeSystem;
+  onProgress: (pct: number, statusLabel: string) => void;
+}
+
+/**
+ * Gerenciador real de carregamento da partida (Loading 2 - Vanguard vs. Blackthorn):
+ * 1. Instancia `THREE.LoadingManager` real + `GLTFLoader` + `DRACOLoader`
+ * 2. Baixa e descomprime `/models/maps/de_dust2.glb` ou `/models/maps/cs_assault.glb` sob demanda (0% -> 60%)
+ * 3. Constrói `THREE.Box3` e malha espacial de colisão por triângulos (60% -> 72%)
+ * 4. Configura o shader atmosférico `Sky` e envia texturas PBR para a VRAM via `initTexture` (72% -> 88%)
+ * 5. Compila todos os shaders WebGL (`renderer.compileAsync` / `compile`) e pré-aquece granadas (88% -> 100%)
+ */
+export async function prepareMatchArena(
+  params: MatchArenaPrepareParams
+): Promise<void> {
+  const {
+    mode,
+    renderer,
+    scene,
+    camera,
+    isSoftwareGl,
+    standerTiroLevelData,
+    facilityLevelData,
+    yardLevelData,
+    dust2LevelData,
+    assaultLevelData,
+    industriaLevelData,
+    hangarLevelData,
+    easternCityLevelData,
+    mirageAnubisLevelData,
+    skySystem,
+    grenadeSystem,
+    onProgress,
+  } = params;
+
+  const assetMode = arenaAssetMode(mode);
+  const isDust2 = assetMode === 'DUST2_BOMB_5V5';
+  const isAssault = assetMode === 'ASSAULT_BOMB_5V5';
+  const isIndustria = assetMode === 'INDUSTRIA_BOMB_5V5';
+  const isHangar = assetMode === 'HANGAR_BOMB_5V5';
+  const isEasternCity = assetMode === 'EASTERN_CITY_BOMB_5V5';
+  const isMirageAnubis = assetMode === 'MIRAGE_ANUBIS_BOMB_5V5';
+  const isYard = assetMode === 'YARD_BOMB_5V5';
+  const isFreeRange = assetMode === 'FREE_RANGE';
+
+  enableMapAssetCache();
+  onProgress(3, 'INICIALIZANDO CACHE DE ARENA + DECODER DRACO...');
+  // CDN Draco warm can hang forever on Android egress — never block prepare.
+  {
+    let prefetchTimer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        prefetchMapAssetsForMode(assetMode, (ratio, label) => {
+          onProgress(3 + ratio * 12, label);
+        }),
+        new Promise<'timeout'>((resolve) => {
+          prefetchTimer = setTimeout(() => resolve('timeout'), 12000);
+        }),
+      ]);
+    } finally {
+      if (prefetchTimer) clearTimeout(prefetchTimer);
+    }
+  }
+
+  onProgress(16, 'INICIALIZANDO THREE.LOADINGMANAGER & DRACOLOADER...');
+
+  // Hide GLB arenas until geometry+collider bake finishes (no under-map flash).
+  standerTiroLevelData.levelGroup.visible = false;
+  facilityLevelData.levelGroup.visible =
+    !isDust2 && !isAssault && !isIndustria && !isHangar && !isEasternCity && !isMirageAnubis && !isYard && !isFreeRange;
+  yardLevelData.levelGroup.visible = isYard;
+  dust2LevelData.levelGroup.visible = false;
+  assaultLevelData.levelGroup.visible = false;
+  industriaLevelData.levelGroup.visible = false;
+  hangarLevelData.levelGroup.visible = false;
+  easternCityLevelData.levelGroup.visible = false;
+  mirageAnubisLevelData.levelGroup.visible = false;
+
+  const loadingManager = new THREE.LoadingManager();
+  let lastReportedPct = 4;
+  const reportProgress = (pct: number, label: string) => {
+    const clamped = Math.min(100, Math.max(lastReportedPct, Math.round(pct)));
+    lastReportedPct = clamped;
+    onProgress(clamped, label);
+  };
+
+  const withTimeout = async <T,>(
+    work: Promise<T>,
+    ms: number
+  ): Promise<'ok' | 'timeout'> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const raced = await Promise.race([
+        work.then(() => 'ok' as const),
+        new Promise<'timeout'>((resolve) => {
+          timer = setTimeout(() => resolve('timeout'), ms);
+        }),
+      ]);
+      return raced;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
+
+  loadingManager.onProgress = (url, itemsLoaded, itemsTotal) => {
+    if (itemsTotal > 0) {
+      const ratio = itemsLoaded / itemsTotal;
+      const mappedPct = 6 + ratio * 52;
+      const shortName =
+        url.split('/').pop() ||
+        (isMirageAnubis
+          ? 'mirage_anubis_2k.glb'
+          : isEasternCity
+          ? 'eastern_city_2k.glb'
+          : isHangar
+          ? 'hangar_2k.glb'
+          : isIndustria
+            ? 'industria_2k.glb'
+            : isAssault
+              ? 'cs_assault.glb'
+              : 'de_dust2.glb');
+      reportProgress(
+        mappedPct,
+        `ABRINDO ${shortName.toUpperCase()} NA GPU (${itemsLoaded}/${itemsTotal})...`
+      );
+    }
+  };
+
+  // Etapa 1: Download real do .GLB externo + descompressão DRACO + geração de Box3 e Colisores
+  if (isDust2) {
+    reportProgress(8, 'ABRINDO ARENA DE_DUST2 NA GPU...');
+    await loadDust2MapGeometry(
+      dust2LevelData,
+      isSoftwareGl,
+      loadingManager,
+      (byteRatio) => {
+        const mappedPct = 8 + byteRatio * 52;
+        reportProgress(
+          mappedPct,
+          `ENVIANDO DE_DUST2 PARA A GPU (${Math.round(byteRatio * 100)}%)...`
+        );
+      }
+    );
+
+    dust2LevelData.levelGroup.visible = true;
+    reportProgress(
+      70,
+      `COLISORES BOX3 (${dust2LevelData.collider.boundingBoxes.length}) E ${dust2LevelData.collider.triangleCount} TRIÂNGULOS PRONTOS!`
+    );
+  } else if (isAssault) {
+    reportProgress(8, 'ABRINDO ARENA CS_ASSAULT NA GPU...');
+    await loadAssaultMapGeometry(
+      assaultLevelData,
+      isSoftwareGl,
+      loadingManager,
+      (byteRatio) => {
+        const mappedPct = 8 + byteRatio * 52;
+        reportProgress(
+          mappedPct,
+          `ENVIANDO CS_ASSAULT PARA A GPU (${Math.round(byteRatio * 100)}%)...`
+        );
+      }
+    );
+
+    assaultLevelData.levelGroup.visible = true;
+    reportProgress(
+      70,
+      `COLISORES BOX3 (${assaultLevelData.collider.boundingBoxes.length}) E ${assaultLevelData.collider.triangleCount} TRIÂNGULOS PRONTOS!`
+    );
+  } else if (isIndustria) {
+    reportProgress(8, 'ABRINDO ARENA INDUSTRIA NA GPU...');
+    await loadIndustriaMapGeometry(
+      industriaLevelData,
+      isSoftwareGl,
+      loadingManager,
+      (byteRatio) => {
+        const mappedPct = 8 + byteRatio * 52;
+        reportProgress(
+          mappedPct,
+          `ENVIANDO INDUSTRIA PARA A GPU (${Math.round(byteRatio * 100)}%)...`
+        );
+      }
+    );
+
+    industriaLevelData.levelGroup.visible = true;
+    assertGlbFloorReady('INDUSTRIA', industriaLevelData);
+    reportProgress(
+      70,
+      `COLISORES BOX3 (${industriaLevelData.collider.boundingBoxes.length}) E ${industriaLevelData.collider.triangleCount} TRIÂNGULOS PRONTOS!`
+    );
+  
+  } else if (isHangar) {
+    reportProgress(8, 'ABRINDO ARENA HANGAR NA GPU...');
+    await loadHangarMapGeometry(
+      hangarLevelData,
+      isSoftwareGl,
+      loadingManager,
+      (byteRatio) => {
+        const mappedPct = 8 + byteRatio * 52;
+        reportProgress(
+          mappedPct,
+          `ENVIANDO HANGAR PARA A GPU (${Math.round(byteRatio * 100)}%)...`
+        );
+      }
+    );
+
+    hangarLevelData.levelGroup.visible = true;
+    assertGlbFloorReady('HANGAR', hangarLevelData);
+    reportProgress(
+      70,
+      `COLISORES BOX3 (${hangarLevelData.collider.boundingBoxes.length}) E ${hangarLevelData.collider.triangleCount} TRIÂNGULOS PRONTOS!`
+    );
+  } else if (isEasternCity) {
+    reportProgress(8, 'ABRINDO ARENA CIDADE LESTE NA GPU...');
+    await loadEasternCityMapGeometry(
+      easternCityLevelData,
+      isSoftwareGl,
+      loadingManager,
+      (byteRatio) => {
+        const mappedPct = 8 + byteRatio * 52;
+        reportProgress(
+          mappedPct,
+          `ENVIANDO CIDADE LESTE PARA A GPU (${Math.round(byteRatio * 100)}%)...`
+        );
+      }
+    );
+
+    easternCityLevelData.levelGroup.visible = true;
+    assertGlbFloorReady('EASTERN_CITY', easternCityLevelData);
+    reportProgress(
+      70,
+      `COLISORES BOX3 (${easternCityLevelData.collider.boundingBoxes.length}) E ${easternCityLevelData.collider.triangleCount} TRIÂNGULOS PRONTOS!`
+    );
+  } else if (isMirageAnubis) {
+    reportProgress(8, 'ABRINDO ARENA MIRAGE ANUBIS NA GPU...');
+    await loadMirageAnubisMapGeometry(
+      mirageAnubisLevelData,
+      isSoftwareGl,
+      loadingManager,
+      (byteRatio) => {
+        const mappedPct = 8 + byteRatio * 52;
+        reportProgress(
+          mappedPct,
+          `ENVIANDO MIRAGE ANUBIS PARA A GPU (${Math.round(byteRatio * 100)}%)...`
+        );
+      }
+    );
+
+    mirageAnubisLevelData.levelGroup.visible = true;
+    assertGlbFloorReady('MIRAGE_ANUBIS', mirageAnubisLevelData);
+    reportProgress(
+      70,
+      `COLISORES BOX3 (${mirageAnubisLevelData.collider.boundingBoxes.length}) E ${mirageAnubisLevelData.collider.triangleCount} TRIÂNGULOS PRONTOS!`
+    );
+} else if (isFreeRange) {
+    reportProgress(12, 'ABRINDO ESTANDE DE TIRO NA GPU...');
+    await loadStanderTiroMapGeometry(
+      standerTiroLevelData as StanderTiroBundle,
+      isSoftwareGl,
+      loadingManager
+    );
+    standerTiroLevelData.levelGroup.visible = true;
+    reportProgress(68, 'ESTANDE DE TIRO 3D E ALVOS BALÍSTICOS PRONTOS!');
+  } else {
+    reportProgress(55, 'ATIVANDO GEOMETRIA E CAIXAS DE COLISÃO BOX3 DA ARENA...');
+  }
+
+  // Etapa 1B: Bots (skip for MAP_TEST harness — floor-only filter)
+  const skipBots = isMapSpawnHarness(mode);
+  if (!isFreeRange && !skipBots) {
+    reportProgress(
+      72,
+      'ABRINDO OPERADORES NA GPU...'
+    );
+    // Five character GLBs are ~50MB. A stuck fetch used to hold Loading 2 at
+    // 99% until the screen gave up and sent the player back to the menu.
+    const operators = await withTimeout(
+      preloadProRifleBotCharacter(loadingManager),
+      40000
+    );
+    if (operators === 'timeout') {
+      reportProgress(
+        73,
+        'OPERADORES AINDA EM BACKGROUND — ENTRANDO COM O MAPA PRONTO...'
+      );
+    }
+    const activeTargets = isDust2
+      ? dust2LevelData.targets
+      : isAssault
+        ? assaultLevelData.targets
+        : isIndustria
+          ? industriaLevelData.targets
+          : isHangar
+            ? hangarLevelData.targets
+            : isEasternCity
+              ? easternCityLevelData.targets
+            : isMirageAnubis
+              ? mirageAnubisLevelData.targets
+            : isYard
+            ? yardLevelData.targets
+            : facilityLevelData.targets;
+    for (let i = 0; i < activeTargets.length; i++) {
+      if (activeTargets[i].type === 'COMBAT_BOT') {
+        attachProRifleCharacterToBot(
+          activeTargets[i] as YardBotEntity,
+          isSoftwareGl
+        );
+      }
+    }
+  }
+
+  // TESTE MAPA: floor+collider already proven — skip VRAM upload / grenade / compile
+  // (those were leaving VS soft-bar stuck at 99% while Promise never settled).
+  if (skipBots) {
+    reportProgress(85, 'TESTE MAPA — SKY RÁPIDO (SEM WARMUP GPU/GRANADA)...');
+    skySystem.configureForMode(mode, scene.fog !== null);
+    reportProgress(
+      100,
+      'TESTE MAPA PRONTO — FLOOR/COLISOR OK, ENTRANDO NA ARENA!'
+    );
+    return;
+  }
+
+  // Etapa 2: Setup do Sky Shader físico + Upload real das texturas PBR para a VRAM (initTexture)
+  reportProgress(74, 'CONFIGURANDO SKY SHADER ATMOSFÉRICO E ILUMINAÇÃO SOLAR...');
+  skySystem.configureForMode(mode, scene.fog !== null);
+
+  const activeGroup = isDust2
+    ? dust2LevelData.levelGroup
+    : isAssault
+      ? assaultLevelData.levelGroup
+      : isIndustria
+        ? industriaLevelData.levelGroup
+        : isHangar
+          ? hangarLevelData.levelGroup
+          : isEasternCity
+            ? easternCityLevelData.levelGroup
+          : isMirageAnubis
+            ? mirageAnubisLevelData.levelGroup
+          : isYard
+          ? yardLevelData.levelGroup
+          : isFreeRange
+            ? standerTiroLevelData.levelGroup
+            : facilityLevelData.levelGroup;
+
+  // Mobile GPU pass: freeze static matrices, share plain materials, trim tiny shadow casters.
+  // Critical: protect Mixamo bones BEFORE freezing — otherwise bots lock in T-pose.
+  const mapOnlyGroup =
+    (isDust2 && dust2LevelData.mapGeometryGroup) ||
+    (isAssault && assaultLevelData.mapGeometryGroup) ||
+    (isIndustria && industriaLevelData.mapGeometryGroup) ||
+    (isHangar && hangarLevelData.mapGeometryGroup) ||
+    (isEasternCity && easternCityLevelData.mapGeometryGroup) ||
+    (isMirageAnubis && mirageAnubisLevelData.mapGeometryGroup) ||
+    null;
+
+  if (mapOnlyGroup) {
+    markGroupStatic(mapOnlyGroup);
+    optimizeSceneGraph(mapOnlyGroup, {
+      sharePlainMaterials: true,
+      freezeStaticMatrices: true,
+      minShadowCasterSize: isSoftwareGl ? 99 : 0.4,
+    });
+  } else {
+    markGroupStatic(activeGroup);
+    protectAnimatedSubtrees(activeGroup);
+    optimizeSceneGraph(activeGroup, {
+      sharePlainMaterials: true,
+      freezeStaticMatrices: true,
+      minShadowCasterSize: isSoftwareGl ? 99 : 0.4,
+    });
+  }
+
+  if (!isSoftwareGl) {
+    const texturesToUpload: THREE.Texture[] = [];
+    activeGroup.traverse((obj) => {
+      if ((obj as THREE.Mesh).isMesh) {
+        const mesh = obj as THREE.Mesh;
+        const mats = Array.isArray(mesh.material)
+          ? mesh.material
+          : [mesh.material];
+        mats.forEach((m) => {
+          const std = m as THREE.MeshStandardMaterial;
+          if (std?.map) texturesToUpload.push(std.map);
+          if (std?.normalMap) texturesToUpload.push(std.normalMap);
+          if (std?.roughnessMap) texturesToUpload.push(std.roughnessMap);
+        });
+      }
+    });
+
+    const totalTex = Math.max(1, texturesToUpload.length);
+    for (let i = 0; i < texturesToUpload.length; i++) {
+      renderer.initTexture(texturesToUpload[i]);
+      if (i % 4 === 0 || i === texturesToUpload.length - 1) {
+        const texRatio = (i + 1) / totalTex;
+        reportProgress(
+          74 + texRatio * 14,
+          `ENVIANDO TEXTURAS PBR PARA A GPU VRAM (${i + 1}/${texturesToUpload.length})...`
+        );
+        // Yield so Loading 2 % can paint (avoids main-thread freeze on Eastern).
+        await new Promise<void>((r) => setTimeout(r, 0));
+      }
+    }
+  }
+
+  // Etapa 3: optional warmups — MUST NOT block match forever.
+  // Android WebView often stalls at 92% on compileAsync for Eastern/Hangar
+  // (~minutes, no progress). Floor/collider is already proven above.
+  reportProgress(90, 'PRÉ-DECODIFICANDO ÁUDIOS TÁTICOS...');
+  await withTimeout(soundEngine.prewarmGrenadeAudio(), 8000);
+
+  reportProgress(92, 'AQUECENDO GRANADAS 3D (LIMITE 12s — NÃO BLOQUEIA)...');
+  const grenadeWarm = await withTimeout(
+    grenadeSystem.ensureGrenadeAssetsReady(),
+    12000
+  );
+  if (grenadeWarm === 'timeout') {
+    reportProgress(93, 'GRANADAS AINDA EM BACKGROUND — SEGUINDO (FLOOR PRONTO)...');
+  }
+
+  if (!isSoftwareGl) {
+    reportProgress(94, 'COMPILANDO SHADERS GPU (LIMITE 15s)...');
+    try {
+      const compileWork =
+        'compileAsync' in renderer &&
+        typeof renderer.compileAsync === 'function'
+          ? renderer.compileAsync(scene, camera)
+          : Promise.resolve().then(() => {
+              renderer.compile(scene, camera);
+            });
+      const compileResult = await withTimeout(
+        Promise.resolve(compileWork).then(() => undefined),
+        15000
+      );
+      if (compileResult === 'timeout') {
+        reportProgress(
+          97,
+          'COMPILE TIMEOUT — ENTRANDO NA ARENA (COLISOR JÁ PRONTO)...'
+        );
+      } else {
+        reportProgress(
+          96,
+          'AQUECENDO PIPELINE DE SOMBRAS, VIEWMODEL E GRANADAS NA GPU...'
+        );
+        grenadeSystem.prewarmShadersAndTextures(renderer, isSoftwareGl);
+        renderer.render(scene, camera);
+      }
+    } catch {
+      try {
+        renderer.compile(scene, camera);
+      } catch {
+        /* optional warm */
+      }
+      reportProgress(97, 'COMPILE FALHOU — SEGUINDO COM FLOOR PRONTO...');
+    }
+  }
+
+  reportProgress(
+    100,
+    'ARENA PRONTA — LIBERANDO CÂMERA E CONTROLES DE COMBATE!'
+  );
+}
+
+/**
+ * Limpa todas as geometrias, materiais, texturas PBR e listas de renderização do mapa da partida
+ * quando o jogador sai da partida e volta para o Lobby, prevenindo vazamento de memória (Memory Leak).
+ */
+export function cleanupMatchArenaAssets(
+  renderer: THREE.WebGLRenderer,
+  standerTiroLevelData: TacticalLevelData,
+  facilityLevelData: TacticalLevelData,
+  yardLevelData: TacticalLevelData,
+  dust2LevelData: Dust2LevelBundle,
+  assaultLevelData: Dust2LevelBundle,
+  industriaLevelData: Dust2LevelBundle,
+  hangarLevelData: Dust2LevelBundle,
+  easternCityLevelData: Dust2LevelBundle,
+  mirageAnubisLevelData: Dust2LevelBundle,
+  grenadeSystem?: TacticalGrenadeSystem
+): void {
+  // 1. Oculta arenas de partida e reativa apenas o Stander de Tiro do Lobby
+  dust2LevelData.levelGroup.visible = false;
+  assaultLevelData.levelGroup.visible = false;
+  industriaLevelData.levelGroup.visible = false;
+  hangarLevelData.levelGroup.visible = false;
+  easternCityLevelData.levelGroup.visible = false;
+  mirageAnubisLevelData.levelGroup.visible = false;
+  yardLevelData.levelGroup.visible = false;
+  facilityLevelData.levelGroup.visible = false;
+  standerTiroLevelData.levelGroup.visible = true;
+
+  // 2. Descarta geometrias BufferGeometry, materiais e texturas dos .glb pesados e limpa colisores
+  disposeDust2MapGeometry(dust2LevelData);
+  disposeAssaultMapGeometry(assaultLevelData);
+  disposeIndustriaMapGeometry(industriaLevelData);
+  disposeHangarMapGeometry(hangarLevelData);
+  disposeEasternCityMapGeometry(easternCityLevelData);
+  disposeMirageAnubisMapGeometry(mirageAnubisLevelData);
+
+  // 3. Limpa granadas ativas, fumaça e luzes temporárias
+  grenadeSystem?.clearAll();
+
+  // 4. Limpa renderLists internas do WebGLRenderer para liberar referências de memória na GPU
+  renderer.renderLists.dispose();
+}
