@@ -31,6 +31,8 @@ jobs:
           packages: 'platform-tools'
 
       - name: 5. Instalar Dependências e Compilar Web App (Vite Production Build)
+        env:
+          VITE_WS_SERVER_URL: ${{ secrets.VITE_WS_SERVER_URL || 'wss://gamefps-multiplayer.onrender.com/ws' }}
         run: |
           npm ci || npm install
           npm run build
