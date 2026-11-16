@@ -665,3 +665,33 @@ public class GoogleOAuthActivity extends Activity {
 } else {
   console.log('[patch-manifest] MainActivity.java not found, skipping Java patch.');
 }
+
+// ============================================================================
+// 4. Patch Gradle repositories to use Google Maven Central mirror + repo1
+//    (avoids repo.maven.apache.org 403/429/timeout failures on GitHub Actions)
+// ============================================================================
+const gradleFilesToPatch = [
+  path.resolve('android/build.gradle'),
+  path.resolve('android/capacitor-cordova-android-plugins/build.gradle'),
+  path.resolve('node_modules/@capacitor/android/capacitor/build.gradle'),
+];
+
+const mavenMirrorsSnippet = [
+  "maven { url 'https://maven-central.storage-download.googleapis.com/maven2/' }",
+  "        maven { url 'https://repo1.maven.org/maven2/' }",
+  '        mavenCentral()',
+].join('\n');
+
+for (const gradlePath of gradleFilesToPatch) {
+  if (!fs.existsSync(gradlePath)) continue;
+  let gradleContent = fs.readFileSync(gradlePath, 'utf8');
+  if (gradleContent.includes('maven-central.storage-download.googleapis.com')) {
+    continue;
+  }
+  if (gradleContent.includes('mavenCentral()')) {
+    gradleContent = gradleContent.replace(/mavenCentral\(\)/g, mavenMirrorsSnippet);
+    fs.writeFileSync(gradlePath, gradleContent, 'utf8');
+    console.log(`[patch-manifest] Patched Maven Central mirrors in ${gradlePath}`);
+  }
+}
+
