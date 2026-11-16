@@ -1,7 +1,11 @@
 import * as THREE from 'three';
 import { DrillMode, WeaponId } from '../types/game';
 import { YardBotEntity } from './yardPropsBuilder';
-import { triggerBotFireAnimation } from './botCharacterSystem';
+import {
+  syncBotCharacterAppearance,
+  triggerBotFireAnimation,
+} from './botCharacterSystem';
+import { BotAnimController } from './botCharacterClips';
 import { YardBombSystem } from './yardBombSystem';
 import { playSpatialBotGunshot } from '../audio/spatialCombatAudio';
 import {
@@ -20,6 +24,7 @@ export interface OnlineMatchSyncContext {
   targets: YardBotEntity[];
   shootableMeshes: THREE.Object3D[];
   playerPos: THREE.Vector3;
+  localFeetPos: THREE.Vector3;
   yaw: number;
   pitch: number;
   activeWeapon: WeaponId;
@@ -27,6 +32,7 @@ export interface OnlineMatchSyncContext {
   isPlayerDead: boolean;
   isCrouching: boolean;
   isFiring: boolean;
+  isSoftwareGl: boolean;
   yardBombSystem: YardBombSystem;
   isBombMode: boolean;
   getGroundHeight: (x: number, y: number, z: number) => number;
@@ -46,6 +52,9 @@ function syncShootableHitboxes(
   shootableMeshes: THREE.Object3D[],
   shouldBeShootable: boolean
 ): void {
+  if (bot.headMesh) bot.headMesh.userData.hitZone = 'HEAD';
+  if (bot.torsoMesh) bot.torsoMesh.userData.hitZone = 'TORSO_A';
+  if (bot.armorMesh) bot.armorMesh.userData.hitZone = 'ARMOR';
   const hitboxes = [bot.headMesh, bot.torsoMesh, bot.armorMesh].filter(Boolean) as THREE.Object3D[];
   for (const mesh of hitboxes) {
     mesh.userData.targetId = bot.id;
@@ -123,11 +132,11 @@ export function syncOnlineMatchFrame(ctx: OnlineMatchSyncContext): void {
   const localPlayer = getLocalOnlinePlayerState();
   if (!room || !localPlayer) return;
 
-  // 1. Publish local player transform over WebSocket (throttled in combatNetcode)
+  // 1. Publish local player feet transform over WebSocket (throttled in combatNetcode)
   publishLocalPlayerTransform({
-    x: ctx.playerPos.x,
-    y: ctx.playerPos.y,
-    z: ctx.playerPos.z,
+    x: ctx.localFeetPos.x,
+    y: ctx.localFeetPos.y,
+    z: ctx.localFeetPos.z,
     yaw: ctx.yaw,
     pitch: ctx.pitch,
     weaponId: ctx.activeWeapon,
@@ -176,6 +185,8 @@ export function syncOnlineMatchFrame(ctx: OnlineMatchSyncContext): void {
     if (bot.armorMesh) bot.armorMesh.visible = bot.armorHealth > 0;
     bot.isDown = remote.isDown || remote.health <= 0;
     bot.isTelegraphing = true;
+
+    syncBotCharacterAppearance(bot, ctx.isSoftwareGl);
 
     // Only enemy real players can be shot by local raycasts
     syncShootableHitboxes(bot, ctx.shootableMeshes, !isSameTeam && !bot.isDown);
@@ -259,18 +270,36 @@ export function syncOnlineMatchFrame(ctx: OnlineMatchSyncContext): void {
       };
 
     const targetGroundY = ctx.getGroundHeight(renderPose.x, renderPose.y, renderPose.z);
+    let targetY = targetGroundY;
+    if (remote.isLoaded) {
+      if (renderPose.y > targetGroundY + 0.14 && renderPose.y <= targetGroundY + 3.8) {
+        targetY = renderPose.y;
+      } else if (Math.abs(renderPose.y - targetGroundY) <= 0.16) {
+        targetY = targetGroundY;
+      } else {
+        targetY = renderPose.y;
+      }
+    }
+
     const dx = renderPose.x - bot.root.position.x;
     const dz = renderPose.z - bot.root.position.z;
     const planarDistSq = dx * dx + dz * dz;
 
     if (planarDistSq > 64 || bot.root.position.y < -100) {
-      bot.root.position.set(renderPose.x, targetGroundY, renderPose.z);
+      bot.root.position.set(renderPose.x, targetY, renderPose.z);
+      const ctrl = bot.root.userData?.botAnimCtrl as BotAnimController | undefined;
+      if (ctrl) {
+        ctrl.prevX = renderPose.x;
+        ctrl.prevY = targetY;
+        ctrl.prevZ = renderPose.z;
+        ctrl.smoothedSpeed = 0;
+      }
     } else {
       // Slightly snappier than before — buffer already smooths jitter.
       const interpAlpha = Math.min(1, ctx.dt * 18);
       bot.root.position.x += dx * interpAlpha;
       bot.root.position.z += dz * interpAlpha;
-      bot.root.position.y += (targetGroundY - bot.root.position.y) * interpAlpha;
+      bot.root.position.y += (targetY - bot.root.position.y) * Math.min(1, ctx.dt * 22);
     }
 
     const targetModelYaw = renderPose.yaw + Math.PI;

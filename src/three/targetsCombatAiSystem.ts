@@ -94,11 +94,20 @@ export function updateTargetsAndCombatAI(engine: any, dt: number): void {
 
     if (engine.state.drillMode !== 'FREE_RANGE' && engine.targets.length > 0) {
       if (isOnlineMatchActive()) {
+        const shotsFired = Number(engine.state?.shotsFired || 0);
+        const prevNetShots =
+          typeof engine._lastNetShotsFired === 'number'
+            ? engine._lastNetShotsFired
+            : shotsFired;
+        const shotPulse = shotsFired !== prevNetShots;
+        engine._lastNetShotsFired = shotsFired;
+
         syncOnlineMatchFrame({
           dt,
           targets: engine.targets as YardBotEntity[],
           shootableMeshes: engine.shootableMeshes,
           playerPos: _worldPos,
+          localFeetPos: engine.playerPos,
           yaw: engine.yaw,
           pitch: engine.pitch,
           activeWeapon: engine.state.activeWeapon,
@@ -109,7 +118,8 @@ export function updateTargetsAndCombatAI(engine: any, dt: number): void {
             engine.state.health <= 0,
           isCrouching:
             engine.state.stance === 'CROUCH' || engine.state.stance === 'PRONE',
-          isFiring: engine.fireCooldown > 0,
+          isFiring: shotPulse,
+          isSoftwareGl: Boolean(engine.isSoftwareGl),
           yardBombSystem: engine.yardBombSystem,
           isBombMode,
           getGroundHeight: (x, y, z) => engine.getCurrentGroundHeight(x, y, z),

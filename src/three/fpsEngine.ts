@@ -3455,6 +3455,9 @@ export class TacticalFPSEngine {
         this.yawObject.rotation.y = this.yaw;
         this.pitchObject.rotation.x = this.pitch;
         this.updateWeaponKinematicsAndOptics(dt);
+        if (isOnlineMatchActive()) {
+          this.updateTargetsAndCombatAI(dt);
+        }
         this.hudSyncTimer += dt;
         if (this.hudSyncTimer >= 0.09) {
           this.hudSyncTimer = 0;

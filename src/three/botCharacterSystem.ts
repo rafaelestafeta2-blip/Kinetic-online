@@ -702,9 +702,23 @@ export function attachProRifleCharacterToBot(bot: YardBotEntity, isSoftwareGl: b
     crouchStance,
   };
 
+  const modelKey = useSniper
+    ? 'SNIPER'
+    : useVanguardMedic
+      ? 'VANGUARD_MEDICO'
+      : useVanguardEngineer
+        ? 'VANGUARD_ENGENHEIRO'
+        : useVanguardFuzileiro
+          ? 'VANGUARD_FUZILEIRO'
+          : 'DEFAULT';
+
   bot.root.userData = bot.root.userData || {};
   bot.root.userData.botAnimCtrl = ctrl;
   bot.root.userData.hasSkeletalCharacter = true;
+  bot.root.userData.mountedWeaponId = chosenWeapon;
+  bot.root.userData.mountedIsAlly = Boolean(bot.isAlly);
+  bot.root.userData.mountedModelKey = modelKey;
+  bot.root.userData.mountedIsPistol = chosenWeapon === 'P50_PISTOL';
   if (typeof bot.root.userData.magRounds !== 'number') {
     bot.root.userData.magRounds = magCapacityForBotWeapon(chosenWeapon);
   }
@@ -716,6 +730,120 @@ export function attachProRifleCharacterToBot(bot: YardBotEntity, isSoftwareGl: b
     child.matrixAutoUpdate = true;
   });
   bot.root.matrixAutoUpdate = true;
+}
+
+function resolveDesiredModelKey(
+  weaponId: WeaponId,
+  isAlly: boolean,
+  callsign?: string
+): string {
+  const isMedicAlly = isAlly && callsign === 'LIFELINE-04';
+  if (
+    isSniperWeaponId(weaponId) &&
+    sniperTemplateScene &&
+    sniperClips &&
+    sniperAllyMatMap &&
+    sniperEnemyMatMap
+  ) {
+    return 'SNIPER';
+  }
+  if (
+    isAlly &&
+    isMedicAlly &&
+    vanguardMedicTemplateScene &&
+    vanguardMedicClips &&
+    vanguardMedicAllyMatMap &&
+    vanguardMedicEnemyMatMap
+  ) {
+    return 'VANGUARD_MEDICO';
+  }
+  if (
+    isAlly &&
+    !isMedicAlly &&
+    isEngineerWeaponId(weaponId) &&
+    vanguardEngineerTemplateScene &&
+    vanguardEngineerClips &&
+    vanguardEngineerAllyMatMap &&
+    vanguardEngineerEnemyMatMap
+  ) {
+    return 'VANGUARD_ENGENHEIRO';
+  }
+  if (
+    isAlly &&
+    !isMedicAlly &&
+    isRiflemanWeaponId(weaponId) &&
+    vanguardRiflemanTemplateScene &&
+    vanguardRiflemanClips &&
+    vanguardRiflemanAllyMatMap &&
+    vanguardRiflemanEnemyMatMap
+  ) {
+    return 'VANGUARD_FUZILEIRO';
+  }
+  return 'DEFAULT';
+}
+
+/**
+ * Ensures an online-bound character slot displays the remote player's exact
+ * operator skin, team palette, locomotion clip set (rifle vs pistol), and 3D weapon.
+ */
+export function syncBotCharacterAppearance(
+  bot: YardBotEntity,
+  isSoftwareGl: boolean
+): void {
+  if (!templateScene || !sharedClips || !allyMatMap || !enemyMatMap) return;
+  const desiredWeapon: WeaponId = bot.weaponId || 'M4_CARBINE';
+  const desiredIsAlly = Boolean(bot.isAlly);
+  const desiredModelKey = resolveDesiredModelKey(
+    desiredWeapon,
+    desiredIsAlly,
+    bot.callsign
+  );
+  const desiredIsPistol = desiredWeapon === 'P50_PISTOL';
+
+  const ctrl = bot.root.userData?.botAnimCtrl as BotAnimController | undefined;
+  if (!ctrl || !bot.root.userData?.hasSkeletalCharacter) {
+    attachProRifleCharacterToBot(bot, isSoftwareGl);
+    return;
+  }
+
+  const prevIsAlly = Boolean(bot.root.userData.mountedIsAlly);
+  const prevModelKey = String(bot.root.userData.mountedModelKey || '');
+  const prevIsPistol = Boolean(bot.root.userData.mountedIsPistol);
+  const prevWeaponId = bot.root.userData.mountedWeaponId as WeaponId | undefined;
+
+  if (
+    prevIsAlly !== desiredIsAlly ||
+    prevModelKey !== desiredModelKey ||
+    prevIsPistol !== desiredIsPistol
+  ) {
+    ctrl.mixer.stopAllAction();
+    if (ctrl.modelRoot.parent === bot.pivotGroup) {
+      bot.pivotGroup.remove(ctrl.modelRoot);
+    }
+    if (ctrl.weaponProp.parent === bot.pivotGroup) {
+      bot.pivotGroup.remove(ctrl.weaponProp);
+    }
+    delete bot.root.userData.botAnimCtrl;
+    delete bot.root.userData.hasSkeletalCharacter;
+    attachProRifleCharacterToBot(bot, isSoftwareGl);
+    return;
+  }
+
+  if (prevWeaponId !== desiredWeapon) {
+    if (ctrl.weaponProp.parent === bot.pivotGroup) {
+      bot.pivotGroup.remove(ctrl.weaponProp);
+    }
+    const nextWeaponProp = createBotThirdPersonWeaponMesh(
+      desiredWeapon,
+      desiredIsAlly
+    );
+    nextWeaponProp.position.set(-0.08, 1.26, 0.18);
+    bot.pivotGroup.add(nextWeaponProp);
+    ctrl.weaponProp = nextWeaponProp;
+    bot.root.userData.mountedWeaponId = desiredWeapon;
+    bot.root.userData.magRounds = magCapacityForBotWeapon(desiredWeapon);
+    syncBotWeaponWithMixamoHands(bot, ctrl, ctrl.crouchStance);
+  }
 }
 
 function magCapacityForBotWeapon(weaponId?: WeaponId | null): number {
