@@ -74,10 +74,10 @@ export function updateDynamicResolutionGovernor(
         : maxDpr;
   const minScale =
     maxDpr >= 1.5
-      ? Math.max(1.15, maxDpr * 0.62)
-      : Math.max(0.78, maxDpr * 0.78);
+      ? Math.max(1.12, maxDpr * 0.6)
+      : Math.max(0.82, maxDpr * 0.78);
 
-  if (avgFps < 48) {
+  if (avgFps < 50) {
     drs.lowFpsStreak += 1;
     drs.highFpsStreak = 0;
   } else if (avgFps >= 58) {
@@ -89,10 +89,10 @@ export function updateDynamicResolutionGovernor(
   }
 
   let nextScale = drs.currentRenderScale;
-  if (drs.lowFpsStreak >= 2 && drs.currentRenderScale > minScale) {
-    nextScale = Math.max(minScale, drs.currentRenderScale - 0.08);
-  } else if (drs.highFpsStreak >= 6 && drs.currentRenderScale < targetCeiling) {
-    nextScale = Math.min(targetCeiling, drs.currentRenderScale + 0.08);
+  if (drs.lowFpsStreak >= 1 && drs.currentRenderScale > minScale) {
+    nextScale = Math.max(minScale, drs.currentRenderScale - 0.09);
+  } else if (drs.highFpsStreak >= 4 && drs.currentRenderScale < targetCeiling) {
+    nextScale = Math.min(targetCeiling, drs.currentRenderScale + 0.06);
   }
 
   if (Math.abs(nextScale - drs.currentRenderScale) >= 0.01) {
@@ -101,6 +101,6 @@ export function updateDynamicResolutionGovernor(
     hud.renderScalePercent = Math.round((drs.currentRenderScale / maxDpr) * 100);
     drs.lowFpsStreak = 0;
     drs.highFpsStreak = 0;
-    drs.cooldownSec = 4.0;
+    drs.cooldownSec = 1.6;
   }
 }

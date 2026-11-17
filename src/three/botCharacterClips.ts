@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { alignWeaponPropToMixamoHands } from './botWeaponProps';
 import { YardBotEntity } from './yardPropsBuilder';
 
@@ -78,7 +77,19 @@ export function findFirstSkinnedMesh(root: THREE.Object3D | null | undefined): T
 /**
  * Retarget a Mixamo cm-scale FBX clip (Pro Rifle Pack rest axes) onto a meter-scale
  * Blender operator rig (sniper / vanguard_rifleman / engineer / medic).
- * Prevents 95m sky-teleporting and 90-degree twisted Hips/arms.
+ *
+ * Why custom world-delta retargeting instead of `SkeletonUtils.retargetClip`:
+ * 1. In GLTF models, `mixamorigHips` is a sibling of `SkinnedMesh` under `Armature`/`Scene`,
+ *    not a child of `SkinnedMesh`. `SkeletonUtils.retargetClip(targetSkinned, sourceSkinned, clip)`
+ *    creates `new AnimationMixer(sourceSkinned)`, which fails to bind `mixamorig*.quaternion`
+ *    tracks, leaving `sourceSkinned` frozen in T-pose for every frame and baking a static
+ *    T-pose clip into `RIFLE_JUMP` / `RIFLE_RELOAD_3P`!
+ * 2. Custom Blender operator GLBs (`vanguard_rifleman`, `sniper_operator`, `vanguard_engineer`,
+ *    `vanguard_medic`) have rotated local bone axes relative to Mixamo (`LeftUpLeg` rotated
+ *    180° around X instead of Z, `Hips` rotated -90° Y). Computing the world-space rotation
+ *    delta `deltaW = qSrcAnimW * inv(qSrcRestW)` and applying `desiredTgtW = deltaW * qTgtRestW`
+ *    transfers the exact animation into the target rig's native bone coordinate system and
+ *    restores both rigs' bind poses afterward.
  */
 export function retargetFbxClipToTargetRig(
   clip: THREE.AnimationClip,
@@ -86,32 +97,170 @@ export function retargetFbxClipToTargetRig(
   sourceRoot: THREE.Object3D,
   clipName: string
 ): THREE.AnimationClip {
+  if (!targetRoot || !sourceRoot || !clip || clip.tracks.length === 0) {
+    const fallback = clip.clone();
+    fallback.name = clipName;
+    return fallback;
+  }
+
   const targetSkinned = findFirstSkinnedMesh(targetRoot);
   const sourceSkinned = findFirstSkinnedMesh(sourceRoot);
-  if (!targetSkinned || !sourceSkinned) {
-    return clip;
-  }
+
   try {
-    targetRoot.updateMatrixWorld(true);
+    sourceSkinned?.skeleton?.pose();
+    targetSkinned?.skeleton?.pose();
     sourceRoot.updateMatrixWorld(true);
-    const retargeted = SkeletonUtils.retargetClip(targetSkinned, sourceSkinned, clip, {
-      hip: 'mixamorigHips',
-      preserveHipPosition: false,
-      useFirstFramePosition: false,
+    targetRoot.updateMatrixWorld(true);
+
+    interface BoneRestEntry {
+      node: THREE.Object3D;
+      localPos: THREE.Vector3;
+      localQuat: THREE.Quaternion;
+      localScale: THREE.Vector3;
+      worldQuat: THREE.Quaternion;
+      worldQuatInv: THREE.Quaternion;
+    }
+
+    const srcRest = new Map<string, BoneRestEntry>();
+    const tgtBones: BoneRestEntry[] = [];
+
+    sourceRoot.traverse((obj) => {
+      if (!obj.name || !obj.name.startsWith('mixamorig')) return;
+      const wq = obj.getWorldQuaternion(new THREE.Quaternion());
+      srcRest.set(obj.name, {
+        node: obj,
+        localPos: obj.position.clone(),
+        localQuat: obj.quaternion.clone(),
+        localScale: obj.scale.clone(),
+        worldQuat: wq,
+        worldQuatInv: wq.clone().invert(),
+      });
     });
-    retargeted.name = clipName;
-    for (let i = 0; i < retargeted.tracks.length; i++) {
-      const tr = retargeted.tracks[i];
-      // SkeletonUtils emits ".bones[mixamorigX].prop" which only binds when mixer root
-      // is the SkinnedMesh itself; strip ".bones[...]" so AnimationMixer(modelRoot) binds it.
-      const match = tr.name.match(/^\.bones\[([^\]]+)\]\.(.+)$/);
-      if (match) {
-        tr.name = `${match[1]}.${match[2]}`;
+
+    // Traverse top-down so parent bones are always updated before child bones
+    targetRoot.traverse((obj) => {
+      if (!obj.name || !obj.name.startsWith('mixamorig')) return;
+      if (!srcRest.has(obj.name)) return;
+      const wq = obj.getWorldQuaternion(new THREE.Quaternion());
+      tgtBones.push({
+        node: obj,
+        localPos: obj.position.clone(),
+        localQuat: obj.quaternion.clone(),
+        localScale: obj.scale.clone(),
+        worldQuat: wq,
+        worldQuatInv: wq.clone().invert(),
+      });
+    });
+
+    if (tgtBones.length < 10) {
+      const cloned = clip.clone();
+      cloned.name = clipName;
+      return cloned;
+    }
+
+    const duration = Math.max(0.05, clip.duration);
+    const numFrames = Math.max(2, Math.min(90, Math.round(duration * 30) + 1));
+    const times = new Float32Array(numFrames);
+    for (let f = 0; f < numFrames; f++) {
+      times[f] = (f / (numFrames - 1)) * duration;
+    }
+
+    const quatValuesByBone = tgtBones.map(() => new Float32Array(numFrames * 4));
+
+    const mixer = new THREE.AnimationMixer(sourceRoot);
+    const action = mixer.clipAction(clip);
+    action.play();
+
+    const qSrcAnimW = new THREE.Quaternion();
+    const qDeltaW = new THREE.Quaternion();
+    const qDesiredTgtW = new THREE.Quaternion();
+    const qParentW = new THREE.Quaternion();
+    const qLocalOut = new THREE.Quaternion();
+
+    for (let f = 0; f < numFrames; f++) {
+      mixer.setTime(times[f]);
+      sourceRoot.updateMatrixWorld(true);
+
+      for (let b = 0; b < tgtBones.length; b++) {
+        const tgtEntry = tgtBones[b];
+        const srcEntry = srcRest.get(tgtEntry.node.name)!;
+
+        srcEntry.node.getWorldQuaternion(qSrcAnimW);
+        // World rotation delta from source bind pose: deltaW = qSrcAnimW * inv(qSrcRestW)
+        qDeltaW.copy(qSrcAnimW).multiply(srcEntry.worldQuatInv);
+        // Apply world delta to target bind pose: desiredTgtW = deltaW * qTgtRestW
+        qDesiredTgtW.copy(qDeltaW).multiply(tgtEntry.worldQuat);
+
+        if (tgtEntry.node.parent) {
+          tgtEntry.node.parent.getWorldQuaternion(qParentW);
+          qLocalOut.copy(qParentW).invert().multiply(qDesiredTgtW).normalize();
+        } else {
+          qLocalOut.copy(qDesiredTgtW).normalize();
+        }
+
+        tgtEntry.node.quaternion.copy(qLocalOut);
+        tgtEntry.node.updateMatrixWorld(false);
+
+        const outArr = quatValuesByBone[b];
+        const baseIdx = f * 4;
+        // Enforce quaternion hemisphere continuity across consecutive frames
+        if (f > 0) {
+          const prevIdx = (f - 1) * 4;
+          const dot =
+            outArr[prevIdx] * qLocalOut.x +
+            outArr[prevIdx + 1] * qLocalOut.y +
+            outArr[prevIdx + 2] * qLocalOut.z +
+            outArr[prevIdx + 3] * qLocalOut.w;
+          if (dot < 0) {
+            qLocalOut.x = -qLocalOut.x;
+            qLocalOut.y = -qLocalOut.y;
+            qLocalOut.z = -qLocalOut.z;
+            qLocalOut.w = -qLocalOut.w;
+          }
+        }
+        outArr[baseIdx] = qLocalOut.x;
+        outArr[baseIdx + 1] = qLocalOut.y;
+        outArr[baseIdx + 2] = qLocalOut.z;
+        outArr[baseIdx + 3] = qLocalOut.w;
       }
     }
-    return retargeted;
+
+    mixer.stopAllAction();
+    mixer.uncacheClip(clip);
+
+    // Restore both rigs to their exact pristine bind poses
+    srcRest.forEach((entry) => {
+      entry.node.position.copy(entry.localPos);
+      entry.node.quaternion.copy(entry.localQuat);
+      entry.node.scale.copy(entry.localScale);
+    });
+    for (let b = 0; b < tgtBones.length; b++) {
+      const entry = tgtBones[b];
+      entry.node.position.copy(entry.localPos);
+      entry.node.quaternion.copy(entry.localQuat);
+      entry.node.scale.copy(entry.localScale);
+    }
+    sourceSkinned?.skeleton?.pose();
+    targetSkinned?.skeleton?.pose();
+    sourceRoot.updateMatrixWorld(true);
+    targetRoot.updateMatrixWorld(true);
+
+    const tracks: THREE.KeyframeTrack[] = [];
+    for (let b = 0; b < tgtBones.length; b++) {
+      tracks.push(
+        new THREE.QuaternionKeyframeTrack(
+          `${tgtBones[b].node.name}.quaternion`,
+          times,
+          quatValuesByBone[b]
+        )
+      );
+    }
+
+    return new THREE.AnimationClip(clipName, duration, tracks);
   } catch {
-    return clip;
+    const fallback = clip.clone();
+    fallback.name = clipName;
+    return fallback;
   }
 }
 
@@ -284,33 +433,42 @@ export function buildProRiflePackClips(
   const fire = byName.get('RIFLE_FIRE') || buildDerivedImpulseClip(aim, 'RIFLE_FIRE', 0.2, 0.08, false);
   const hit = byName.get('RIFLE_HIT') || buildDerivedImpulseClip(aim, 'RIFLE_HIT', 0.28, 0.16, false);
   const throwClip = byName.get('RIFLE_THROW') || buildDerivedImpulseClip(aim, 'RIFLE_THROW', 0.58, 0.1, true);
-  const jump = byName.get('RIFLE_JUMP') || aim;
-  const reload3p = byName.get('RIFLE_RELOAD_3P') || aim;
+  const jump = byName.get('RIFLE_JUMP') || crouch || aim;
+  const reload3p = byName.get('RIFLE_RELOAD_3P') || throwClip || aim;
+
+  const cloneForState = (
+    srcClip: THREE.AnimationClip,
+    stateName: BotAnimState
+  ): THREE.AnimationClip => {
+    const c = srcClip.clone();
+    c.name = stateName;
+    return c;
+  };
 
   return {
-    RIFLE_IDLE: idle,
-    RIFLE_AIM: aim,
-    RIFLE_WALK: walk,
-    RIFLE_WALK_LEFT: walkLeft,
-    RIFLE_WALK_RIGHT: walkRight,
-    RIFLE_WALK_BACK: walkBack,
-    RIFLE_RUN: run,
-    RIFLE_RUN_LEFT: runLeft,
-    RIFLE_RUN_RIGHT: runRight,
-    RIFLE_SPRINT: sprint,
-    RIFLE_CROUCH: crouch,
-    RIFLE_CROUCH_WALK: crouchWalk,
-    RIFLE_FIRE: fire,
-    RIFLE_THROW: throwClip,
-    RIFLE_HIT: hit,
-    RIFLE_JUMP: jump,
-    RIFLE_RELOAD_3P: reload3p,
-    RIFLE_DEATH: death,
-    RIFLE_DEATH_HEADSHOT: deathHeadshot,
-    RIFLE_DEATH_BACK: deathBack,
-    RIFLE_DEATH_BACK_HEADSHOT: deathBackHeadshot,
-    RIFLE_DEATH_RIGHT: deathRight,
-    RIFLE_DEATH_CROUCH: deathCrouch,
+    RIFLE_IDLE: cloneForState(idle, 'RIFLE_IDLE'),
+    RIFLE_AIM: cloneForState(aim, 'RIFLE_AIM'),
+    RIFLE_WALK: cloneForState(walk, 'RIFLE_WALK'),
+    RIFLE_WALK_LEFT: cloneForState(walkLeft, 'RIFLE_WALK_LEFT'),
+    RIFLE_WALK_RIGHT: cloneForState(walkRight, 'RIFLE_WALK_RIGHT'),
+    RIFLE_WALK_BACK: cloneForState(walkBack, 'RIFLE_WALK_BACK'),
+    RIFLE_RUN: cloneForState(run, 'RIFLE_RUN'),
+    RIFLE_RUN_LEFT: cloneForState(runLeft, 'RIFLE_RUN_LEFT'),
+    RIFLE_RUN_RIGHT: cloneForState(runRight, 'RIFLE_RUN_RIGHT'),
+    RIFLE_SPRINT: cloneForState(sprint, 'RIFLE_SPRINT'),
+    RIFLE_CROUCH: cloneForState(crouch, 'RIFLE_CROUCH'),
+    RIFLE_CROUCH_WALK: cloneForState(crouchWalk, 'RIFLE_CROUCH_WALK'),
+    RIFLE_FIRE: cloneForState(fire, 'RIFLE_FIRE'),
+    RIFLE_THROW: cloneForState(throwClip, 'RIFLE_THROW'),
+    RIFLE_HIT: cloneForState(hit, 'RIFLE_HIT'),
+    RIFLE_JUMP: cloneForState(jump, 'RIFLE_JUMP'),
+    RIFLE_RELOAD_3P: cloneForState(reload3p, 'RIFLE_RELOAD_3P'),
+    RIFLE_DEATH: cloneForState(death, 'RIFLE_DEATH'),
+    RIFLE_DEATH_HEADSHOT: cloneForState(deathHeadshot, 'RIFLE_DEATH_HEADSHOT'),
+    RIFLE_DEATH_BACK: cloneForState(deathBack, 'RIFLE_DEATH_BACK'),
+    RIFLE_DEATH_BACK_HEADSHOT: cloneForState(deathBackHeadshot, 'RIFLE_DEATH_BACK_HEADSHOT'),
+    RIFLE_DEATH_RIGHT: cloneForState(deathRight, 'RIFLE_DEATH_RIGHT'),
+    RIFLE_DEATH_CROUCH: cloneForState(deathCrouch, 'RIFLE_DEATH_CROUCH'),
   };
 }
 

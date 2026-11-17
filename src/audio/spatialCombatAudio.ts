@@ -101,20 +101,30 @@ export function playSpatialBotGunshot(
   filter.connect(gainNode);
   outputNode.connect(ctx.destination);
 
+  const isShotgun =
+    weaponId === 'SHOTGUN_12' || weaponId === 'SHOTGUN_SPAS';
   const sampleBuffer =
-    weaponId === 'AK47_RIFLE' || weaponId === 'AK12_RIFLE'
-      ? state.ak47ShotBuffer || state.m4a1ShotBuffer
-      : isSniper
-        ? state.sniperShotBuffer || state.ak47ShotBuffer
-        : weaponId === 'P50_PISTOL'
-          ? state.desertEagleBuffer || state.m4a1ShotBuffer
-          : state.m4a1ShotBuffer || state.ak47ShotBuffer;
+    isShotgun
+      ? state.shotgunShotBuffer || state.ak47ShotBuffer
+      : weaponId === 'AK47_RIFLE' || weaponId === 'AK12_RIFLE'
+        ? state.ak47ShotBuffer || state.m4a1ShotBuffer
+        : isSniper
+          ? state.sniperShotBuffer || state.ak47ShotBuffer
+          : weaponId === 'P50_PISTOL'
+            ? state.desertEagleBuffer || state.m4a1ShotBuffer
+            : state.m4a1ShotBuffer || state.ak47ShotBuffer;
 
   if (sampleBuffer) {
     const src = ctx.createBufferSource();
     src.buffer = sampleBuffer;
     const rate =
-      (weaponId === 'SNIPER_TACTICAL' ? 1.12 : 1.0) +
+      (weaponId === 'SNIPER_TACTICAL'
+        ? 1.12
+        : weaponId === 'SHOTGUN_12'
+          ? 0.97
+          : weaponId === 'SHOTGUN_SPAS'
+            ? 1.03
+            : 1.0) +
       (Math.random() - 0.5) * 0.05;
     src.playbackRate.setValueAtTime(rate, now);
     src.connect(filter);

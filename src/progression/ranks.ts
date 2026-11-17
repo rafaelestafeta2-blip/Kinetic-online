@@ -177,6 +177,18 @@ export function getRequiredXpForOptic(optic: OpticType): {
   requiredLevel: number;
   rankTitle: string;
 } {
+  if (optic === 'iron' || optic === 'red_dot') {
+    return { requiredLevel: 1, rankTitle: 'Trainee' };
+  }
+  if (optic === 'kolimator') {
+    return { requiredLevel: 2, rankTitle: 'Cadete Júnior' };
+  }
+  if (optic === 'holo') {
+    return { requiredLevel: 4, rankTitle: 'Cadete Sênior' };
+  }
+  if (optic === 'lpvo') {
+    return { requiredLevel: 6, rankTitle: 'Recruta' };
+  }
   for (const rank of WARFACE_RANKS) {
     if (rank.unlockedOptics.includes(optic)) {
       return { requiredLevel: rank.level, rankTitle: rank.title };
@@ -219,7 +231,8 @@ export function isWeaponUnlockedAtXp(weaponId: WeaponId, xp: number): boolean {
 
 export function isOpticUnlockedAtXp(optic: OpticType, xp: number): boolean {
   const currentRank = getRankForXp(xp);
-  return currentRank.unlockedOptics.includes(optic);
+  const req = getRequiredXpForOptic(optic);
+  return currentRank.level >= req.requiredLevel;
 }
 
 export function isAttachmentUnlockedAtXp(

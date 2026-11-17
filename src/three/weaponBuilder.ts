@@ -141,10 +141,13 @@ export interface TacticalWeaponRig {
   lpvoScopeGroup: THREE.Group;
   lpvoReticleMesh: THREE.Mesh;
   lpvoThrowLever: THREE.Mesh;
+  redDotScopeGroup: THREE.Group;
+  kolimatorScopeGroup: THREE.Group;
   ironSightsGroup: THREE.Group;
   cantedSightGroup: THREE.Group;
   cantedReticleMesh: THREE.Mesh;
   peqLaserBeam: THREE.Mesh;
+  setOpticType: (optic: OpticType) => void;
   leftHandGroup: THREE.Group;
   rightHandGroup: THREE.Group;
   rightTriggerFinger: THREE.Group;
@@ -174,6 +177,51 @@ export interface TacticalWeaponRig {
   armsRigContainer: THREE.Group;
   attachmentSystem: WeaponAttachmentSystem;
 }
+
+export const SCOPE_OPTICAL_CENTERS: Record<
+  Exclude<OpticType, 'iron'>,
+  { opticalHeightY: number; rearLensZ: number; eyeRelief: number }
+> = {
+  red_dot: {
+    opticalHeightY: 0.02331,
+    rearLensZ: -0.0087,
+    eyeRelief: 0.135,
+  },
+  kolimator: {
+    opticalHeightY: 0.01922,
+    rearLensZ: 0.022,
+    eyeRelief: 0.135,
+  },
+  holo: {
+    opticalHeightY: 0.03151,
+    rearLensZ: -0.0109,
+    eyeRelief: 0.145,
+  },
+  lpvo: {
+    opticalHeightY: 0.02361,
+    rearLensZ: 0.0828,
+    eyeRelief: 0.105,
+  },
+};
+
+export const WEAPON_RAIL_MOUNTS: Record<
+  WeaponId,
+  { pos: [number, number, number]; scale: number }
+> = {
+  P50_PISTOL: { pos: [-0.0002, 0.056, -0.02], scale: 0.72 },
+  SMG_45: { pos: [-0.0119, 0.096, -0.14], scale: 0.85 },
+  SMG_MP5: { pos: [0.0, 0.036, -0.01], scale: 0.82 },
+  SHOTGUN_12: { pos: [-0.0305, 0.088, -0.04], scale: 0.86 },
+  SHOTGUN_SPAS: { pos: [0.0, 0.006, -0.04], scale: 0.88 },
+  M4_CARBINE: { pos: [-0.0153, -0.002, 0.025], scale: 0.95 },
+  CARBINE_AR: { pos: [-0.0153, -0.002, 0.025], scale: 0.95 },
+  AK47_RIFLE: { pos: [-0.012, -0.008, 0.12], scale: 0.92 },
+  AK12_RIFLE: { pos: [0.0, 0.0285, 0.035], scale: 0.92 },
+  L49_LMG: { pos: [-0.009, 0.085, 0.02], scale: 0.9 },
+  SNIPER_BOLT: { pos: [-0.012, 0.036, -0.02], scale: 0.96 },
+  SNIPER_TACTICAL: { pos: [-0.022, 0.025, -0.04], scale: 0.95 },
+  KNIFE_TACTICAL: { pos: [0, 0, 0], scale: 1.0 },
+};
 
 const _ikShoulderWorld = new THREE.Vector3();
 const _ikTargetWorld = new THREE.Vector3();
@@ -882,18 +930,6 @@ export function buildTacticalWeaponRig(
 
   const suppressorGroup = new THREE.Group();
   suppressorGroup.position.set(0, 0.022, -0.28);
-  const supTube = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.019, 0.019, 0.155, 20),
-    matFdePolymer
-  );
-  supTube.rotation.x = Math.PI / 2;
-  const supCollar = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.021, 0.021, 0.024, 20),
-    matParkerizedSteel
-  );
-  supCollar.rotation.x = Math.PI / 2;
-  supCollar.position.set(0, 0, 0.065);
-  suppressorGroup.add(supTube, supCollar);
   suppressorGroup.visible = false;
   weaponMotionAnchor.add(suppressorGroup);
 
@@ -1003,6 +1039,10 @@ export function buildTacticalWeaponRig(
   laserOriginWorldPos.position.set(0.0, -0.015, -0.18);
   weaponMotionAnchor.add(laserOriginWorldPos);
 
+  const peq15ModelGroup = new THREE.Group();
+  peq15ModelGroup.visible = false;
+  weaponMotionAnchor.add(peq15ModelGroup);
+
   const beamGeo = new THREE.CylinderGeometry(0.0012, 0.0012, 1.0, 6);
   beamGeo.translate(0, -0.5, 0);
   beamGeo.rotateX(Math.PI / 2);
@@ -1023,270 +1063,54 @@ export function buildTacticalWeaponRig(
   const attachmentSystem = new WeaponAttachmentSystem(weaponMotionAnchor);
 
   // -------------------------------------------------------------------------
-  // 3. MODULAR OPTICS SUITE (LOCKED TO WEAPON MOTION ANCHOR)
+  // 3. REAL 3D SCOPE PACK OPTICS SUITE (LOCKED FLUSH TO WEAPON PICATINNY RAIL)
   // -------------------------------------------------------------------------
   const opticsContainer = new THREE.Group();
   weaponMotionAnchor.add(opticsContainer);
 
+  const redDotScopeGroup = new THREE.Group();
+  redDotScopeGroup.visible = false;
+  opticsContainer.add(redDotScopeGroup);
+
+  const kolimatorScopeGroup = new THREE.Group();
+  kolimatorScopeGroup.visible = false;
+  opticsContainer.add(kolimatorScopeGroup);
+
   const holoSightGroup = new THREE.Group();
-  holoSightGroup.position.set(0, 0.042, 0.04);
-
-  const holoBase = new THREE.Mesh(
-    new THREE.BoxGeometry(0.036, 0.012, 0.068),
-    matAnodizedUpper
-  );
-  holoBase.position.set(0, 0.006, 0);
-  holoSightGroup.add(holoBase);
-
-  const hoodPillarLeft = new THREE.Mesh(
-    new THREE.BoxGeometry(0.005, 0.036, 0.048),
-    matFdePolymer
-  );
-  hoodPillarLeft.position.set(-0.018, 0.03, 0);
-  const hoodPillarRight = hoodPillarLeft.clone();
-  hoodPillarRight.position.x = 0.018;
-  const hoodTop = new THREE.Mesh(
-    new THREE.BoxGeometry(0.041, 0.005, 0.048),
-    matFdePolymer
-  );
-  hoodTop.position.set(0, 0.049, 0);
-  holoSightGroup.add(hoodPillarLeft, hoodPillarRight, hoodTop);
-
-  const holoGlass = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.031, 0.03),
-    matLensGlass
-  );
-  holoGlass.position.set(0, 0.03, 0);
-  holoGlass.renderOrder = 10;
-  holoSightGroup.add(holoGlass);
-
-  const holoReticleMesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.028, 0.028),
-    new THREE.MeshBasicMaterial({
-      map: textures.holoReticle,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    })
-  );
-  holoReticleMesh.position.set(0, 0.03, -0.002);
-  holoReticleMesh.renderOrder = 12;
-  holoSightGroup.add(holoReticleMesh);
   holoSightGroup.visible = false;
   opticsContainer.add(holoSightGroup);
 
-  const buildFirefieldLpvoAssembly = (scaleFactor = 1.0) => {
-    const scopeGroup = new THREE.Group();
-    scopeGroup.scale.setScalar(scaleFactor);
+  const holoReticleMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.001, 0.001),
+    new THREE.MeshBasicMaterial({ visible: false })
+  );
 
-    const matScopeHousing = new THREE.MeshStandardMaterial({
-      color: 0x161920,
-      metalness: 0.42,
-      roughness: 0.44,
-      side: THREE.FrontSide,
-    });
-    const matScopeBezel = new THREE.MeshStandardMaterial({
-      color: 0x0e1015,
-      metalness: 0.35,
-      roughness: 0.52,
-      side: THREE.DoubleSide,
-    });
-    const matScopeMount = new THREE.MeshStandardMaterial({
-      color: 0x1c2028,
-      metalness: 0.3,
-      roughness: 0.62,
-    });
-
-    // 1. Wide Ribbed Picatinny Mount Base (visible right below the scope ring in ADS)
-    const lowerBridge = new THREE.Mesh(
-      new THREE.BoxGeometry(0.032, 0.012, 0.112),
-      matScopeMount
-    );
-    lowerBridge.position.set(0, 0.006, -0.018);
-    scopeGroup.add(lowerBridge);
-
-    const baseWings = new THREE.Mesh(
-      new THREE.BoxGeometry(0.056, 0.014, 0.042),
-      matScopeMount
-    );
-    baseWings.position.set(0, 0.011, 0.022);
-    scopeGroup.add(baseWings);
-
-    // Sculpted vertical grip ribs on left & right mount shoulders (matches reference photo)
-    const ribGeo = new THREE.BoxGeometry(0.0022, 0.015, 0.016);
-    [-0.025, -0.021, -0.017, 0.017, 0.021, 0.025].forEach((rx) => {
-      const rib = new THREE.Mesh(ribGeo, matScopeHousing);
-      rib.position.set(rx, 0.012, 0.034);
-      scopeGroup.add(rib);
-    });
-
-    // Central clamp block + silver hex screw directly underneath scope ring
-    const centerClamp = new THREE.Mesh(
-      new THREE.BoxGeometry(0.018, 0.015, 0.038),
-      matScopeHousing
-    );
-    centerClamp.position.set(0, 0.013, 0.024);
-    scopeGroup.add(centerClamp);
-
-    const clampScrew = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.0022, 0.0022, 0.004, 12),
-      matBoltChrome
-    );
-    clampScrew.rotation.x = Math.PI / 2;
-    clampScrew.position.set(0, 0.013, 0.043);
-    scopeGroup.add(clampScrew);
-
-    // Support ring saddles holding the optical tube (open-ended so interior lens stays unobstructed)
-    const rearSaddle = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.0205, 0.0205, 0.022, 24, 1, true),
-      matScopeHousing
-    );
-    rearSaddle.rotation.x = Math.PI / 2;
-    rearSaddle.position.set(0, 0.038, 0.012);
-    scopeGroup.add(rearSaddle);
-
-    const frontSaddle = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.0205, 0.0205, 0.02, 24, 1, true),
-      matScopeHousing
-    );
-    frontSaddle.rotation.x = Math.PI / 2;
-    frontSaddle.position.set(0, 0.038, -0.056);
-    scopeGroup.add(frontSaddle);
-
-    // Side windage & illumination turret knobs visible below ocular ring
-    const leftWindage = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.0075, 0.0075, 0.014, 16),
-      matScopeHousing
-    );
-    leftWindage.rotation.z = Math.PI / 2;
-    leftWindage.position.set(-0.023, 0.034, -0.018);
-    scopeGroup.add(leftWindage);
-
-    const rightTurret = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.0072, 0.0072, 0.013, 16),
-      matScopeHousing
-    );
-    rightTurret.rotation.z = Math.PI / 2;
-    rightTurret.position.set(0.022, 0.034, -0.018);
-    scopeGroup.add(rightTurret);
-
-    // 2. Forward Exterior Scope Housing (FrontSide only so ADS camera sees cleanly without dark inner tunnel)
-    const mainTube = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.0188, 0.0188, 0.112, 32, 1, true),
-      matScopeHousing
-    );
-    mainTube.rotation.x = Math.PI / 2;
-    mainTube.position.set(0, 0.038, -0.014);
-    scopeGroup.add(mainTube);
-
-    const objBell = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.0224, 0.0188, 0.044, 32, 1, true),
-      matScopeHousing
-    );
-    objBell.rotation.x = Math.PI / 2;
-    objBell.position.set(0, 0.038, -0.092);
-    scopeGroup.add(objBell);
-
-    const objLip = new THREE.Mesh(
-      new THREE.RingGeometry(0.0195, 0.0224, 32),
-      matScopeHousing
-    );
-    objLip.rotation.y = Math.PI;
-    objLip.position.set(0, 0.038, -0.114);
-    scopeGroup.add(objLip);
-
-    // 3. Scalloped Rear Ocular Ring & Throw Lever (occupies ~47% screen center in ADS)
-    const ocularOuterSleeve = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.0216, 0.0196, 0.028, 36, 1, true),
-      matScopeHousing
-    );
-    ocularOuterSleeve.rotation.x = Math.PI / 2;
-    ocularOuterSleeve.position.set(0, 0.038, 0.054);
-    scopeGroup.add(ocularOuterSleeve);
-
-    // Short 1.6cm beveled inner ocular hood
-    const ocularInnerHood = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.0192, 0.0176, 0.016, 40, 1, true),
-      matScopeBezel
-    );
-    ocularInnerHood.rotation.x = Math.PI / 2;
-    ocularInnerHood.position.set(0, 0.038, 0.06);
-    scopeGroup.add(ocularInnerHood);
-
-    // Rear crisp scalloped bezel face
-    const ocularBackBezel = new THREE.Mesh(
-      new THREE.RingGeometry(0.0174, 0.0217, 48),
-      matScopeBezel
-    );
-    ocularBackBezel.position.set(0, 0.038, 0.068);
-    scopeGroup.add(ocularBackBezel);
-
-    // 18 scalloped grip flutes around ocular ring circumference
-    const fluteGeo = new THREE.CylinderGeometry(0.0019, 0.0019, 0.024, 8);
-    fluteGeo.rotateX(Math.PI / 2);
-    for (let f = 0; f < 18; f++) {
-      const ang = (f * Math.PI * 2) / 18;
-      const flute = new THREE.Mesh(fluteGeo, matScopeBezel);
-      flute.position.set(
-        Math.cos(ang) * 0.0213,
-        0.038 + Math.sin(ang) * 0.0213,
-        0.056
-      );
-      scopeGroup.add(flute);
-    }
-
-    // Magnification Throw Lever sticking out at ~2 o'clock on the right side
-    const throwLever = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.0018, 0.0026, 0.009, 10),
-      matScopeBezel
-    );
-    throwLever.position.set(0.0242, 0.0445, 0.056);
-    throwLever.rotation.z = -1.25;
-    scopeGroup.add(throwLever);
-
-    // 4. Coated Optical Glass & Centered Firefield Mil-Dot Reticle
-    const glassLens = new THREE.Mesh(
-      new THREE.CircleGeometry(0.0175, 40),
-      new THREE.MeshPhysicalMaterial({
-        color: 0xdbeafe,
-        metalness: 0.08,
-        roughness: 0.05,
-        transparent: true,
-        opacity: 0.07,
-        depthWrite: false,
-      })
-    );
-    glassLens.position.set(0, 0.038, 0.0655);
-    glassLens.renderOrder = 10;
-    scopeGroup.add(glassLens);
-
-    const reticleMesh = new THREE.Mesh(
-      new THREE.CircleGeometry(0.0176, 48),
-      new THREE.MeshBasicMaterial({
-        map: textures.lpvoReticle,
-        transparent: true,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-      })
-    );
-    reticleMesh.position.set(0, 0.038, 0.0665);
-    reticleMesh.renderOrder = 14;
-    scopeGroup.add(reticleMesh);
-
-    return { scopeGroup, throwLever, reticleMesh };
-  };
-
-  const lpvoBuilt = buildFirefieldLpvoAssembly(1.0);
-  const lpvoScopeGroup = lpvoBuilt.scopeGroup;
-  lpvoScopeGroup.position.set(0, 0.008, 0.025);
-  const lpvoThrowLever = lpvoBuilt.throwLever;
-  const lpvoReticleMesh = lpvoBuilt.reticleMesh;
+  const lpvoScopeGroup = new THREE.Group();
   lpvoScopeGroup.visible = false;
   opticsContainer.add(lpvoScopeGroup);
+
+  const lpvoThrowLever = new THREE.Mesh(
+    new THREE.BoxGeometry(0.001, 0.001, 0.001),
+    new THREE.MeshBasicMaterial({ visible: false })
+  );
+  const lpvoReticleMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.001, 0.001),
+    new THREE.MeshBasicMaterial({ visible: false })
+  );
 
   const ironSightsGroup = new THREE.Group();
   ironSightsGroup.visible = true;
   opticsContainer.add(ironSightsGroup);
+
+  let currentOpticType: OpticType = 'iron';
+  const setOpticType = (optic: OpticType) => {
+    currentOpticType = optic;
+    ironSightsGroup.visible = optic === 'iron';
+    redDotScopeGroup.visible = optic === 'red_dot';
+    kolimatorScopeGroup.visible = optic === 'kolimator';
+    holoSightGroup.visible = optic === 'holo';
+    lpvoScopeGroup.visible = optic === 'lpvo';
+  };
 
   const cantedSightGroup = new THREE.Group();
   cantedSightGroup.position.set(0.018, 0.036, -0.05);
@@ -1315,6 +1139,97 @@ export function buildTacticalWeaponRig(
   opticsContainer.add(cantedSightGroup);
 
   const gltfLoader = new GLTFLoader();
+
+  const configureLoadedScopeScene = (
+    sceneRoot: THREE.Group,
+    isLpvo = false
+  ) => {
+    sceneRoot.traverse((child) => {
+      child.frustumCulled = false;
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh;
+        mesh.frustumCulled = false;
+        mesh.castShadow = false;
+        mesh.receiveShadow = true;
+        const mat = mesh.material as THREE.MeshStandardMaterial;
+        if (!mat) return;
+        if (mat.map) {
+          mat.map.colorSpace = THREE.SRGBColorSpace;
+          mat.map.needsUpdate = true;
+        }
+        if (mat.emissiveMap) {
+          mat.emissiveMap.colorSpace = THREE.SRGBColorSpace;
+          mat.emissiveMap.needsUpdate = true;
+        }
+        if (mesh.name.includes('Glass')) {
+          mat.transparent = true;
+          mat.opacity = 0.05;
+          mat.depthWrite = false;
+          mat.roughness = 0.05;
+          mat.metalness = 0.1;
+          mat.side = THREE.FrontSide;
+          mesh.renderOrder = 12;
+        } else if (mesh.name.includes('Reticle')) {
+          mat.transparent = true;
+          mat.depthWrite = false;
+          mat.blending = isLpvo
+            ? THREE.NormalBlending
+            : THREE.AdditiveBlending;
+          mat.toneMapped = false;
+          mat.side = THREE.FrontSide;
+          mesh.renderOrder = 15;
+        } else {
+          mat.side = THREE.FrontSide;
+          mat.envMapIntensity = 1.2;
+        }
+        mat.needsUpdate = true;
+      }
+    });
+  };
+
+  gltfLoader.load(
+    '/models/accessories/scopes/Scope_Aimpoint_RedDot.glb',
+    (gltf) => {
+      configureLoadedScopeScene(gltf.scene, false);
+      redDotScopeGroup.add(gltf.scene);
+    }
+  );
+  gltfLoader.load(
+    '/models/accessories/scopes/Scope_Kolimator_Reflex.glb',
+    (gltf) => {
+      configureLoadedScopeScene(gltf.scene, false);
+      kolimatorScopeGroup.add(gltf.scene);
+    }
+  );
+  gltfLoader.load(
+    '/models/accessories/scopes/Scope_EoTech_Holo.glb',
+    (gltf) => {
+      configureLoadedScopeScene(gltf.scene, false);
+      holoSightGroup.add(gltf.scene);
+    }
+  );
+  gltfLoader.load(
+    '/models/accessories/scopes/Scope_Tactical_LPVO.glb',
+    (gltf) => {
+      configureLoadedScopeScene(gltf.scene, true);
+      lpvoScopeGroup.add(gltf.scene);
+    }
+  );
+  gltfLoader.load(
+    '/models/accessories/scopes/Laser_ANPEQ15.glb',
+    (gltf) => {
+      configureLoadedScopeScene(gltf.scene, false);
+      peq15ModelGroup.add(gltf.scene);
+    }
+  );
+  gltfLoader.load(
+    '/models/accessories/scopes/Silencer_Pack_01.glb',
+    (gltf) => {
+      configureLoadedScopeScene(gltf.scene, false);
+      gltf.scene.rotation.y = -Math.PI / 2;
+      suppressorGroup.add(gltf.scene);
+    }
+  );
   // Support KHR_materials_pbrSpecularGlossiness if loading directly from GitHub Raw fallback
   gltfLoader.register((parser) => ({
     name: 'KHR_materials_pbrSpecularGlossiness',
@@ -1463,11 +1378,27 @@ export function buildTacticalWeaponRig(
           child.visible = false;
         }
         if (
-          opts.weaponId === 'M4_CARBINE' &&
-          (child.name === 'scope' ||
-            child.name === 'scope_carbine_0' ||
-            child.name === 'lens' ||
-            child.name === 'lens_lens_0')
+          ((opts.weaponId === 'M4_CARBINE' || opts.weaponId === 'CARBINE_AR') &&
+            (child.name === 'scope' ||
+              child.name === 'scope_carbine_0' ||
+              child.name === 'lens' ||
+              child.name === 'lens_lens_0')) ||
+          (opts.weaponId === 'AK12_RIFLE' &&
+            (child.name === 'aim' ||
+              child.name === 'aim_0' ||
+              child.name === 'lense' ||
+              child.name === 'lense_0')) ||
+          (opts.weaponId === 'SHOTGUN_SPAS' &&
+            (child.name === 'Automatic_Shotgun_Sight_02' ||
+              child.name === 'Automatic_Shotgun_Sight_Glasses')) ||
+          (opts.weaponId === 'SNIPER_BOLT' &&
+            (child.name === 'scope' ||
+              child.name === 'scope_sniper_0' ||
+              child.name === 'scoperender' ||
+              child.name === 'scoperender_sniper_0' ||
+              child.name === 'reticle_scopereticle_0' ||
+              child.name === 'lens' ||
+              child.name === 'lens_lens_0'))
         ) {
           entry.builtInOpticNodes.push(child);
         }
@@ -1487,7 +1418,7 @@ export function buildTacticalWeaponRig(
             }
             const matName = (std.name || '').toLowerCase();
             if (
-              opts.weaponId === 'M4_CARBINE' &&
+              (opts.weaponId === 'M4_CARBINE' || opts.weaponId === 'CARBINE_AR') &&
               (matName === 'lens' || m.name.toLowerCase().includes('lens_lens'))
             ) {
               std.transparent = true;
@@ -1561,6 +1492,7 @@ export function buildTacticalWeaponRig(
                 akReticle.renderOrder = 14;
                 localMat.decompose(akReticle.position, akReticle.quaternion, akReticle.scale);
                 bone.add(akReticle);
+                entry.builtInOpticNodes.push(akReticle);
               }
             }
           }
@@ -1807,11 +1739,11 @@ export function buildTacticalWeaponRig(
       weaponId: 'CARBINE_AR',
       localUrl: CARBINE_AR_LOCAL_URL,
       githubUrl: CARBINE_AR_GITHUB_RAW_URL,
-      scale: 0.01,
+      scale: 0.58,
       rotY: Math.PI,
-      pos: [-0.012, -0.088, 0.05],
+      pos: [-0.015, -0.228, 0.105],
       mainBoneName: 'carbine',
-      mainBoneScale: 0.01,
+      mainBoneScale: 0.012,
       subclipWindows: {
         Fire: [0.0, 0.26],
         Reload_Empty: [0.33, 2.27],
@@ -1870,7 +1802,7 @@ export function buildTacticalWeaponRig(
       weaponId: 'L49_LMG',
       localUrl: L49_LMG_LOCAL_URL,
       githubUrl: L49_LMG_GITHUB_RAW_URL,
-      scale: 0.01,
+      scale: 1.0,
       rotY: Math.PI,
       pos: [-0.018, -0.095, 0.04],
       mainBoneName: 'LMG',
@@ -2106,11 +2038,18 @@ export function buildTacticalWeaponRig(
       ejectionPortWorldPos.position.set(0.024, 0.006, 0.01);
     }
 
-    opticsContainer.visible =
-      weaponId !== 'AK12_RIFLE' &&
-      weaponId !== 'KNIFE_TACTICAL' &&
-      weaponId !== 'SHOTGUN_12' &&
-      weaponId !== 'SHOTGUN_SPAS';
+    const railMount = WEAPON_RAIL_MOUNTS[weaponId];
+    if (railMount) {
+      opticsContainer.position.set(
+        railMount.pos[0],
+        railMount.pos[1],
+        railMount.pos[2]
+      );
+      opticsContainer.scale.setScalar(railMount.scale);
+    }
+
+    peq15ModelGroup.position.copy(laserOriginWorldPos.position);
+    opticsContainer.visible = weaponId !== 'KNIFE_TACTICAL';
     leftHandGroup.position.copy(leftBasePos);
     leftHandGroup.rotation.copy(leftBaseEuler);
     rightHandGroup.position.copy(rightBasePos);
@@ -2324,16 +2263,20 @@ export function buildTacticalWeaponRig(
 
     const activeEntry = weaponPacks[activeWeapon];
     const akEntry = weaponPacks.AK47_RIFLE;
-    if (
-      activeWeapon === 'M4_CARBINE' &&
-      activeEntry &&
-      activeEntry.builtInOpticNodes.length > 0
-    ) {
-      const showBuiltIn = !holoSightGroup.visible && !lpvoScopeGroup.visible;
+    if (activeEntry && activeEntry.builtInOpticNodes.length > 0) {
+      const hasCustom3DScope =
+        currentOpticType !== 'iron' ||
+        redDotScopeGroup.visible ||
+        kolimatorScopeGroup.visible ||
+        holoSightGroup.visible ||
+        lpvoScopeGroup.visible;
+      const showBuiltIn = !hasCustom3DScope;
       for (let i = 0; i < activeEntry.builtInOpticNodes.length; i++) {
         activeEntry.builtInOpticNodes[i].visible = showBuiltIn;
       }
     }
+    peq15ModelGroup.visible =
+      peqLaserBeam.visible && activeWeapon !== 'KNIFE_TACTICAL';
 
     const busy =
       !!activeEntry?.loaded &&
@@ -2489,11 +2432,12 @@ export function buildTacticalWeaponRig(
 
     const applyBoneMotion = (
       entry: AnimatedWeaponPackEntry,
-      damp = 24
+      damp = 24,
+      adsScale = 1.0
     ): void => {
       const b = entry.mainBoneNode!;
       const r = entry.mainBoneRestPos!;
-      const s = entry.mainBoneScale;
+      const s = entry.mainBoneScale * adsScale;
       const sign = entry.invertZ ? -1 : 1;
       const targetX = THREE.MathUtils.clamp(sign * (b.position.x - r.x) * s, -0.04, 0.04);
       const targetY = THREE.MathUtils.clamp((b.position.y - r.y) * s, -0.04, 0.04);
@@ -2518,10 +2462,8 @@ export function buildTacticalWeaponRig(
       );
     };
 
-    if (useAkDonor && akEntry?.mainBoneNode && akEntry.mainBoneRestPos) {
-      applyBoneMotion(akEntry, 20);
-    } else if (activeEntry?.loaded && activeEntry.mainBoneNode && activeEntry.mainBoneRestPos) {
-      applyBoneMotion(activeEntry, 24);
+    if (activeEntry?.loaded && activeEntry.mainBoneNode && activeEntry.mainBoneRestPos) {
+      applyBoneMotion(activeEntry, 24, isAds ? 0.0 : 1.0);
     } else {
       weaponMotionAnchor.position.set(0, 0, 0);
       weaponMotionAnchor.quaternion.identity();
@@ -2613,10 +2555,13 @@ export function buildTacticalWeaponRig(
     lpvoScopeGroup,
     lpvoReticleMesh,
     lpvoThrowLever,
+    redDotScopeGroup,
+    kolimatorScopeGroup,
     ironSightsGroup,
     cantedSightGroup,
     cantedReticleMesh,
     peqLaserBeam,
+    setOpticType,
     leftHandGroup,
     rightHandGroup,
     rightTriggerFinger,
@@ -2651,6 +2596,20 @@ export function getOpticAdsTransform(
       pos: new THREE.Vector3(-0.048, -0.051, -0.22),
       rotZ: Math.PI / 4,
     };
+  }
+  if (optic !== 'iron' && activeWeapon !== 'KNIFE_TACTICAL') {
+    const rail = WEAPON_RAIL_MOUNTS[activeWeapon];
+    const spec = SCOPE_OPTICAL_CENTERS[optic];
+    if (rail && spec) {
+      return {
+        pos: new THREE.Vector3(
+          -rail.pos[0],
+          -(rail.pos[1] + rail.scale * spec.opticalHeightY),
+          -(rail.pos[2] + rail.scale * spec.rearLensZ) - spec.eyeRelief
+        ),
+        rotZ: 0,
+      };
+    }
   }
   if (activeWeapon === 'AK12_RIFLE') {
     // Realistic Eye Relief on AK-12's native scope: centered at (-0.0004, 0.0520), rear bezel ~12.8cm -> ~48% screen

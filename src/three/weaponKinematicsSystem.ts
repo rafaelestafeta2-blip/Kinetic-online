@@ -40,6 +40,18 @@ export function updateWeaponKinematicsAndOptics(engine: any, dt: number): void {
     } else if (canAds) {
       if (engine.state.cantedActive) {
         targetFov = 60;
+      } else if (engine.state.optic === 'lpvo') {
+        targetFov = THREE.MathUtils.clamp(
+          50 - (engine.state.lpvoZoom - 1) * 4.5,
+          34,
+          50
+        );
+      } else if (engine.state.optic === 'holo') {
+        targetFov = 54;
+      } else if (engine.state.optic === 'kolimator') {
+        targetFov = 57;
+      } else if (engine.state.optic === 'red_dot') {
+        targetFov = 59;
       } else if (engine.state.activeWeapon === 'SNIPER_BOLT') {
         targetFov = 14;
       } else if (engine.state.activeWeapon === 'SNIPER_TACTICAL') {
@@ -47,8 +59,6 @@ export function updateWeaponKinematicsAndOptics(engine: any, dt: number): void {
       } else if (engine.state.activeWeapon === 'AK12_RIFLE') {
         // Moderate 2.1x optical zoom on AK-12's native scope keeping ~48% bezel and upper receiver crisp
         targetFov = 34;
-      } else if (engine.state.optic === 'lpvo') {
-        targetFov = THREE.MathUtils.clamp(54 - (engine.state.lpvoZoom - 1) * 4.5, 36, 54);
       } else {
         targetFov = 58;
       }
@@ -411,10 +421,11 @@ export function updateWeaponKinematicsAndOptics(engine: any, dt: number): void {
       targetRotZ + boltTiltRotZ - magCheckAlpha * 0.42
     );
 
-    // Hide 3D weapon viewmodel when scoped sniper, holding grenade, or presenting class kit
+    // Hide 3D weapon viewmodel when scoped sniper (native iron/8x), holding grenade, or presenting class kit
     const isSniperScoped =
       (engine.state.activeWeapon === 'SNIPER_BOLT' ||
         engine.state.activeWeapon === 'SNIPER_TACTICAL') &&
+      engine.state.optic === 'iron' &&
       !engine.state.cantedActive &&
       engine.state.adsAlpha > 0.82;
     const holdingClassKit =

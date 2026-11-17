@@ -120,15 +120,36 @@ export function playShellCasingDrop3D(
     ? 0.28
     : computePan(shooterPos, listenerPos, listenerYaw);
 
+  const isShotgun =
+    weaponId === 'SHOTGUN_12' || weaponId === 'SHOTGUN_SPAS';
   const isHeavyBrass =
     weaponId === 'AK47_RIFLE' ||
     weaponId === 'AK12_RIFLE' ||
     weaponId === 'SNIPER_BOLT' ||
     weaponId === 'SNIPER_TACTICAL';
   const firstBounceDelay =
-    weaponId === 'SNIPER_BOLT' ? 0.48 : 0.24 + Math.random() * 0.05;
+    weaponId === 'SNIPER_BOLT'
+      ? 0.48
+      : weaponId === 'SHOTGUN_12'
+        ? 0.34 + Math.random() * 0.04
+        : weaponId === 'SHOTGUN_SPAS'
+          ? 0.22 + Math.random() * 0.04
+          : 0.24 + Math.random() * 0.05;
   const realPitch =
-    (isHeavyBrass ? 0.92 : 1.04) + (Math.random() - 0.5) * 0.08;
+    (isShotgun ? 0.98 : isHeavyBrass ? 0.92 : 1.04) +
+    (Math.random() - 0.5) * 0.08;
+
+  if (
+    isShotgun &&
+    soundEngine.playShotgunShellDrop3D(
+      panVal,
+      Math.min(0.95, atten * 3.1),
+      realPitch,
+      firstBounceDelay
+    )
+  ) {
+    return;
+  }
 
   if (
     playRealShellCasingBounce(

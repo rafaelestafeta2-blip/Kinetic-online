@@ -50,7 +50,9 @@ export function updateReloadStateMachine(engine: any, dt: number): void {
     const hasCustomReloadSound =
       engine.state.activeWeapon === 'P50_PISTOL' ||
       engine.state.activeWeapon === 'M4_CARBINE' ||
-      engine.state.activeWeapon === 'CARBINE_AR';
+      engine.state.activeWeapon === 'CARBINE_AR' ||
+      engine.state.activeWeapon === 'SHOTGUN_12' ||
+      engine.state.activeWeapon === 'SHOTGUN_SPAS';
 
     if (p < magOutEnd) {
       // STAGE 1: MAG_OUT

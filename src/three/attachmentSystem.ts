@@ -4,6 +4,7 @@ import { WeaponId } from '../types/game';
 
 export type MuzzleType =
   | 'NONE'
+  | 'SILENCER_PACK'
   | 'SL01_LONG'
   | 'SC01_SHORT'
   | 'FH01_FLASH_HIDER'
@@ -195,6 +196,7 @@ export class WeaponAttachmentSystem {
     const gltfLoader = new GLTFLoader();
 
     const muzzleDefs: Array<{ type: MuzzleType; url: string }> = [
+      { type: 'SILENCER_PACK', url: '/models/accessories/scopes/Silencer_Pack_01.glb' },
       { type: 'SL01_LONG', url: '/models/accessories/SL01_Slim_Long_Suppressor.glb' },
       { type: 'SC01_SHORT', url: '/models/accessories/SC01_Short_Suppressor.glb' },
       { type: 'FH01_FLASH_HIDER', url: '/models/accessories/FH01_Petal_Flash_Hider.glb' },

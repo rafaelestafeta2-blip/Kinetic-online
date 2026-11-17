@@ -4,12 +4,18 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { soundEngine } from '../audio/soundEngine';
 import {
   getRankForXp,
+  getRequiredXpForOptic,
   getRequiredXpForWeapon,
+  isOpticUnlockedAtXp,
   isWeaponUnlockedAtXp,
   loadSavedPlayerCash,
 } from '../progression/ranks';
 import {
+  SCOPE_PACK_CATALOG,
+  equipWeaponOptic,
   equipWeaponSkin,
+  getCompatibleOpticsForWeapon,
+  getEquippedWeaponOptic,
   getEquippedWeaponSkinId,
   isWeaponSkinOwned,
   purchaseWeaponSkinWithCash,
@@ -52,7 +58,7 @@ import {
   createSecondaryWebGLRenderer,
   disposeSecondaryWebGLRenderer,
 } from '../three/webglContextGuard';
-import { WeaponId } from '../types/game';
+import { OpticType, WeaponId } from '../types/game';
 import { WarfaceRankIcon } from './WarfaceRankIcon';
 
 interface WeaponInspectionModalProps {
@@ -567,6 +573,9 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
   const [equippedSkinId, setEquippedSkinId] = useState<string>(() =>
     getEquippedWeaponSkinId(activeWeapon)
   );
+  const [equippedOptic, setEquippedOptic] = useState<OpticType>(() =>
+    getEquippedWeaponOptic(activeWeapon, playerXp)
+  );
   const [playerCash, setPlayerCash] = useState<number>(() =>
     loadSavedPlayerCash()
   );
@@ -579,6 +588,8 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
   const loaderRef = useRef<GLTFLoader | null>(null);
   const loadedWeaponModelRef = useRef<THREE.Object3D | null>(null);
   const loadedWeaponIdRef = useRef<WeaponId>(activeWeapon);
+  const opticMountGroupRef = useRef<THREE.Group | null>(null);
+  const builtInOpticNodesRef = useRef<THREE.Object3D[]>([]);
 
   const isDraggingRef = useRef(false);
   const lastXRef = useRef(0);
@@ -597,15 +608,20 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
   const isEquipped = activeWeapon === selectedId;
   const availableSkins = getAvailableSkinsForWeapon(selectedId);
   const currentSkinSpec = getSkinDefinition(equippedSkinId);
+  const compatibleOptics = getCompatibleOpticsForWeapon(selectedId);
+  const currentOpticSpec =
+    SCOPE_PACK_CATALOG[equippedOptic] || SCOPE_PACK_CATALOG.iron;
 
   useEffect(() => {
     setEquippedSkinId(getEquippedWeaponSkinId(selectedId));
+    setEquippedOptic(getEquippedWeaponOptic(selectedId, playerXp));
     const unsub = subscribePlayerInventory(() => {
       setEquippedSkinId(getEquippedWeaponSkinId(selectedId));
+      setEquippedOptic(getEquippedWeaponOptic(selectedId, playerXp));
       setPlayerCash(loadSavedPlayerCash());
     });
     return unsub;
-  }, [selectedId]);
+  }, [selectedId, playerXp]);
 
   useEffect(() => {
     if (
@@ -619,6 +635,83 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
       );
     }
   }, [selectedId, equippedSkinId]);
+
+  // Synchronize 3D Scope Pack model on the inspected weapon when equippedOptic changes
+  useEffect(() => {
+    const loader = loaderRef.current;
+    const opticMount = opticMountGroupRef.current;
+    if (!loader || !opticMount || loadedWeaponIdRef.current !== selectedId) {
+      return;
+    }
+
+    let cancelled = false;
+    while (opticMount.children.length > 0) {
+      opticMount.remove(opticMount.children[0]);
+    }
+
+    const showBuiltIn = equippedOptic === 'iron';
+    for (const node of builtInOpticNodesRef.current) {
+      node.visible = showBuiltIn;
+    }
+
+    if (equippedOptic === 'iron' || selectedId === 'KNIFE_TACTICAL') {
+      return;
+    }
+
+    const scopeSpec = SCOPE_PACK_CATALOG[equippedOptic];
+    if (!scopeSpec?.modelUrl) return;
+
+    loader.load(scopeSpec.modelUrl, (gltf) => {
+      if (cancelled) return;
+      const scopeScene = gltf.scene;
+      scopeScene.traverse((child) => {
+        const m = child as THREE.Mesh;
+        if (!m.isMesh) return;
+        m.frustumCulled = false;
+        const fixMat = (mat: THREE.Material) => {
+          const std = mat as THREE.MeshStandardMaterial;
+          if (!std) return;
+          if (std.map) {
+            std.map.colorSpace = THREE.SRGBColorSpace;
+            std.map.needsUpdate = true;
+          }
+          if (std.emissiveMap) {
+            std.emissiveMap.colorSpace = THREE.SRGBColorSpace;
+            std.emissiveMap.needsUpdate = true;
+          }
+          const mName = (std.name || m.name || '').toLowerCase();
+          if (mName.includes('glass')) {
+            std.transparent = true;
+            std.opacity = 0.08;
+            std.depthWrite = false;
+            std.side = THREE.FrontSide;
+            m.renderOrder = 14;
+          } else if (mName.includes('reticle')) {
+            std.transparent = true;
+            std.opacity = 0.98;
+            std.depthWrite = false;
+            std.side = THREE.DoubleSide;
+            m.renderOrder = 15;
+          } else {
+            std.transparent = false;
+            std.depthWrite = true;
+            std.side = THREE.FrontSide;
+          }
+          std.needsUpdate = true;
+        };
+        if (Array.isArray(m.material)) {
+          m.material.forEach(fixMat);
+        } else if (m.material) {
+          fixMat(m.material);
+        }
+      });
+      opticMount.add(scopeScene);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId, equippedOptic, isLoadingModel]);
 
   // Filter weapon list by category
   const weaponList = (Object.keys(WEAPON_SPECS) as WeaponId[]).filter((id) => {
@@ -788,11 +881,37 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
       const modelScene = gltf.scene;
 
       // 1) Strip all hand, arm, glove, shirt, and spare reload magazine meshes
+      const builtInOpticNodes: THREE.Object3D[] = [];
       modelScene.traverse((child) => {
         child.frustumCulled = false;
         if (isArmOrExtraMesh(child)) {
           child.visible = false;
           return;
+        }
+        if (
+          ((selectedId === 'M4_CARBINE' || selectedId === 'CARBINE_AR') &&
+            (child.name === 'scope' ||
+              child.name === 'scope_carbine_0' ||
+              child.name === 'lens' ||
+              child.name === 'lens_lens_0')) ||
+          (selectedId === 'AK12_RIFLE' &&
+            (child.name === 'aim' ||
+              child.name === 'aim_0' ||
+              child.name === 'lense' ||
+              child.name === 'lense_0')) ||
+          (selectedId === 'SHOTGUN_SPAS' &&
+            (child.name === 'Automatic_Shotgun_Sight_02' ||
+              child.name === 'Automatic_Shotgun_Sight_Glasses')) ||
+          (selectedId === 'SNIPER_BOLT' &&
+            (child.name === 'scope' ||
+              child.name === 'scope_sniper_0' ||
+              child.name === 'scoperender' ||
+              child.name === 'scoperender_sniper_0' ||
+              child.name === 'reticle_scopereticle_0' ||
+              child.name === 'lens' ||
+              child.name === 'lens_lens_0'))
+        ) {
+          builtInOpticNodes.push(child);
         }
         const m = child as THREE.Mesh;
         if (m.isMesh) {
@@ -866,9 +985,25 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
       });
 
       // 3) Compute exact world-space bounding box of ONLY visible weapon parts
+      const currentOptic = getEquippedWeaponOptic(selectedId, playerXp);
+      if (currentOptic !== 'iron') {
+        for (const node of builtInOpticNodes) {
+          node.visible = false;
+        }
+      }
+      builtInOpticNodesRef.current = builtInOpticNodes;
+
       const centeringGroup = new THREE.Group();
       centeringGroup.add(modelScene);
       modelScene.updateMatrixWorld(true);
+
+      const opticMount = new THREE.Group();
+      const facesNegZ =
+        selectedId === 'SHOTGUN_SPAS' ||
+        selectedId === 'AK12_RIFLE' ||
+        selectedId === 'SNIPER_TACTICAL' ||
+        selectedId === 'SMG_MP5';
+      opticMount.rotation.y = facesNegZ ? 0 : Math.PI;
 
       const box = computeVisibleWeaponBounds(modelScene);
       if (!box.isEmpty()) {
@@ -887,7 +1022,14 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
           -center.z * normScale
         );
         modelScene.scale.setScalar(normScale);
+
+        const topY = (size.y * normScale) * 0.42;
+        opticMount.position.set(0, topY, facesNegZ ? 0.03 : -0.03);
+        opticMount.scale.setScalar(wSpec.targetSpan * 1.05);
       }
+
+      centeringGroup.add(opticMount);
+      opticMountGroupRef.current = opticMount;
 
       // Set side-profile angle so weapon points cleanly across the viewing stage
       targetRotYRef.current = Math.PI * 0.45;
@@ -915,9 +1057,11 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
         initialSkin
       );
       procModel.rotation.x = -0.16;
+      builtInOpticNodesRef.current = [];
       const centeringGroup = new THREE.Group();
       centeringGroup.add(procModel);
       procModel.updateMatrixWorld(true);
+      const opticMount = new THREE.Group();
       const box = computeVisibleWeaponBounds(procModel);
       if (!box.isEmpty()) {
         const center = new THREE.Vector3();
@@ -932,7 +1076,11 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
           -center.z * normScale
         );
         procModel.scale.setScalar(normScale);
+        opticMount.position.set(0, (size.y * normScale) * 0.42, 0.02);
+        opticMount.scale.setScalar(wSpec.targetSpan * 1.05);
       }
+      centeringGroup.add(opticMount);
+      opticMountGroupRef.current = opticMount;
       targetRotYRef.current = Math.PI * 0.45;
       currentRotYRef.current = Math.PI * 0.45;
       targetRotXRef.current = 0.05;
@@ -1125,6 +1273,78 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
               </div>
             </div>
           </div>
+
+          {/* 3D Scope Pack Selector Box (Unlocked by Level) */}
+          {compatibleOptics.length > 1 && (
+            <div className="bg-black/60 border border-white/15 rounded-xl p-2.5 my-1">
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <span className="text-[9px] font-mono font-bold text-cyan-400 tracking-wider uppercase">
+                  MIRAS & SCOPES 3D (NÍVEL)
+                </span>
+                <span className="text-[9px] font-mono font-bold text-cyan-200 truncate max-w-[140px]">
+                  {currentOpticSpec.shortLabel} ·{' '}
+                  {currentOpticSpec.magnification}
+                </span>
+              </div>
+              <div className="grid grid-cols-5 gap-1">
+                {compatibleOptics.map((sSpec) => {
+                  const opticId = sSpec.id;
+                  const active = equippedOptic === opticId;
+                  const unlocked = isOpticUnlockedAtXp(opticId, playerXp);
+                  const reqOptic = getRequiredXpForOptic(opticId);
+                  return (
+                    <button
+                      key={opticId}
+                      type="button"
+                      disabled={!unlocked}
+                      title={`${sSpec.name} (${sSpec.magnification}) — ${sSpec.description}`}
+                      onClick={() => {
+                        if (!unlocked) {
+                          soundEngine.playMenuHover();
+                          return;
+                        }
+                        soundEngine.playMenuSelect();
+                        equipWeaponOptic(selectedId, opticId, playerXp);
+                        setEquippedOptic(opticId);
+                      }}
+                      className={`rounded-lg border px-1 py-1.5 text-center transition-all flex flex-col items-center justify-between gap-0.5 ${
+                        active
+                          ? 'bg-cyan-500/20 border-cyan-400 cursor-pointer shadow-[0_0_10px_rgba(34,211,238,0.28)]'
+                          : unlocked
+                            ? 'bg-black/50 border-white/12 hover:border-cyan-400/45 cursor-pointer'
+                            : 'bg-black/60 border-white/5 opacity-50 cursor-not-allowed'
+                      }`}
+                    >
+                      <span
+                        className={`text-[8px] font-mono font-bold truncate w-full ${
+                          active ? 'text-cyan-300' : 'text-white'
+                        }`}
+                      >
+                        {sSpec.shortLabel}
+                      </span>
+                      <span className="text-[7px] font-mono leading-tight">
+                        {unlocked ? (
+                          <span
+                            className={
+                              active
+                                ? 'text-emerald-400 font-bold'
+                                : 'text-slate-400'
+                            }
+                          >
+                            {active ? 'EQUIP. ✓' : sSpec.magnification}
+                          </span>
+                        ) : (
+                          <span className="text-amber-300 font-bold">
+                            🔒NV.{reqOptic.requiredLevel}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Skin & Camouflage Selector Box */}
           <div className="bg-black/60 border border-white/15 rounded-xl p-2.5 my-1">

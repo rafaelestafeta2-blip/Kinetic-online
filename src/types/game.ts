@@ -26,7 +26,7 @@ export type WeaponId =
   | 'SNIPER_BOLT'
   | 'SNIPER_TACTICAL'
   | 'KNIFE_TACTICAL';
-export type OpticType = 'holo' | 'lpvo' | 'iron';
+export type OpticType = 'iron' | 'red_dot' | 'kolimator' | 'holo' | 'lpvo';
 export type FireMode = 'SEMI' | 'BURST' | 'AUTO';
 export type GrenadeType = 'FRAG' | 'SMOKE';
 export type ReloadPhase =
@@ -163,6 +163,7 @@ export interface HudState {
   suppressorAttached: boolean;
   muzzleDevice:
     | 'NONE'
+    | 'SILENCER_PACK'
     | 'SL01_LONG'
     | 'SC01_SHORT'
     | 'FH01_FLASH_HIDER'

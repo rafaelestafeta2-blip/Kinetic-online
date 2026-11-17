@@ -107,6 +107,18 @@ export const SNIPER_BOLT_WAV_LOCAL_URL = '/sounds/sniper_bolt.wav';
 export const SNIPER_BOLT_WAV_GITHUB_RAW_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/daeab41ffa080f475b5f4359eebeb34f02ea5a44/Sound/Sniper/Sharp%2C_dry_mechanica_%231-1794123918265.wav';
 
+export const SHOTGUN_SHOT_WAV_LOCAL_URL = '/sounds/shotgun_shot.wav';
+export const SHOTGUN_SHOT_WAV_GITHUB_RAW_URL =
+  'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/e2eb6ef3c9dc0b1d27f6b8d3c2a4bf6ceafff4bf/Sound/Ahotgun/348718__deganoth__shotgun_a4.wav';
+
+export const SHOTGUN_RELOAD_WAV_LOCAL_URL = '/sounds/shotgun_reload.wav';
+export const SHOTGUN_RELOAD_WAV_GITHUB_RAW_URL =
+  'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/e2eb6ef3c9dc0b1d27f6b8d3c2a4bf6ceafff4bf/Sound/Ahotgun/621153__ktfreesound__shotgun-reload-m7.wav';
+
+export const SHOTGUN_SHELL_DROP_WAV_LOCAL_URL = '/sounds/shotgun_shell_drop.wav';
+export const SHOTGUN_SHELL_DROP_WAV_GITHUB_RAW_URL =
+  'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/e2eb6ef3c9dc0b1d27f6b8d3c2a4bf6ceafff4bf/Sound/Ahotgun/773860__mrgungus__12-guage-shotgun-shell-drop.wav';
+
 async function safeFetchAudioBuffer(localUrl: string, githubRawUrl?: string): Promise<ArrayBuffer | null> {
   try {
     const res = await fetch(localUrl).catch(() => null);
@@ -199,6 +211,26 @@ class TacticalSoundEngine {
   private sniperBoltDecoding = false;
   private sniperBoltAudioPool: HTMLAudioElement[] = [];
   private sniperBoltPoolIdx = 0;
+
+  // Real 12-Gauge Shotgun Audio Samples (Shot Blast, Shell Reload, Shell Drop)
+  private shotgunShotRawData: ArrayBuffer | null = null;
+  private shotgunShotBuffer: AudioBuffer | null = null;
+  private shotgunShotDecoding = false;
+  private shotgunShotAudioPool: HTMLAudioElement[] = [];
+  private shotgunShotPoolIdx = 0;
+
+  private shotgunReloadRawData: ArrayBuffer | null = null;
+  private shotgunReloadBuffer: AudioBuffer | null = null;
+  private shotgunReloadDecoding = false;
+  private shotgunReloadAudioPool: HTMLAudioElement[] = [];
+  private shotgunReloadPoolIdx = 0;
+
+  private shotgunShellDropRawData: ArrayBuffer | null = null;
+  private shotgunShellDropBuffer: AudioBuffer | null = null;
+  private shotgunShellDropDecoding = false;
+  private shotgunShellDropAudioPool: HTMLAudioElement[] = [];
+  private shotgunShellDropPoolIdx = 0;
+  private shotgunReloadTimers: Array<ReturnType<typeof setTimeout>> = [];
 
   // Real Grenade Audio Samples (Pin Pull, Throw, Explosion, Smoke Gas)
   private grenadePinRawData: ArrayBuffer | null = null;
@@ -322,6 +354,7 @@ class TacticalSoundEngine {
       this.preloadDryFireSample();
       this.preloadAk47Samples();
       this.preloadSniperSamples();
+      this.preloadShotgunSamples();
       this.preloadGrenadeSamples();
       this.preloadMovementAndSwapSamples();
     }
@@ -559,6 +592,7 @@ class TacticalSoundEngine {
     if (this.ctx) {
       this.tryDecodeAk47Samples(this.ctx);
       this.tryDecodeSniperSamples(this.ctx);
+      this.tryDecodeShotgunSamples(this.ctx);
       this.tryDecodeGrenadeSamples(this.ctx);
       this.tryDecodeMovementAndSwapSamples(this.ctx);
     }
@@ -738,6 +772,118 @@ class TacticalSoundEngine {
         })
         .catch(() => {
           this.sniperBoltDecoding = false;
+        });
+    }
+  }
+
+  private preloadShotgunSamples(): void {
+    // 1. 12-Gauge Shotgun Blast WAV (348718__deganoth__shotgun_a4.wav)
+    for (let i = 0; i < 4; i++) {
+      const audio = new Audio(SHOTGUN_SHOT_WAV_LOCAL_URL);
+      audio.preload = 'auto';
+      audio.onerror = () => {
+        audio.src = SHOTGUN_SHOT_WAV_GITHUB_RAW_URL;
+      };
+      this.shotgunShotAudioPool.push(audio);
+    }
+    void safeFetchAudioBuffer(
+      SHOTGUN_SHOT_WAV_LOCAL_URL,
+      SHOTGUN_SHOT_WAV_GITHUB_RAW_URL
+    ).then((buf) => {
+      if (buf) {
+        this.shotgunShotRawData = buf;
+        if (this.ctx) this.tryDecodeShotgunSamples(this.ctx);
+      }
+    });
+
+    // 2. 12-Gauge Shotgun Reload WAV (621153__ktfreesound__shotgun-reload-m7.wav)
+    for (let i = 0; i < 4; i++) {
+      const audio = new Audio(SHOTGUN_RELOAD_WAV_LOCAL_URL);
+      audio.preload = 'auto';
+      audio.onerror = () => {
+        audio.src = SHOTGUN_RELOAD_WAV_GITHUB_RAW_URL;
+      };
+      this.shotgunReloadAudioPool.push(audio);
+    }
+    void safeFetchAudioBuffer(
+      SHOTGUN_RELOAD_WAV_LOCAL_URL,
+      SHOTGUN_RELOAD_WAV_GITHUB_RAW_URL
+    ).then((buf) => {
+      if (buf) {
+        this.shotgunReloadRawData = buf;
+        if (this.ctx) this.tryDecodeShotgunSamples(this.ctx);
+      }
+    });
+
+    // 3. 12-Gauge Shotgun Shell Drop WAV (773860__mrgungus__12-guage-shotgun-shell-drop.wav)
+    for (let i = 0; i < 4; i++) {
+      const audio = new Audio(SHOTGUN_SHELL_DROP_WAV_LOCAL_URL);
+      audio.preload = 'auto';
+      audio.onerror = () => {
+        audio.src = SHOTGUN_SHELL_DROP_WAV_GITHUB_RAW_URL;
+      };
+      this.shotgunShellDropAudioPool.push(audio);
+    }
+    void safeFetchAudioBuffer(
+      SHOTGUN_SHELL_DROP_WAV_LOCAL_URL,
+      SHOTGUN_SHELL_DROP_WAV_GITHUB_RAW_URL
+    ).then((buf) => {
+      if (buf) {
+        this.shotgunShellDropRawData = buf;
+        if (this.ctx) this.tryDecodeShotgunSamples(this.ctx);
+      }
+    });
+  }
+
+  private tryDecodeShotgunSamples(ctx: AudioContext): void {
+    if (
+      !this.shotgunShotBuffer &&
+      !this.shotgunShotDecoding &&
+      this.shotgunShotRawData
+    ) {
+      this.shotgunShotDecoding = true;
+      ctx
+        .decodeAudioData(this.shotgunShotRawData.slice(0))
+        .then((decoded) => {
+          this.shotgunShotBuffer = decoded;
+          this.shotgunShotDecoding = false;
+        })
+        .catch(() => {
+          this.shotgunShotDecoding = false;
+        });
+    }
+
+    if (
+      !this.shotgunReloadBuffer &&
+      !this.shotgunReloadDecoding &&
+      this.shotgunReloadRawData
+    ) {
+      this.shotgunReloadDecoding = true;
+      ctx
+        .decodeAudioData(this.shotgunReloadRawData.slice(0))
+        .then((decoded) => {
+          this.shotgunReloadBuffer = decoded;
+          this.shotgunReloadDecoding = false;
+        })
+        .catch(() => {
+          this.shotgunReloadDecoding = false;
+        });
+    }
+
+    if (
+      !this.shotgunShellDropBuffer &&
+      !this.shotgunShellDropDecoding &&
+      this.shotgunShellDropRawData
+    ) {
+      this.shotgunShellDropDecoding = true;
+      ctx
+        .decodeAudioData(this.shotgunShellDropRawData.slice(0))
+        .then((decoded) => {
+          this.shotgunShellDropBuffer = decoded;
+          this.shotgunShellDropDecoding = false;
+        })
+        .catch(() => {
+          this.shotgunShellDropDecoding = false;
         });
     }
   }
@@ -1037,12 +1183,13 @@ class TacticalSoundEngine {
         },
       },
       {
-        label: 'SAMPLES DE DISPARO (M4A1, AK-47, MARK 23 & SNIPER)',
+        label: 'SAMPLES DE DISPARO (M4A1, AK-47, SHOTGUN 12GA, MARK 23 & SNIPER)',
         run: async () => {
           if (ctx) {
             this.tryDecodeM4a1Shot(ctx);
             this.tryDecodeDryFire(ctx);
             this.tryDecodeSniperSamples(ctx);
+            this.tryDecodeShotgunSamples(ctx);
           }
         },
       },
@@ -1244,50 +1391,58 @@ class TacticalSoundEngine {
       return;
     }
 
-    // 5. 12-GAUGE BUCKSHOT SHOTGUN BLAST (SHOTGUN_12 PUMP & SHOTGUN_SPAS COMBAT)
+    // 5. REAL 12-GAUGE BUCKSHOT SHOTGUN BLAST WAV (SHOTGUN_12 PUMP & SHOTGUN_SPAS COMBAT)
     if (weaponId === 'SHOTGUN_12' || weaponId === 'SHOTGUN_SPAS') {
-      const boomOsc = ctx.createOscillator();
-      const boomGain = ctx.createGain();
-      boomOsc.type = 'triangle';
-      boomOsc.frequency.setValueAtTime(suppressed ? 95 : 135, now);
-      boomOsc.frequency.exponentialRampToValueAtTime(28, now + (suppressed ? 0.14 : 0.24));
-      boomGain.gain.setValueAtTime(suppressed ? 0.52 : 0.95, now);
-      boomGain.gain.exponentialRampToValueAtTime(0.001, now + (suppressed ? 0.16 : 0.28));
-      boomOsc.connect(boomGain);
-      boomGain.connect(ctx.destination);
-      boomOsc.start(now);
-      boomOsc.stop(now + 0.3);
+      if (this.shotgunShotBuffer) {
+        const src = ctx.createBufferSource();
+        src.buffer = this.shotgunShotBuffer;
+        // Slightly deeper pitch for pump-action M870, slightly crisper for semi-auto SPAS-12
+        const basePitch = weaponId === 'SHOTGUN_12' ? 0.97 : 1.03;
+        src.playbackRate.setValueAtTime(
+          basePitch + (Math.random() - 0.5) * 0.04,
+          now
+        );
 
-      const noiseSrc = ctx.createBufferSource();
-      noiseSrc.buffer = this.noiseBuffer;
-      const bp = ctx.createBiquadFilter();
-      bp.type = 'lowpass';
-      bp.frequency.setValueAtTime(suppressed ? 1600 : 5200, now);
-      bp.frequency.exponentialRampToValueAtTime(280, now + (suppressed ? 0.18 : 0.34));
-      const nGain = ctx.createGain();
-      nGain.gain.setValueAtTime(suppressed ? 0.55 : 1.05, now);
-      nGain.gain.exponentialRampToValueAtTime(0.001, now + (suppressed ? 0.19 : 0.36));
-      noiseSrc.connect(bp);
-      bp.connect(nGain);
-      nGain.connect(ctx.destination);
-      noiseSrc.start(now);
-      noiseSrc.stop(now + 0.38);
-
-      if (weaponId === 'SHOTGUN_12') {
-        // Metallic pump-action slide rack click-clack 230ms after shot
-        [0.22, 0.34].forEach((offset, idx) => {
-          const clkOsc = ctx.createOscillator();
-          const clkGain = ctx.createGain();
-          clkOsc.type = 'square';
-          clkOsc.frequency.setValueAtTime(idx === 0 ? 1850 : 2250, now + offset);
-          clkOsc.frequency.exponentialRampToValueAtTime(640, now + offset + 0.055);
-          clkGain.gain.setValueAtTime(0.14, now + offset);
-          clkGain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.06);
-          clkOsc.connect(clkGain);
-          clkGain.connect(ctx.destination);
-          clkOsc.start(now + offset);
-          clkOsc.stop(now + offset + 0.065);
-        });
+        const gain = ctx.createGain();
+        if (suppressed) {
+          const lp = ctx.createBiquadFilter();
+          lp.type = 'lowpass';
+          lp.frequency.setValueAtTime(1450, now);
+          gain.gain.setValueAtTime(0.65, now);
+          src.connect(lp);
+          lp.connect(gain);
+        } else {
+          gain.gain.setValueAtTime(1.0, now);
+          src.connect(gain);
+        }
+        gain.connect(ctx.destination);
+        src.start(now);
+      } else if (this.shotgunShotAudioPool.length > 0) {
+        const el = this.shotgunShotAudioPool[this.shotgunShotPoolIdx];
+        this.shotgunShotPoolIdx =
+          (this.shotgunShotPoolIdx + 1) % this.shotgunShotAudioPool.length;
+        el.currentTime = 0;
+        el.playbackRate = weaponId === 'SHOTGUN_12' ? 0.97 : 1.03;
+        el.volume = suppressed ? 0.65 : 1.0;
+        el.play().catch(() => {});
+      } else {
+        const boomOsc = ctx.createOscillator();
+        const boomGain = ctx.createGain();
+        boomOsc.type = 'triangle';
+        boomOsc.frequency.setValueAtTime(suppressed ? 95 : 135, now);
+        boomOsc.frequency.exponentialRampToValueAtTime(
+          28,
+          now + (suppressed ? 0.14 : 0.24)
+        );
+        boomGain.gain.setValueAtTime(suppressed ? 0.52 : 0.95, now);
+        boomGain.gain.exponentialRampToValueAtTime(
+          0.001,
+          now + (suppressed ? 0.16 : 0.28)
+        );
+        boomOsc.connect(boomGain);
+        boomGain.connect(ctx.destination);
+        boomOsc.start(now);
+        boomOsc.stop(now + 0.3);
       }
       return;
     }
@@ -1583,6 +1738,111 @@ class TacticalSoundEngine {
     }
 
     this.playReloadStage('CHARGING_HANDLE');
+  }
+
+  public playShotgunShellInsert(pitchRate = 1.0): void {
+    if (this.muted) return;
+    const ctx = this.ensureContext();
+
+    if (ctx && this.shotgunReloadBuffer) {
+      const src = ctx.createBufferSource();
+      src.buffer = this.shotgunReloadBuffer;
+      src.playbackRate.setValueAtTime(
+        pitchRate + (Math.random() - 0.5) * 0.05,
+        ctx.currentTime
+      );
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.96, ctx.currentTime);
+      src.connect(gain);
+      gain.connect(ctx.destination);
+      src.start();
+      return;
+    }
+
+    if (this.shotgunReloadAudioPool.length > 0) {
+      const el = this.shotgunReloadAudioPool[this.shotgunReloadPoolIdx];
+      this.shotgunReloadPoolIdx =
+        (this.shotgunReloadPoolIdx + 1) % this.shotgunReloadAudioPool.length;
+      el.currentTime = 0;
+      el.playbackRate = pitchRate;
+      el.volume = 0.96;
+      el.play().catch(() => {});
+      return;
+    }
+
+    this.playReloadStage('MAG_IN');
+  }
+
+  public playShotgunFullReload(weaponId: WeaponId, isDry = false): void {
+    if (this.muted) return;
+    this.shotgunReloadTimers.forEach((t) => clearTimeout(t));
+    this.shotgunReloadTimers = [];
+
+    const basePitch = weaponId === 'SHOTGUN_12' ? 0.96 : 1.04;
+    const shellOffsetsMs = isDry
+      ? [60, 460, 860, 1260, 1660]
+      : [60, 440, 820, 1200];
+
+    shellOffsetsMs.forEach((delayMs, idx) => {
+      const timer = setTimeout(() => {
+        if (this.muted) return;
+        this.playShotgunShellInsert(basePitch + idx * 0.015);
+      }, delayMs);
+      this.shotgunReloadTimers.push(timer);
+    });
+  }
+
+  public playShotgunShellDrop3D(
+    panVal = 0,
+    gainVal = 0.75,
+    pitchVal = 1.0,
+    delaySec = 0.22
+  ): boolean {
+    if (this.muted) return false;
+    const ctx = this.ensureContext();
+
+    if (ctx && this.shotgunShellDropBuffer) {
+      const startAt = ctx.currentTime + Math.max(0, delaySec);
+      const src = ctx.createBufferSource();
+      src.buffer = this.shotgunShellDropBuffer;
+      src.playbackRate.setValueAtTime(pitchVal, startAt);
+
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(Math.min(1, Math.max(0.02, gainVal)), startAt);
+
+      if (typeof ctx.createStereoPanner === 'function') {
+        const panner = ctx.createStereoPanner();
+        panner.pan.setValueAtTime(
+          Math.max(-0.95, Math.min(0.95, panVal)),
+          startAt
+        );
+        src.connect(gain);
+        gain.connect(panner);
+        panner.connect(ctx.destination);
+      } else {
+        src.connect(gain);
+        gain.connect(ctx.destination);
+      }
+      src.start(startAt);
+      return true;
+    }
+
+    if (this.shotgunShellDropAudioPool.length > 0) {
+      const el = this.shotgunShellDropAudioPool[this.shotgunShellDropPoolIdx];
+      this.shotgunShellDropPoolIdx =
+        (this.shotgunShellDropPoolIdx + 1) %
+        this.shotgunShellDropAudioPool.length;
+      setTimeout(() => {
+        if (this.muted) return;
+        el.currentTime = 0;
+        el.playbackRate = pitchVal;
+        el.volume = Math.min(1, Math.max(0.05, gainVal));
+        el.play().catch(() => {});
+      }, Math.max(0, Math.round(delaySec * 1000)));
+      return true;
+    }
+
+    return false;
   }
 
   public playReloadStage(stage: 'MAG_OUT' | 'MAG_DROP_FLOOR' | 'MAG_IN' | 'BOLT_SLAP' | 'CHARGING_HANDLE'): void {
@@ -2656,6 +2916,7 @@ class TacticalSoundEngine {
     m4a1ShotBuffer: AudioBuffer | null;
     ak47ShotBuffer: AudioBuffer | null;
     sniperShotBuffer: AudioBuffer | null;
+    shotgunShotBuffer: AudioBuffer | null;
     desertEagleBuffer: AudioBuffer | null;
     footstepRunBuffer: AudioBuffer | null;
   } {
@@ -2666,6 +2927,7 @@ class TacticalSoundEngine {
       m4a1ShotBuffer: this.m4a1ShotBuffer,
       ak47ShotBuffer: this.ak47ShotBuffer,
       sniperShotBuffer: this.sniperShotBuffer,
+      shotgunShotBuffer: this.shotgunShotBuffer,
       desertEagleBuffer: this.desertEagleBuffer,
       footstepRunBuffer: this.footstepRunBuffer,
     };

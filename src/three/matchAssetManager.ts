@@ -41,6 +41,7 @@ import {
   prefetchMapAssetsForMode,
 } from './mapAssetCatalog';
 import {
+  consolidateDuplicateMeshesToInstances,
   markGroupStatic,
   optimizeSceneGraph,
   protectAnimatedSubtrees,
@@ -469,6 +470,7 @@ export async function prepareMatchArena(
     null;
 
   if (mapOnlyGroup) {
+    consolidateDuplicateMeshesToInstances(mapOnlyGroup, 3);
     markGroupStatic(mapOnlyGroup);
     optimizeSceneGraph(mapOnlyGroup, {
       sharePlainMaterials: true,
@@ -486,7 +488,7 @@ export async function prepareMatchArena(
   }
 
   if (!isSoftwareGl) {
-    const texturesToUpload: THREE.Texture[] = [];
+    const textureSet = new Set<THREE.Texture>();
     activeGroup.traverse((obj) => {
       if ((obj as THREE.Mesh).isMesh) {
         const mesh = obj as THREE.Mesh;
@@ -495,12 +497,13 @@ export async function prepareMatchArena(
           : [mesh.material];
         mats.forEach((m) => {
           const std = m as THREE.MeshStandardMaterial;
-          if (std?.map) texturesToUpload.push(std.map);
-          if (std?.normalMap) texturesToUpload.push(std.normalMap);
-          if (std?.roughnessMap) texturesToUpload.push(std.roughnessMap);
+          if (std?.map) textureSet.add(std.map);
+          if (std?.normalMap) textureSet.add(std.normalMap);
+          if (std?.roughnessMap) textureSet.add(std.roughnessMap);
         });
       }
     });
+    const texturesToUpload = Array.from(textureSet);
 
     const totalTex = Math.max(1, texturesToUpload.length);
     for (let i = 0; i < texturesToUpload.length; i++) {

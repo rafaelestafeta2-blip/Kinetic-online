@@ -43,8 +43,11 @@ import {
 } from '../progression/ranks';
 import { canGrantMatchProgressionRewards } from '../progression/matchProgressionGate';
 import {
+  equipWeaponOptic,
   getClassCombatModifiers,
+  getEquippedWeaponOptic,
   getEquippedWeaponSkinId,
+  isOpticCompatibleWithWeapon,
   subscribePlayerInventory,
 } from '../progression/loadoutSystem';
 import { BallisticsFXPool } from './ballisticsPool';
@@ -638,6 +641,11 @@ export class TacticalFPSEngine {
     this.unsubInventory = subscribePlayerInventory(() => {
       const w = this.state.activeWeapon;
       this.weaponRig.applyWeaponSkin(w, getEquippedWeaponSkinId(w));
+      const eqOptic = getEquippedWeaponOptic(w, this.state.playerXp);
+      if (this.state.optic !== eqOptic) {
+        this.state.optic = eqOptic;
+        this.weaponRig.setOpticType(eqOptic);
+      }
     });
     this.playerDeathTp = new PlayerDeathThirdPersonController(
       this.scene,
@@ -712,10 +720,8 @@ export class TacticalFPSEngine {
     this.shootableMeshes = standerData.shootableMeshes;
     this.wallStandPositions = standerData.wallStandPositions;
 
-    // Start with built-in Iron Sights on the default P50 Heavy Pistol
-    this.weaponRig.holoSightGroup.visible = false;
-    this.weaponRig.lpvoScopeGroup.visible = false;
-    this.weaponRig.ironSightsGroup.visible = true;
+    // Initialize optic visibility on the starting weapon
+    this.weaponRig.setOpticType('iron');
 
     this.fxPool = new BallisticsFXPool(this.scene);
     this.grenadeSystem = new TacticalGrenadeSystem(
@@ -1448,19 +1454,28 @@ export class TacticalFPSEngine {
     this.emitHud();
   }
 
-  public setOptic(optic: OpticType): void {
-    this.state.optic = optic;
+  public setOptic(optic: OpticType, persistToInventory = true): void {
+    const validOptic: OpticType = isOpticCompatibleWithWeapon(
+      this.state.activeWeapon,
+      optic
+    )
+      ? optic
+      : 'iron';
+    this.state.optic = validOptic;
     this.state.cantedActive = false;
     this.weaponRig.cantedSightGroup.visible = false;
-    this.weaponRig.holoSightGroup.visible = optic === 'holo';
-    this.weaponRig.lpvoScopeGroup.visible = optic === 'lpvo';
-    this.weaponRig.ironSightsGroup.visible = optic === 'iron';
+    this.weaponRig.setOpticType(validOptic);
+    if (persistToInventory && this.state.activeWeapon !== 'KNIFE_TACTICAL') {
+      equipWeaponOptic(this.state.activeWeapon, validOptic, this.state.playerXp);
+    }
     const labels: Record<OpticType, string> = {
-      iron: 'MIRA DE FERRO PADRÃO ATIVADA',
-      holo: 'MIRA HOLOGRÁFICA EOTECH ATIVADA',
-      lpvo: 'LUNETA TÁTICA LPVO (1-4X) ATIVADA',
+      iron: 'MIRA NATIVA / FERRO PADRÃO ATIVADA',
+      red_dot: 'AIMPOINT MICRO RED DOT 3D ACOPLADA',
+      kolimator: 'KOLIMATOR KOBRA REFLEX 3D ACOPLADA',
+      holo: 'MIRA HOLOGRÁFICA EOTECH XPS2 3D ACOPLADA',
+      lpvo: 'LUNETA TÁTICA SCOPE LPVO (1-4X) 3D ACOPLADA',
     };
-    this.state.reloadTypeLabel = labels[optic];
+    this.state.reloadTypeLabel = labels[validOptic];
     this.magCheckTimer = 1.6;
     soundEngine.playMechanicalSwitch(1.1);
     this.emitHud();
@@ -1485,6 +1500,7 @@ export class TacticalFPSEngine {
 
     const order: Array<typeof this.state.muzzleDevice> = [
       'NONE',
+      'SILENCER_PACK',
       'SL01_LONG',
       'SC01_SHORT',
       'FH01_FLASH_HIDER',
@@ -1498,12 +1514,15 @@ export class TacticalFPSEngine {
     this.state.muzzleDevice = nextMuzzle;
     this.weaponRig.attachmentSystem.setMuzzle(nextMuzzle);
 
-    // Suppressor ballistic flags: SL01 and SC01 act as sound suppressors
+    // Suppressor ballistic flags: SILENCER_PACK, SL01, and SC01 act as sound suppressors
     this.state.suppressorAttached =
-      nextMuzzle === 'SL01_LONG' || nextMuzzle === 'SC01_SHORT';
+      nextMuzzle === 'SILENCER_PACK' ||
+      nextMuzzle === 'SL01_LONG' ||
+      nextMuzzle === 'SC01_SHORT';
 
     const labels: Record<typeof nextMuzzle, string> = {
       NONE: 'DISPOSITIVO DE BOCA REMOVIDO (CANO ORIGINAL)',
+      SILENCER_PACK: 'SILENCIADOR TÁTICO SCOPE PACK ACOPLADO (.GLB REAL)',
       SL01_LONG: 'SUPRESSOR SL01 SLIM LONGO ACOPLADO (.GLB REAL)',
       SC01_SHORT: 'SUPRESSOR SC01 CQB CURTO ACOPLADO (.GLB REAL)',
       FH01_FLASH_HIDER: 'QUEBRA-CHAMAS FH01 PETAL ACOPLADO (.GLB REAL)',
@@ -1609,13 +1628,14 @@ export class TacticalFPSEngine {
     this.sniperReturnToScopeAfterBolt = false;
     this.weaponRig.root.visible = true;
 
+    const savedOptic = getEquippedWeaponOptic(weaponId, this.state.playerXp);
     switch (weaponId) {
       case 'P50_PISTOL':
         this.state.magCapacity = 12;
         this.state.currentMagRounds = 12;
         this.state.magazines = [12, 12, 12, 12];
         this.state.fireMode = 'SEMI';
-        this.setOptic('iron');
+        this.setOptic(savedOptic, false);
         this.state.reloadTypeLabel = 'EQUIPADO: MARK 23 PISTOL (.45 ACP)';
         break;
       case 'SMG_45':
@@ -1623,7 +1643,7 @@ export class TacticalFPSEngine {
         this.state.currentMagRounds = 32;
         this.state.magazines = [32, 32, 32, 32];
         this.state.fireMode = 'AUTO';
-        this.setOptic('iron');
+        this.setOptic(savedOptic, false);
         this.state.reloadTypeLabel = 'EQUIPADO: SMG .45 TÁTICA (.45 ACP)';
         break;
       case 'SMG_MP5':
@@ -1631,7 +1651,7 @@ export class TacticalFPSEngine {
         this.state.currentMagRounds = 30;
         this.state.magazines = [30, 30, 30, 30];
         this.state.fireMode = 'AUTO';
-        this.setOptic('iron');
+        this.setOptic(savedOptic, false);
         this.state.reloadTypeLabel = 'EQUIPADO: MP5A3 TÁTICA (9x19MM)';
         break;
       case 'SHOTGUN_12':
@@ -1639,7 +1659,7 @@ export class TacticalFPSEngine {
         this.state.currentMagRounds = 6;
         this.state.magazines = [6, 6, 6, 6];
         this.state.fireMode = 'SEMI';
-        this.setOptic('iron');
+        this.setOptic(savedOptic, false);
         this.state.reloadTypeLabel = 'EQUIPADO: M870 BREACHER (CALIBRE 12GA)';
         break;
       case 'SHOTGUN_SPAS':
@@ -1647,7 +1667,7 @@ export class TacticalFPSEngine {
         this.state.currentMagRounds = 8;
         this.state.magazines = [8, 8, 8, 8];
         this.state.fireMode = 'SEMI';
-        this.setOptic('iron');
+        this.setOptic(savedOptic, false);
         this.state.reloadTypeLabel = 'EQUIPADO: SPAS-12 TÁTICA (CALIBRE 12GA)';
         break;
       case 'M4_CARBINE':
@@ -1655,7 +1675,7 @@ export class TacticalFPSEngine {
         this.state.currentMagRounds = 30;
         this.state.magazines = [30, 30, 30, 30];
         this.state.fireMode = 'AUTO';
-        this.setOptic('iron');
+        this.setOptic(savedOptic, false);
         this.state.reloadTypeLabel = 'EQUIPADO: M4A1 SOPMOD (5.56MM)';
         break;
       case 'CARBINE_AR':
@@ -1663,7 +1683,7 @@ export class TacticalFPSEngine {
         this.state.currentMagRounds = 30;
         this.state.magazines = [30, 30, 30, 30];
         this.state.fireMode = 'AUTO';
-        this.setOptic('iron');
+        this.setOptic(savedOptic, false);
         this.state.reloadTypeLabel = 'EQUIPADO: CARABINA TÁTICA (5.56MM)';
         break;
       case 'AK47_RIFLE':
@@ -1671,7 +1691,7 @@ export class TacticalFPSEngine {
         this.state.currentMagRounds = 30;
         this.state.magazines = [30, 30, 30, 30];
         this.state.fireMode = 'AUTO';
-        this.setOptic('iron');
+        this.setOptic(savedOptic, false);
         this.state.reloadTypeLabel = 'EQUIPADO: AK-47 COMANDO (7.62MM)';
         break;
       case 'AK12_RIFLE':
@@ -1679,7 +1699,7 @@ export class TacticalFPSEngine {
         this.state.currentMagRounds = 30;
         this.state.magazines = [30, 30, 30, 30];
         this.state.fireMode = 'AUTO';
-        this.setOptic('iron');
+        this.setOptic(savedOptic, false);
         this.state.reloadTypeLabel = 'EQUIPADO: AK-12 SPETSNAZ (5.45MM)';
         break;
       case 'L49_LMG':
@@ -1687,7 +1707,7 @@ export class TacticalFPSEngine {
         this.state.currentMagRounds = 100;
         this.state.magazines = [100, 100, 100];
         this.state.fireMode = 'AUTO';
-        this.setOptic('iron');
+        this.setOptic(savedOptic, false);
         this.state.reloadTypeLabel = 'EQUIPADO: LMG PESADA (5.56MM)';
         break;
       case 'SNIPER_BOLT':
@@ -1695,7 +1715,7 @@ export class TacticalFPSEngine {
         this.state.currentMagRounds = 5;
         this.state.magazines = [5, 5, 5, 5];
         this.state.fireMode = 'SEMI';
-        this.setOptic('iron');
+        this.setOptic(savedOptic, false);
         this.state.reloadTypeLabel = 'EQUIPADO: SNIPER BOLT-ACTION (.338 LAPUA)';
         break;
       case 'SNIPER_TACTICAL':
@@ -1703,7 +1723,7 @@ export class TacticalFPSEngine {
         this.state.currentMagRounds = 10;
         this.state.magazines = [10, 10, 10, 10];
         this.state.fireMode = 'SEMI';
-        this.setOptic('iron');
+        this.setOptic(savedOptic, false);
         this.state.reloadTypeLabel = 'EQUIPADO: SNIPER TÁTICA (.308 WIN)';
         break;
       case 'KNIFE_TACTICAL':
@@ -1711,7 +1731,7 @@ export class TacticalFPSEngine {
         this.state.currentMagRounds = 1;
         this.state.magazines = [1];
         this.state.fireMode = 'SEMI';
-        this.setOptic('iron');
+        this.setOptic('iron', false);
         this.state.reloadTypeLabel = 'EQUIPADO: FACA TÁTICA COMBATE';
         break;
     }
@@ -2900,12 +2920,15 @@ export class TacticalFPSEngine {
         this.selectWeapon('SNIPER_TACTICAL');
         break;
       case 'Digit9': {
-        const nextOptic: OpticType =
-          this.state.optic === 'iron'
-            ? 'holo'
-            : this.state.optic === 'holo'
-              ? 'lpvo'
-              : 'iron';
+        const order: OpticType[] = [
+          'iron',
+          'red_dot',
+          'kolimator',
+          'holo',
+          'lpvo',
+        ];
+        const curIdx = order.indexOf(this.state.optic);
+        const nextOptic = order[(curIdx + 1) % order.length];
         this.setOptic(nextOptic);
         break;
       }
@@ -3196,7 +3219,7 @@ export class TacticalFPSEngine {
       this.state.activeWeapon === 'SHOTGUN_SPAS'
     ) {
       this.reloadDuration = dryReload ? 2.15 : 1.75;
-      soundEngine.playMechanicalSwitch(0.75);
+      soundEngine.playShotgunFullReload(this.state.activeWeapon, dryReload);
     } else if (
       this.state.activeWeapon === 'SNIPER_BOLT' ||
       this.state.activeWeapon === 'SNIPER_TACTICAL'

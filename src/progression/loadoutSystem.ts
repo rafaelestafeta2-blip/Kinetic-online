@@ -1,7 +1,8 @@
 import { WarfaceClassId } from '../components/WarfaceClassIcons';
-import { WeaponId } from '../types/game';
+import { OpticType, WeaponId } from '../types/game';
 import {
   getRankForXp,
+  isOpticUnlockedAtXp,
   isWeaponUnlockedAtXp,
   loadSavedPlayerCash,
   loadSavedPlayerXp,
@@ -53,12 +54,153 @@ export interface ClassLoadoutConfig {
   boots: string;
 }
 
+export interface ScopeCatalogItem {
+  id: OpticType;
+  name: string;
+  shortLabel: string;
+  code: string;
+  modelUrl: string | null;
+  unlockLevel: number;
+  magnification: string;
+  reticleLabel: string;
+  reticleColorHex: string;
+  description: string;
+  compatibleWeapons: WeaponId[];
+}
+
+export const SCOPE_PACK_CATALOG: Record<OpticType, ScopeCatalogItem> = {
+  iron: {
+    id: 'iron',
+    name: 'Mira Nativa / Ferro',
+    shortLabel: 'FERRO',
+    code: 'IRON-STD',
+    modelUrl: null,
+    unlockLevel: 1,
+    magnification: '1.0x',
+    reticleLabel: 'Alça e Massa / Lente Nativa',
+    reticleColorHex: '#94a3b8',
+    description:
+      'Configuração original da arma sem mira adicional acoplada no trilho superior, garantindo saque rápido e visada limpa.',
+    compatibleWeapons: [
+      'P50_PISTOL',
+      'SMG_45',
+      'SMG_MP5',
+      'SHOTGUN_12',
+      'SHOTGUN_SPAS',
+      'M4_CARBINE',
+      'CARBINE_AR',
+      'AK47_RIFLE',
+      'AK12_RIFLE',
+      'L49_LMG',
+      'SNIPER_TACTICAL',
+      'SNIPER_BOLT',
+    ],
+  },
+  red_dot: {
+    id: 'red_dot',
+    name: 'Aimpoint Micro Red Dot',
+    shortLabel: 'RED DOT',
+    code: 'AIMPOINT-T1',
+    modelUrl: '/models/accessories/scopes/Scope_Aimpoint_RedDot.glb',
+    unlockLevel: 1,
+    magnification: '1.15x',
+    reticleLabel: 'Chevron Vermelho Luminoso',
+    reticleColorHex: '#ef4444',
+    description:
+      'Micro colimador tubular 3D (HOLO_POINT) em alumínio anodizado com retículo chevron vermelho de aquisição instantânea para CQB.',
+    compatibleWeapons: [
+      'P50_PISTOL',
+      'SMG_45',
+      'SMG_MP5',
+      'SHOTGUN_12',
+      'SHOTGUN_SPAS',
+      'M4_CARBINE',
+      'CARBINE_AR',
+      'AK47_RIFLE',
+      'AK12_RIFLE',
+      'L49_LMG',
+    ],
+  },
+  kolimator: {
+    id: 'kolimator',
+    name: 'Kolimator Kobra Reflex',
+    shortLabel: 'KOLIMATOR',
+    code: 'EKP-8-18',
+    modelUrl: '/models/accessories/scopes/Scope_Kolimator_Reflex.glb',
+    unlockLevel: 2,
+    magnification: '1.2x',
+    reticleLabel: 'Ponto Colimador Verde',
+    reticleColorHex: '#22c55e',
+    description:
+      'Mira reflex tática russa 3D (Kolimator) com janela colimadora e ponto laser verde de alto contraste, perfeita para AK-47, AK-12, SMGs e escopetas.',
+    compatibleWeapons: [
+      'AK47_RIFLE',
+      'AK12_RIFLE',
+      'M4_CARBINE',
+      'CARBINE_AR',
+      'SMG_45',
+      'SMG_MP5',
+      'SHOTGUN_12',
+      'SHOTGUN_SPAS',
+      'L49_LMG',
+    ],
+  },
+  holo: {
+    id: 'holo',
+    name: 'EOTech XPS2 Holográfica',
+    shortLabel: 'EOTECH',
+    code: 'EOTECH-XPS2',
+    modelUrl: '/models/accessories/scopes/Scope_EoTech_Holo.glb',
+    unlockLevel: 4,
+    magnification: '1.35x',
+    reticleLabel: 'Círculo 68 MOA + Ponto 1 MOA',
+    reticleColorHex: '#f87171',
+    description:
+      'Visor holográfico militar 3D (EoTech XPS2) com janela panorâmica retangular e retículo holográfico vermelho de 68 MOA para controle de rajada.',
+    compatibleWeapons: [
+      'M4_CARBINE',
+      'CARBINE_AR',
+      'AK12_RIFLE',
+      'AK47_RIFLE',
+      'SMG_45',
+      'SMG_MP5',
+      'SHOTGUN_SPAS',
+      'SHOTGUN_12',
+      'L49_LMG',
+    ],
+  },
+  lpvo: {
+    id: 'lpvo',
+    name: 'Luneta Tática Scope 1-4x',
+    shortLabel: 'SCOPE 4X',
+    code: 'LPVO-1-4X',
+    modelUrl: '/models/accessories/scopes/Scope_Tactical_LPVO.glb',
+    unlockLevel: 6,
+    magnification: '1.5x – 4.0x',
+    reticleLabel: 'Crosshair Mil-Dot Iluminado',
+    reticleColorHex: '#38bdf8',
+    description:
+      'Luneta variável de precisão 3D (SCOPE) em montagem dupla Picatinny com tubo óptico vazado e retículo balístico iluminado para média e longa distância.',
+    compatibleWeapons: [
+      'SNIPER_TACTICAL',
+      'SNIPER_BOLT',
+      'M4_CARBINE',
+      'CARBINE_AR',
+      'AK12_RIFLE',
+      'AK47_RIFLE',
+      'L49_LMG',
+      'SMG_MP5',
+    ],
+  },
+};
+
 export interface PlayerInventoryState {
   selectedClass: WarfaceClassId;
   purchasedGearIds: string[];
   purchasedWeaponIds: WeaponId[];
   purchasedSkinIds: string[];
   equippedWeaponSkins: Partial<Record<WeaponId, string>>;
+  equippedWeaponOptics: Partial<Record<WeaponId, OpticType>>;
   classLoadouts: Record<WarfaceClassId, ClassLoadoutConfig>;
 }
 
@@ -697,6 +839,20 @@ function createDefaultInventory(): PlayerInventoryState {
       'camo_urban_digital',
     ],
     equippedWeaponSkins: {},
+    equippedWeaponOptics: {
+      M4_CARBINE: 'red_dot',
+      CARBINE_AR: 'red_dot',
+      AK12_RIFLE: 'red_dot',
+      AK47_RIFLE: 'iron',
+      SMG_45: 'red_dot',
+      SMG_MP5: 'red_dot',
+      SHOTGUN_12: 'iron',
+      SHOTGUN_SPAS: 'red_dot',
+      L49_LMG: 'red_dot',
+      SNIPER_TACTICAL: 'iron',
+      SNIPER_BOLT: 'iron',
+      P50_PISTOL: 'iron',
+    },
     classLoadouts: {
       FUZILEIRO: {
         primaryWeapon: 'M4_CARBINE',
@@ -784,6 +940,10 @@ function loadInventoryState(): PlayerInventoryState {
         new Set([...def.purchasedSkinIds, ...(parsed.purchasedSkinIds || [])])
       ),
       equippedWeaponSkins: { ...(parsed.equippedWeaponSkins || {}) },
+      equippedWeaponOptics: {
+        ...def.equippedWeaponOptics,
+        ...(parsed.equippedWeaponOptics || {}),
+      },
       classLoadouts,
     };
   } catch {
@@ -811,6 +971,7 @@ export function getPlayerInventoryState(): PlayerInventoryState {
     purchasedWeaponIds: [...currentInventory.purchasedWeaponIds],
     purchasedSkinIds: [...currentInventory.purchasedSkinIds],
     equippedWeaponSkins: { ...currentInventory.equippedWeaponSkins },
+    equippedWeaponOptics: { ...currentInventory.equippedWeaponOptics },
     classLoadouts: {
       FUZILEIRO: { ...currentInventory.classLoadouts.FUZILEIRO },
       MEDICO: { ...currentInventory.classLoadouts.MEDICO },
@@ -914,6 +1075,80 @@ export function equipWeaponSkin(weaponId: WeaponId, skinId: string): boolean {
   currentInventory.equippedWeaponSkins = {
     ...currentInventory.equippedWeaponSkins,
     [weaponId]: skin.id,
+  };
+  saveAndEmit();
+  return true;
+}
+
+export const SCOPE_PACK_ORDER: OpticType[] = [
+  'iron',
+  'red_dot',
+  'kolimator',
+  'holo',
+  'lpvo',
+];
+
+export function isOpticCompatibleWithWeapon(
+  weaponId: WeaponId,
+  optic: OpticType
+): boolean {
+  if (weaponId === 'KNIFE_TACTICAL') return optic === 'iron';
+  const spec = SCOPE_PACK_CATALOG[optic];
+  if (!spec) return false;
+  return spec.compatibleWeapons.includes(weaponId);
+}
+
+export function getCompatibleOpticsForWeapon(
+  weaponId: WeaponId
+): ScopeCatalogItem[] {
+  return SCOPE_PACK_ORDER.filter((o) =>
+    isOpticCompatibleWithWeapon(weaponId, o)
+  ).map((o) => SCOPE_PACK_CATALOG[o]);
+}
+
+export function getDefaultOpticForWeapon(
+  weaponId: WeaponId,
+  playerXp = loadSavedPlayerXp()
+): OpticType {
+  if (weaponId === 'KNIFE_TACTICAL' || weaponId === 'P50_PISTOL') return 'iron';
+  if (weaponId === 'SNIPER_BOLT' || weaponId === 'SNIPER_TACTICAL') {
+    return isOpticUnlockedAtXp('lpvo', playerXp) ? 'lpvo' : 'iron';
+  }
+  if (weaponId === 'AK47_RIFLE') {
+    return isOpticUnlockedAtXp('kolimator', playerXp) ? 'kolimator' : 'iron';
+  }
+  if (weaponId === 'SHOTGUN_12') {
+    return 'iron';
+  }
+  return 'red_dot';
+}
+
+export function getEquippedWeaponOptic(
+  weaponId: WeaponId,
+  playerXp = loadSavedPlayerXp()
+): OpticType {
+  if (weaponId === 'KNIFE_TACTICAL') return 'iron';
+  const saved = currentInventory.equippedWeaponOptics?.[weaponId];
+  if (
+    saved &&
+    isOpticCompatibleWithWeapon(weaponId, saved) &&
+    isOpticUnlockedAtXp(saved, playerXp)
+  ) {
+    return saved;
+  }
+  return getDefaultOpticForWeapon(weaponId, playerXp);
+}
+
+export function equipWeaponOptic(
+  weaponId: WeaponId,
+  optic: OpticType,
+  playerXp = loadSavedPlayerXp()
+): boolean {
+  if (!isOpticCompatibleWithWeapon(weaponId, optic)) return false;
+  if (!isOpticUnlockedAtXp(optic, playerXp)) return false;
+  currentInventory.equippedWeaponOptics = {
+    ...(currentInventory.equippedWeaponOptics || {}),
+    [weaponId]: optic,
   };
   saveAndEmit();
   return true;

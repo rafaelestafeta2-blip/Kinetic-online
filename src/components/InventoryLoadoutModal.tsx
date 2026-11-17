@@ -7,9 +7,13 @@ import {
   EquipmentSlotId,
   GearItemDefinition,
   PlayerInventoryState,
+  SCOPE_PACK_CATALOG,
   equipClassSlotItem,
+  equipWeaponOptic,
   equipWeaponSkin,
   getClassCombatModifiers,
+  getCompatibleOpticsForWeapon,
+  getEquippedWeaponOptic,
   getEquippedWeaponSkinId,
   getPlayerInventoryState,
   isGearOwnedInInventory,
@@ -27,9 +31,11 @@ import {
   WeaponSkinDefinition,
 } from '../progression/weaponSkins';
 import {
+  getRequiredXpForOptic,
   getRequiredXpForWeapon,
+  isOpticUnlockedAtXp,
 } from '../progression/ranks';
-import { WeaponId } from '../types/game';
+import { OpticType, WeaponId } from '../types/game';
 import { RankedOperator3DCanvas } from './RankedOperator3DCanvas';
 import { preloadAllWeaponThumbnails3D } from '../three/weaponThumbnail3D';
 import {
@@ -371,6 +377,23 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
   const availableSkinsForInspected = getAvailableSkinsForWeapon(
     inspectedWeaponSpec.id
   );
+  const compatibleOpticsForInspected = getCompatibleOpticsForWeapon(
+    inspectedWeaponSpec.id
+  );
+  const inspectedWeaponOptic: OpticType =
+    inventory.equippedWeaponOptics?.[inspectedWeaponSpec.id] ||
+    getEquippedWeaponOptic(inspectedWeaponSpec.id, playerXp);
+  const inspectedWeaponOpticSpec =
+    SCOPE_PACK_CATALOG[inspectedWeaponOptic] || SCOPE_PACK_CATALOG.iron;
+
+  const handleSelectWeaponOptic = (wId: WeaponId, optic: OpticType) => {
+    if (!isOpticUnlockedAtXp(optic, playerXp)) {
+      soundEngine.playMenuHover();
+      return;
+    }
+    soundEngine.playMenuSelect();
+    equipWeaponOptic(wId, optic, playerXp);
+  };
   const previewOperatorWeapon = isWeaponSlot
     ? inspectedWeaponId
     : classLoadout.primaryWeapon;
@@ -1129,6 +1152,75 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
                     </div>
                   ))}
                 </div>
+
+                {/* MIRAS & SCOPES 3D (DESBLOQUEIO POR NÍVEL) */}
+                {compatibleOpticsForInspected.length > 1 && (
+                  <div className="pt-1.5 border-t border-white/10 space-y-1">
+                    <div className="flex items-center justify-between gap-2 text-[9px] font-mono">
+                      <span className="text-slate-400 font-bold uppercase tracking-wider">
+                        MIRAS & SCOPES 3D (NÍVEL)
+                      </span>
+                      <span className="text-cyan-300 font-bold truncate">
+                        {inspectedWeaponOpticSpec.shortLabel} ·{' '}
+                        {inspectedWeaponOpticSpec.magnification}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-5 gap-1">
+                      {compatibleOpticsForInspected.map((scopeSpec) => {
+                        const opticId = scopeSpec.id;
+                        const active = inspectedWeaponOptic === opticId;
+                        const unlocked = isOpticUnlockedAtXp(opticId, playerXp);
+                        const reqOptic = getRequiredXpForOptic(opticId);
+                        return (
+                          <button
+                            key={opticId}
+                            type="button"
+                            disabled={!unlocked}
+                            title={`${scopeSpec.name} (${scopeSpec.magnification}) — ${scopeSpec.description} · Desbloqueia no Nível ${reqOptic.requiredLevel}`}
+                            onClick={() =>
+                              handleSelectWeaponOptic(
+                                inspectedWeaponSpec.id,
+                                opticId
+                              )
+                            }
+                            className={`rounded-[2px] border px-1 py-1 flex flex-col items-center justify-between gap-0.5 text-center transition-colors ${
+                              active
+                                ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200 cursor-pointer shadow-[0_0_8px_rgba(34,211,238,0.22)]'
+                                : unlocked
+                                  ? 'bg-[#11151e] border-white/12 hover:border-cyan-400/50 text-slate-200 cursor-pointer'
+                                  : 'bg-[#0e1118] border-white/5 text-slate-500 opacity-60 cursor-not-allowed'
+                            }`}
+                          >
+                            <span
+                              className={`text-[7px] font-mono font-bold truncate w-full ${
+                                active ? 'text-cyan-300' : 'text-slate-200'
+                              }`}
+                            >
+                              {scopeSpec.shortLabel}
+                            </span>
+                            <div className="flex items-center justify-center gap-0.5 text-[7px] font-mono leading-tight">
+                              {unlocked ? (
+                                <span
+                                  className={
+                                    active
+                                      ? 'text-emerald-300 font-bold'
+                                      : 'text-slate-400'
+                                  }
+                                >
+                                  {active ? '✓' : scopeSpec.magnification}
+                                </span>
+                              ) : (
+                                <span className="text-amber-400 font-bold">
+                                  🔒NV.{reqOptic.requiredLevel}
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* SKINS & CAMUFLAGEM DA ARMA */}
                 <div className="pt-1.5 border-t border-white/10 space-y-1">

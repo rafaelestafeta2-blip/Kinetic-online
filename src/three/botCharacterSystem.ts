@@ -177,8 +177,8 @@ export function preloadProRifleBotCharacter(loadingManager?: THREE.LoadingManage
         });
       });
 
-      sharedClips = buildProRiflePackClips(root, loaded.animations);
-      templateScene = root;
+      const clips = buildProRiflePackClips(root, loaded.animations);
+      return { root, clips };
     };
 
     const applyPackOverlays = () => {
@@ -330,7 +330,7 @@ export function preloadProRifleBotCharacter(loadingManager?: THREE.LoadingManage
     };
 
     try {
-      const [, sniperRes, fuzileiroRes, engineerRes, medicRes] = await Promise.all([
+      const [riflemanRes, sniperRes, fuzileiroRes, engineerRes, medicRes] = await Promise.all([
         loadRifleman(),
         loadCustomOperatorModel(SNIPER_OPERATOR_LOCAL_URL, 0xdce8f8, 'SniperOperatorCharacter'),
         loadCustomOperatorModel(VANGUARD_RIFLEMAN_LOCAL_URL, 0xffffff, 'VanguardRiflemanCharacter'),
@@ -341,6 +341,9 @@ export function preloadProRifleBotCharacter(loadingManager?: THREE.LoadingManage
           return null;
         }),
       ]);
+      if (riflemanRes) {
+        sharedClips = riflemanRes.clips;
+      }
       if (sniperRes) {
         sniperTemplateScene = sniperRes.root;
         sniperClips = sniperRes.clips;
@@ -369,6 +372,10 @@ export function preloadProRifleBotCharacter(loadingManager?: THREE.LoadingManage
         vanguardMedicShowcaseMatMap = medicRes.showcaseMap;
         vanguardMedicAllyMatMap = medicRes.aMap;
         vanguardMedicEnemyMatMap = medicRes.eMap;
+      }
+      // Expose templateScene right as overlays run so bots never attach with un-overlaid clips
+      if (riflemanRes) {
+        templateScene = riflemanRes.root;
       }
       applyPackOverlays();
     } finally {
@@ -687,8 +694,12 @@ export function attachProRifleCharacterToBot(bot: YardBotEntity, isSoftwareGl: b
 
   const mixer = new THREE.AnimationMixer(cloned);
   const actions = {} as Record<BotAnimState, THREE.AnimationAction>;
+  const seenClips = new Set<THREE.AnimationClip>();
   (Object.keys(activeClips) as BotAnimState[]).forEach((stateKey) => {
-    const action = mixer.clipAction(activeClips[stateKey]);
+    const rawClip = activeClips[stateKey];
+    const uniqueClip = seenClips.has(rawClip) ? rawClip.clone() : rawClip;
+    seenClips.add(uniqueClip);
+    const action = mixer.clipAction(uniqueClip);
     if (
       stateKey === 'RIFLE_FIRE' ||
       stateKey === 'RIFLE_THROW' ||
@@ -708,6 +719,7 @@ export function attachProRifleCharacterToBot(bot: YardBotEntity, isSoftwareGl: b
   const crouchStance = Boolean(bot.root.userData?.crouchStance);
   const initialState: BotAnimState = crouchStance ? 'RIFLE_CROUCH' : 'RIFLE_IDLE';
   actions[initialState].reset().play();
+  mixer.update(0.001);
 
   const ctrl: BotAnimController = {
     modelRoot: cloned,
@@ -1203,6 +1215,21 @@ export function updateAllBotCharacters(
 
     const activeAction = ctrl.actions[ctrl.currentState];
     if (activeAction) {
+      if (!activeAction.enabled || activeAction.getEffectiveWeight() < 0.05) {
+        activeAction.enabled = true;
+        activeAction.setEffectiveWeight(1);
+      }
+      if (
+        !activeAction.isRunning() &&
+        !ctrl.currentState.startsWith('RIFLE_DEATH') &&
+        ctrl.currentState !== 'RIFLE_FIRE' &&
+        ctrl.currentState !== 'RIFLE_HIT' &&
+        ctrl.currentState !== 'RIFLE_THROW' &&
+        ctrl.currentState !== 'RIFLE_JUMP' &&
+        ctrl.currentState !== 'RIFLE_RELOAD_3P'
+      ) {
+        activeAction.reset().play();
+      }
       if (ctrl.currentState === 'RIFLE_SPRINT') {
         activeAction.setEffectiveTimeScale(THREE.MathUtils.clamp(speed / 4.2, 0.95, 1.35));
       } else if (ctrl.currentState.startsWith('RIFLE_RUN')) {
@@ -1225,18 +1252,23 @@ export function updateAllBotCharacters(
     }
 
     const distSq = t.root.position.distanceToSquared(playerPos);
-    // LOD: near = every frame, far = ~30Hz. Always update at least occasionally so
-    // newly attached Mixamo characters leave bind pose (T-pose) immediately.
-    if (distSq < 1600) {
+    // LOD: near = every frame, mid = ~30Hz, far = ~20Hz.
+    let steppedMixer = false;
+    if (distSq < 900) {
       ctrl.mixer.update(dt);
+      steppedMixer = true;
     } else {
+      const interval = distSq < 2500 ? 0.033 : 0.05;
       ctrl.lodAccumDt += dt;
-      if (ctrl.lodAccumDt >= 0.033) {
+      if (ctrl.lodAccumDt >= interval) {
         ctrl.mixer.update(ctrl.lodAccumDt);
         ctrl.lodAccumDt = 0;
+        steppedMixer = true;
       }
     }
 
-    syncBotWeaponWithMixamoHands(t, ctrl, isCrouchedNow);
+    if (steppedMixer) {
+      syncBotWeaponWithMixamoHands(t, ctrl, isCrouchedNow);
+    }
   }
 }
