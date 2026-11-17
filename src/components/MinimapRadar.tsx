@@ -127,8 +127,11 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
         drawSectorRect(12, 11, 190, 186, '#283548');
         drawSectorRect(8, -28, 28, 24, '#3b4d66');
       } else if (isHangar) {
-        drawSectorRect(0, -2.5, 80, 36, '#283548');
-        drawSectorRect(0, -14, 22, 14, '#3b4d66');
+        drawSectorRect(0, 0, 77, 30, '#283548');
+        drawSectorRect(-31.4, -8.5, 12.4, 15.5, '#3b4d66');
+        drawSectorRect(-20.0, 4.8, 2.5, 12.3, '#475569');
+        drawSectorRect(-9.0, -9.0, 14, 10, '#4c2626', 'rgba(248,113,113,0.45)');
+        drawSectorRect(12.5, 7.5, 14, 10, '#233b4e', 'rgba(56,189,248,0.45)');
       } else if (isEasternCity) {
         drawSectorRect(-8.5, 4.5, 140, 128, '#283548');
         drawSectorRect(0, -20, 24, 20, '#3b4d66');

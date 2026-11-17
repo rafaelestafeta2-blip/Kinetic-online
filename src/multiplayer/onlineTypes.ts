@@ -127,9 +127,9 @@ export function getTeamSpawnForArena(
 
   if (mode === 'HANGAR_BOMB_5V5') {
     if (team === 'VANGUARD') {
-      return { x: 0.0 + offsetX, y: 0.6, z: -14.0 + offsetZ, yaw: 0 };
+      return { x: -32.0 + offsetX * 0.7, y: 0.6, z: 4.5 + offsetZ * 0.8, yaw: -Math.PI / 2 };
     }
-    return { x: 0.0 + offsetX, y: 0.2, z: 10.0 - offsetZ, yaw: Math.PI };
+    return { x: 30.5 + offsetX * 0.7, y: 0.6, z: -1.5 - offsetZ * 0.8, yaw: Math.PI / 2 };
   }
 
   if (mode === 'EASTERN_CITY_BOMB_5V5') {

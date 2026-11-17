@@ -348,7 +348,7 @@ export class YardBombSystem {
             : mode === 'INDUSTRIA_BOMB_5V5'
               ? 'BASE VANGUARD (APRON SUL · INDUSTRIA)'
               : mode === 'HANGAR_BOMB_5V5'
-                ? 'BASE VANGUARD (PORTÃO SUL · HANGAR)'
+                ? 'BASE VANGUARD (ALA OESTE · HANGAR)'
                 : mode === 'EASTERN_CITY_BOMB_5V5'
                   ? 'BASE VANGUARD (ENTRADA SUL · CIDADE LESTE)'
                 : mode === 'MIRAGE_ANUBIS_BOMB_5V5'

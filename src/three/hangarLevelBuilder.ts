@@ -14,33 +14,28 @@ const HANGAR_LOCAL_URL = '/models/maps/hangar_2k.glb';
  */
 export const HANGAR_FLOOR_Y_LIFT = 0.6;
 
-/** Vanguard attackers — south hangar entrance (inset for floor snap). */
-/** Attacker spawn — Y = measured walkable floor at (0,-14) after FLOOR_Y_LIFT. */
-export const HANGAR_ATTACKER_SPAWN = new THREE.Vector3(0.0, 0.6, -14.0);
-/** Camera local -Z. π looks +Z into the hangar, not out the south gate. */
-export const HANGAR_SPAWN_YAW = Math.PI;
-/** Blackthorn defenders — north interior near office/room. */
-export const HANGAR_DEFENDER_SPAWN = new THREE.Vector3(0.0, 0.2, 10.0);
-/** Bomb A — container stack side. */
-export const HANGAR_BOMB_SITE_A = new THREE.Vector3(-12.0, 0.15, 0.0);
-/** Bomb B — opposite bay / truck side. */
-export const HANGAR_BOMB_SITE_B = new THREE.Vector3(14.0, 0.15, 4.0);
+/** Vanguard attackers — West hangar bay facing East (+X) down the 75m warehouse. */
+export const HANGAR_ATTACKER_SPAWN = new THREE.Vector3(-32.0, 0.6, 5.0);
+/** Camera local -Z. -PI/2 rotates forward to +X (East). */
+export const HANGAR_SPAWN_YAW = -Math.PI / 2;
+/** Blackthorn defenders — East hangar bay opposite Vanguard. */
+export const HANGAR_DEFENDER_SPAWN = new THREE.Vector3(30.5, 0.6, -1.5);
+/** Bomb A — North Container Yard. */
+export const HANGAR_BOMB_SITE_A = new THREE.Vector3(-9.0, 0.6, -9.0);
+/** Bomb B — South-East Cargo Bay. */
+export const HANGAR_BOMB_SITE_B = new THREE.Vector3(12.5, 0.6, 7.5);
 
 export function getHangarCalloutForPos(
   x: number,
   y: number,
   z: number
 ): string {
-  if (z < -14) return 'PORTÃO SUL (SOUTH GATE)';
-  if (z > 10) return 'FUNDOS / SALA (BACK ROOM)';
-  if (x < -8) return 'BAÍA OESTE / CONTÊINERES (WEST BAY)';
-  if (x > 10) return 'BAÍA LESTE / CAMINHÃO (EAST BAY)';
-  if (x >= -16 && x <= -6 && z >= -6 && z <= 6) {
-    return 'BOMBA A (CONTÊINERES)';
-  }
-  if (x >= 8 && x <= 20 && z >= -2 && z <= 10) {
-    return 'BOMBA B (PÁTIO LESTE)';
-  }
+  if (x < -24 && z < -0.5) return 'ESCRITÓRIO OESTE (WEST OFFICE)';
+  if (x < -24) return 'BASE VANGUARD / ALA OESTE';
+  if (x > 22) return 'BASE BLACKTHORN / ALA LESTE';
+  if (x >= -15 && x <= -3 && z <= -4) return 'BOMBA A (PÁTIO NORTE)';
+  if (x >= 7 && x <= 20 && z >= 2) return 'BOMBA B (CARGA SUDESTE)';
+  if (x >= -8 && x <= 8) return 'MEIO / PONTE ROLANTE (MID)';
   if (y > 8) return 'ESTRUTURA / TELHADO (ROOF STEEL)';
   return 'HANGAR INDUSTRIAL (ANGAR)';
 }
@@ -55,9 +50,9 @@ function turnHangarLightShaft(mesh: THREE.Mesh): void {
     const src = m as THREE.MeshStandardMaterial;
     const basic = new THREE.MeshBasicMaterial({
       map: src.map ?? null,
-      color: 0xffffff,
+      color: 0xffeacc,
       transparent: true,
-      opacity: 0.75,
+      opacity: 0.42,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       side: THREE.DoubleSide,
@@ -91,24 +86,45 @@ function restoreHangarMaterial(
   if (!std) return;
   const matName = (std.name || '').toLowerCase();
   if (matName === 'floor' || matName === 'room_ceiling') {
+    // Source albedos are solid #000000 black; drop black albedo + metallic maps so ceiling/floor never turn black.
     if (std.map) {
       std.map.dispose();
       std.map = null;
     }
-    std.color.setHex(matName === 'floor' ? 0xc8c1b6 : 0x8e969e);
-  } else if (std.map) {
-    std.map.colorSpace = THREE.SRGBColorSpace;
-    std.map.anisotropy = isSoftwareGl ? 1 : 8;
-    std.map.needsUpdate = true;
+    if (std.metalnessMap) {
+      std.metalnessMap.dispose();
+      std.metalnessMap = null;
+    }
+    if (std.roughnessMap) {
+      std.roughnessMap.dispose();
+      std.roughnessMap = null;
+    }
+    std.color.setHex(matName === 'floor' ? 0xc2bab0 : 0xb6bec6);
+    std.roughness = matName === 'floor' ? 0.84 : 0.78;
+    std.metalness = matName === 'floor' ? 0.05 : 0.12;
+    std.envMapIntensity = matName === 'floor' ? 0.35 : 0.78;
+  } else {
+    if (matName === 'window') {
+      std.color.setHex(0xdbeafe);
+      std.emissive.setHex(0x6ba3d6);
+      std.emissiveIntensity = 0.65;
+    } else if (matName === 'steel') {
+      std.color.setHex(0xd6dce2);
+    }
+    if (std.map) {
+      std.map.colorSpace = THREE.SRGBColorSpace;
+      std.map.anisotropy = isSoftwareGl ? 1 : 8;
+      std.map.needsUpdate = true;
+    }
+    std.roughness = Math.max(0.5, std.roughness ?? 0.68);
+    std.metalness = matName === 'steel' ? 0.25 : Math.min(0.35, std.metalness ?? 0.08);
+    std.envMapIntensity = 0.9;
   }
   if (std.normalMap) {
     std.normalMap.anisotropy = isSoftwareGl ? 1 : 8;
     std.normalMap.needsUpdate = true;
   }
-  std.roughness = Math.max(0.5, std.roughness ?? 0.72);
-  std.metalness = Math.min(0.35, std.metalness ?? 0.08);
-  std.envMapIntensity = matName === 'floor' || matName === 'room_ceiling' ? 0.3 : 0.9;
-  // Unity planes often wind downward. FrontSide then hides the floor from above.
+  // Unity planes often wind downward. FrontSide then hides the floor/roof from inside.
   std.side = THREE.DoubleSide;
 }
 
@@ -132,6 +148,20 @@ export function buildHangarLevel(
   sun.castShadow = false;
   levelGroup.add(sun);
   levelGroup.add(sun.target);
+
+  // Overhead bay fills to bring out PBR metallic & normal detail without shadow overhead.
+  const bayFillCoords: Array<[number, number, number]> = [
+    [-22, 11, 2],
+    [0, 12, 0],
+    [22, 11, 0],
+  ];
+  for (let i = 0; i < bayFillCoords.length; i++) {
+    const [lx, ly, lz] = bayFillCoords[i];
+    const fill = new THREE.PointLight(0xfff1dc, 12, 34, 1.4);
+    fill.position.set(lx, ly, lz);
+    fill.castShadow = false;
+    levelGroup.add(fill);
+  }
 
   addHangarBombSiteBeacon(levelGroup, HANGAR_BOMB_SITE_A, 'A', 0xdc2626);
   addHangarBombSiteBeacon(levelGroup, HANGAR_BOMB_SITE_B, 'B', 0x0284c7);
@@ -212,6 +242,8 @@ export async function loadHangarMapGeometry(
       });
     });
 
+    assembleHangarArena(modelRoot, mapTransformGroup, isSoftwareGl);
+
     bundle.levelGroup.add(mapTransformGroup);
     bundle.levelGroup.updateMatrixWorld(true);
     bundle.mapGeometryGroup = mapTransformGroup;
@@ -237,23 +269,202 @@ export async function loadHangarMapGeometry(
   }, onByteProgress);
 }
 
+/**
+ * The source GLB exports all modular props (containers, truck, crates, barrels)
+ * stacked on top of each other at (0,0,0). Clone & arrange them into a balanced
+ * 3-lane 75m x 29m arena while hiding and de-colliding the original pile.
+ */
+function assembleHangarArena(
+  modelRoot: THREE.Group,
+  mapTransformGroup: THREE.Group,
+  isSoftwareGl: boolean
+): void {
+  const c1 = modelRoot.getObjectByName('container_1');
+  const c2 = modelRoot.getObjectByName('container_2');
+  const c3 = modelRoot.getObjectByName('container_3');
+  const truck = modelRoot.getObjectByName('truck');
+  const boxMetal = modelRoot.getObjectByName('box_metal');
+  const boxWood = modelRoot.getObjectByName('box_wooden');
+  const barrel = modelRoot.getObjectByName('barrel');
+  const boards = modelRoot.getObjectByName('boards');
+  const boardsLong = modelRoot.getObjectByName('boards_1');
+
+  const arenaGroup = new THREE.Group();
+  arenaGroup.name = 'AssembledHangarArena';
+
+  const placePrefab = (
+    prefab: THREE.Object3D | undefined,
+    x: number,
+    y: number,
+    z: number,
+    rotY = 0
+  ) => {
+    if (!prefab) return;
+    const clone = prefab.clone(true);
+    clone.position.set(x, y, z);
+    clone.rotation.set(0, rotY, 0);
+    clone.visible = true;
+    clone.traverse((obj) => {
+      obj.visible = true;
+      if (obj instanceof THREE.Mesh) {
+        obj.userData.ignoreCollider = false;
+        obj.userData.isEnvironment = true;
+        obj.castShadow = false;
+        obj.receiveShadow = !isSoftwareGl;
+        obj.frustumCulled = false;
+      }
+    });
+    arenaGroup.add(clone);
+  };
+
+  /**
+   * Builds a smooth ~27° walkable wooden ramp from floor (y=0) up to container roof (y=2.59m).
+   * Using boards_1 (2.86m x 0.43m at scale 100) scaled to ~5.72m x 1.12m keeps cos(26.9°)=0.89 >= 0.72
+   * so Dust2TriangleCollider treats it purely as a walkable floor with zero wall collision.
+   */
+  const placeWalkableRamp = (
+    cx: number,
+    cz: number,
+    yawTowardTop: number
+  ) => {
+    const src = boardsLong || boards;
+    if (!src) return;
+    const pivot = new THREE.Group();
+    pivot.position.set(cx, 1.29, cz);
+    pivot.rotation.set(0, yawTowardTop, 0);
+
+    const rampMesh = src.clone(true);
+    rampMesh.position.set(0, 0, 0);
+    rampMesh.rotation.set(-0.47, 0, 0);
+    rampMesh.scale.set(
+      src.scale.x * 2.6,
+      src.scale.y * 2.2,
+      src.scale.z * (boardsLong ? 2.0 : 2.82)
+    );
+    rampMesh.visible = true;
+    rampMesh.traverse((obj) => {
+      obj.visible = true;
+      if (obj instanceof THREE.Mesh) {
+        obj.userData.ignoreCollider = false;
+        obj.userData.isEnvironment = true;
+        obj.castShadow = false;
+        obj.receiveShadow = !isSoftwareGl;
+        obj.frustumCulled = false;
+      }
+    });
+    pivot.add(rampMesh);
+    arenaGroup.add(pivot);
+  };
+
+  // 1) West Defense Shield (Vanguard side) — 2-story container + walkable wooden ramp
+  placePrefab(c1, -20.0, 0, 4.8, Math.PI / 2);
+  placePrefab(c3, -20.0, 2.58, 1.6, Math.PI / 2);
+  placePrefab(boxMetal, -20.0, 2.58, 7.6, 0.08);
+  placeWalkableRamp(-23.7, 4.5, Math.PI / 2);
+  placePrefab(truck, -29.0, 0.67, 9.2, Math.PI / 2);
+  // Outside West Office East Doorway (-25.2, -12.7)
+  placePrefab(boxMetal, -21.5, 0, -10.5, 0);
+  placePrefab(boxWood, -21.5, 0, -9.4, 0.12);
+  placePrefab(boxWood, -21.5, 1.0, -10.0, -0.08);
+  placePrefab(barrel, -20.2, 0, -10.6, 0);
+
+  // 2) Bomb Site A (North Container Yard around (-9, -9)) — stacked upper red container
+  placePrefab(c2, -13.5, 0, -6.2, 0);
+  placePrefab(c3, -14.8, 2.58, -6.2, 0);
+  placePrefab(boxWood, -11.2, 2.58, -6.2, 0.15);
+  placePrefab(c3, -5.2, 0, -9.8, Math.PI / 2);
+  placePrefab(boxMetal, -11.2, 0, -11.4, 0);
+  placePrefab(boxWood, -10.1, 0, -11.4, 0.05);
+  placePrefab(boxWood, -10.65, 1.0, -11.4, -0.1);
+  placePrefab(barrel, -8.0, 0, -6.2, 0);
+
+  // 3) Mid Crane Chokepoint
+  placePrefab(c2, -1.0, 0, -0.5, 0.35);
+  placePrefab(boxMetal, -1.2, 2.58, -0.6, 0.35);
+  // North Mid cover
+  placePrefab(boxMetal, 5.5, 0, -6.5, 0.15);
+  placePrefab(boxWood, 5.5, 1.0, -6.5, -0.1);
+  placePrefab(barrel, 6.6, 0, -6.3, 0);
+  // South Mid cover
+  placePrefab(boxWood, -6.5, 0, 7.2, 0);
+  placePrefab(boxMetal, -5.4, 0, 7.2, -0.12);
+  placePrefab(barrel, -4.4, 0, 7.4, 0);
+  placePrefab(boards, -6.0, 0.02, 5.8, 0.25);
+
+  // 4) Bomb Site B (South-East Cargo Bay around (12.5, 7.5)) — elevated green open container + East ramp
+  placePrefab(c1, 14.0, 0, -5.5, 0);
+  placePrefab(c2, 13.5, 2.58, -5.5, Math.PI / 2);
+  placeWalkableRamp(22.7, -5.5, -Math.PI / 2);
+  placePrefab(c2, 9.5, 0, 4.0, Math.PI / 2);
+  placePrefab(boxWood, 9.5, 2.58, 2.8, 0);
+  placePrefab(boxMetal, 9.5, 2.58, 4.9, 0.12);
+  placePrefab(c3, 17.5, 0, 9.8, 0);
+  placePrefab(boxMetal, 13.5, 0, 3.6, 0);
+  placePrefab(boxWood, 14.6, 0, 3.6, 0.1);
+  placePrefab(boxWood, 14.05, 1.0, 3.6, -0.05);
+  placePrefab(barrel, 11.2, 0, 11.2, 0);
+  placePrefab(barrel, 12.3, 0, 11.4, 0);
+
+  // 5) East Bay (Blackthorn Spawn & Cover)
+  placePrefab(truck, 24.5, 0.67, 1.5, 0);
+  placePrefab(c3, 26.0, 0, -9.2, Math.PI / 4);
+  placePrefab(boxMetal, 24.0, 0, 10.0, 0);
+  placePrefab(boxWood, 25.1, 0, 10.0, -0.08);
+  placePrefab(boxWood, 24.55, 1.0, 10.0, 0.12);
+  placePrefab(barrel, 23.0, 0, 10.3, 0);
+
+  // Hide & de-collide original stacked prefabs at origin
+  const origNames = [
+    'container_1',
+    'container_2',
+    'container_3',
+    'truck',
+    'box_metal',
+    'box_wooden',
+    'barrel',
+    'boards',
+    'boards_1',
+  ];
+  for (let i = 0; i < origNames.length; i++) {
+    const orig = modelRoot.getObjectByName(origNames[i]);
+    if (!orig) continue;
+    orig.visible = false;
+    orig.traverse((obj) => {
+      obj.visible = false;
+      obj.userData.ignoreCollider = true;
+    });
+  }
+
+  mapTransformGroup.add(arenaGroup);
+}
+
 export function disposeHangarMapGeometry(bundle: Dust2LevelBundle): void {
   if (bundle.mapGeometryGroup) {
+    const geometries = new Set<THREE.BufferGeometry>();
+    const materials = new Set<THREE.Material>();
+    const textures = new Set<THREE.Texture>();
+
     bundle.mapGeometryGroup.traverse((child) => {
       if (child instanceof THREE.Mesh) {
-        if (child.geometry) child.geometry.dispose();
+        if (child.geometry) geometries.add(child.geometry);
         const mats = Array.isArray(child.material)
           ? child.material
           : child.material
             ? [child.material]
             : [];
         mats.forEach((m) => {
-          const basic = m as THREE.MeshBasicMaterial;
-          if (basic.map) basic.map.dispose();
-          m.dispose();
+          materials.add(m);
+          const std = m as THREE.MeshStandardMaterial;
+          if (std.map) textures.add(std.map);
+          if (std.normalMap) textures.add(std.normalMap);
         });
       }
     });
+
+    geometries.forEach((g) => g.dispose());
+    textures.forEach((t) => t.dispose());
+    materials.forEach((m) => m.dispose());
+
     bundle.levelGroup.remove(bundle.mapGeometryGroup);
     bundle.mapGeometryGroup = null;
   }
@@ -462,14 +673,14 @@ function spawnHangarSquads(
     } as YardBotEntity);
   };
 
-  // Blackthorn — defend interior / bomb sites
+  // Blackthorn — East bay & defending Bomb Sites A / B / Mid
   spawnBot({
     id: 'hng_bt_siteB',
     callsign: 'KRAKEN-BT',
     weaponId: 'AK47_RIFLE',
-    x: 12.0,
-    y: 0.15,
-    z: 6.0,
+    x: 15.0,
+    y: 0.6,
+    z: 7.2,
     isAlly: false,
     patrolAxis: 'X',
     patrolRange: 3.0,
@@ -479,9 +690,9 @@ function spawnHangarSquads(
     id: 'hng_bt_back',
     callsign: 'WRAITH-BT',
     weaponId: 'SNIPER_BOLT',
-    x: -2.0,
-    y: 0.15,
-    z: 12.0,
+    x: 31.0,
+    y: 0.6,
+    z: -4.0,
     isAlly: false,
     patrolAxis: 'Z',
     patrolRange: 2.5,
@@ -491,9 +702,9 @@ function spawnHangarSquads(
     id: 'hng_bt_siteA',
     callsign: 'HAVOC-BT',
     weaponId: 'AK47_RIFLE',
-    x: -10.0,
-    y: 0.15,
-    z: 2.0,
+    x: -11.0,
+    y: 0.6,
+    z: -9.2,
     isAlly: false,
     patrolAxis: 'X',
     patrolRange: 2.8,
@@ -503,35 +714,35 @@ function spawnHangarSquads(
     id: 'hng_bt_mid',
     callsign: 'SERAPH-BT',
     weaponId: 'M4_CARBINE',
-    x: 4.0,
-    y: 0.15,
-    z: 2.0,
+    x: 2.0,
+    y: 0.6,
+    z: 4.0,
     isAlly: false,
     patrolAxis: 'Z',
-    patrolRange: 3.2,
+    patrolRange: 3.0,
     hasArmor: true,
   });
   spawnBot({
     id: 'hng_bt_crane',
     callsign: 'VOLT-BT',
     weaponId: 'P50_PISTOL',
-    x: 8.0,
-    y: 0.15,
-    z: -6.0,
+    x: 29.2,
+    y: 0.6,
+    z: 4.2,
     isAlly: false,
     patrolAxis: 'X',
     patrolRange: 2.6,
     hasArmor: true,
   });
 
-  // Vanguard allies — south gate with player
+  // Vanguard allies — West bay with player
   spawnBot({
     id: 'hng_vg_1',
     callsign: 'RECON-02',
     weaponId: 'SNIPER_BOLT',
-    x: -2.5,
+    x: -33.5,
     y: 0.6,
-    z: -8.0,
+    z: 2.2,
     isAlly: true,
     patrolAxis: 'X',
     patrolRange: 2.2,
@@ -541,34 +752,34 @@ function spawnHangarSquads(
     id: 'hng_vg_2',
     callsign: 'STRIKER-03',
     weaponId: 'AK47_RIFLE',
-    x: 2.5,
+    x: -30.0,
     y: 0.6,
-    z: -8.0,
+    z: 2.4,
     isAlly: true,
     patrolAxis: 'Z',
-    patrolRange: 2.8,
+    patrolRange: 2.4,
     hasArmor: true,
   });
   spawnBot({
     id: 'hng_vg_3',
     callsign: 'LIFELINE-04',
     weaponId: 'M4_CARBINE',
-    x: -2.0,
+    x: -28.5,
     y: 0.6,
-    z: -6.0,
+    z: 5.4,
     isAlly: true,
     patrolAxis: 'X',
-    patrolRange: 2.5,
+    patrolRange: 2.2,
   });
   spawnBot({
     id: 'hng_vg_4',
     callsign: 'WARDEN-05',
     weaponId: 'SMG_MP5',
-    x: 2.0,
+    x: -34.2,
     y: 0.6,
-    z: -6.0,
+    z: 6.2,
     isAlly: true,
     patrolAxis: 'Z',
-    patrolRange: 2.8,
+    patrolRange: 2.2,
   });
 }
