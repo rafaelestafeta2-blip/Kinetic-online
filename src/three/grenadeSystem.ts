@@ -33,6 +33,7 @@ interface ActiveProjectile {
   smokeCloudSpawned: boolean;
   removeAge: number;
   bounces: number;
+  isRemote?: boolean;
 }
 
 interface ExplosionInstance {
@@ -130,14 +131,30 @@ export class TacticalGrenadeSystem {
   private smokeClouds: SmokeCloudInstance[] = [];
   private softSmokeTexture: THREE.CanvasTexture;
 
-  private onFragDetonate: (blastCenter: THREE.Vector3, blastRadius: number) => void;
-  private onGrenadeReleasedFromHand?: (type: GrenadeType) => void;
+  private onFragDetonate: (
+    blastCenter: THREE.Vector3,
+    blastRadius: number,
+    isRemote?: boolean
+  ) => void;
+  private onGrenadeReleasedFromHand?: (
+    type: GrenadeType,
+    origin: THREE.Vector3,
+    velocity: THREE.Vector3
+  ) => void;
 
   constructor(
     scene: THREE.Scene,
     camera: THREE.PerspectiveCamera,
-    onFragDetonate: (blastCenter: THREE.Vector3, blastRadius: number) => void,
-    onGrenadeReleasedFromHand?: (type: GrenadeType) => void
+    onFragDetonate: (
+      blastCenter: THREE.Vector3,
+      blastRadius: number,
+      isRemote?: boolean
+    ) => void,
+    onGrenadeReleasedFromHand?: (
+      type: GrenadeType,
+      origin: THREE.Vector3,
+      velocity: THREE.Vector3
+    ) => void
   ) {
     this.scene = scene;
     this.camera = camera;
@@ -1056,7 +1073,10 @@ export class TacticalGrenadeSystem {
     this.landingRingGroup.scale.set(pulse, 1, pulse);
   }
 
-  private spawnWorldProjectile(type: GrenadeType): void {
+  private spawnWorldProjectile(type: GrenadeType): {
+    origin: THREE.Vector3;
+    velocity: THREE.Vector3;
+  } {
     const projGroup = new THREE.Group();
 
     if (type === 'FRAG') {
@@ -1106,13 +1126,17 @@ export class TacticalGrenadeSystem {
       smokeCloudSpawned: false,
       removeAge: type === 'FRAG' ? 2.1 : 26.5,
       bounces: 0,
+      isRemote: false,
     });
+
+    return { origin: spawnPos, velocity: vel };
   }
 
   public spawnBotGrenade(
     origin: THREE.Vector3,
     velocity: THREE.Vector3,
-    type: GrenadeType
+    type: GrenadeType,
+    isRemotePlayer = false
   ): void {
     const projGroup = new THREE.Group();
     if (type === 'FRAG') {
@@ -1133,6 +1157,10 @@ export class TacticalGrenadeSystem {
     projGroup.position.copy(origin);
     this.scene.add(projGroup);
 
+    if (isRemotePlayer) {
+      soundEngine.playGrenadeThrow();
+    }
+
     const angVel = new THREE.Vector3(
       7.5 + Math.random() * 4,
       (Math.random() - 0.5) * 5,
@@ -1150,10 +1178,11 @@ export class TacticalGrenadeSystem {
       smokeCloudSpawned: false,
       removeAge: type === 'FRAG' ? 2.1 : 26.5,
       bounces: 0,
+      isRemote: isRemotePlayer,
     });
   }
 
-  private spawnExplosion(pos: THREE.Vector3): void {
+  private spawnExplosion(pos: THREE.Vector3, isRemote = false): void {
     soundEngine.playGrenadeExplosion();
 
     let exp = this.explosions.find((e) => !e.active);
@@ -1201,7 +1230,7 @@ export class TacticalGrenadeSystem {
       );
     }
 
-    this.onFragDetonate(pos, 9.0);
+    this.onFragDetonate(pos, 9.0, isRemote);
   }
 
   private spawnSmokeCloud(pos: THREE.Vector3): void {
@@ -1303,8 +1332,12 @@ export class TacticalGrenadeSystem {
 
       if (shouldReleaseNow && !this.projectileLaunchedInSequence) {
         this.projectileLaunchedInSequence = true;
-        this.spawnWorldProjectile(this.throwSequenceType);
-        this.onGrenadeReleasedFromHand?.(this.throwSequenceType);
+        const launched = this.spawnWorldProjectile(this.throwSequenceType);
+        this.onGrenadeReleasedFromHand?.(
+          this.throwSequenceType,
+          launched.origin,
+          launched.velocity
+        );
       }
 
       if (finished) {
@@ -1418,7 +1451,7 @@ export class TacticalGrenadeSystem {
           proj.detonated = true;
           if (proj.type === 'FRAG') {
             proj.group.visible = false;
-            this.spawnExplosion(proj.group.position);
+            this.spawnExplosion(proj.group.position, Boolean(proj.isRemote));
           } else if (!proj.smokeCloudSpawned) {
             proj.smokeCloudSpawned = true;
             this.spawnSmokeCloud(proj.group.position);

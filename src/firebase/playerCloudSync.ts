@@ -1,5 +1,12 @@
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc, onSnapshot, setDoc, Unsubscribe } from 'firebase/firestore';
+import {
+  doc,
+  getDoc,
+  getDocFromCache,
+  onSnapshot,
+  setDoc,
+  Unsubscribe,
+} from 'firebase/firestore';
 import { evaluateUnlockedAchievements } from '../progression/achievementsData';
 import { canGrantMatchProgressionRewards } from '../progression/matchProgressionGate';
 import {
@@ -12,6 +19,7 @@ import {
   auth,
   db,
   handleFirestoreError,
+  isFirestoreOfflineError,
   OperationType,
 } from './firebaseClient';
 import { performGoogleSignIn, performGoogleSignOut } from './googleAuthService';
@@ -70,7 +78,9 @@ export async function pushProfileToFirestoreNow(): Promise<void> {
     state.syncError = null;
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, path);
-    state.syncError = 'Falha ao sincronizar com a nuvem.';
+    if (!isFirestoreOfflineError(err)) {
+      state.syncError = 'Falha ao sincronizar com a nuvem.';
+    }
   } finally {
     state.isSyncing = false;
     emitState();
@@ -107,22 +117,32 @@ onAuthStateChanged(auth, async (user) => {
 
   const playerRef = doc(db, 'players', user.uid);
   try {
-    const snap = await getDoc(playerRef);
-    const cloudData = snap.exists()
-      ? (snap.data() as Partial<PlayerCloudProfile>)
-      : null;
+    const snap = await getDoc(playerRef).catch(async (err) => {
+      if (isFirestoreOfflineError(err)) {
+        return getDocFromCache(playerRef).catch(() => null);
+      }
+      throw err;
+    });
+    const cloudData =
+      snap && snap.exists()
+        ? (snap.data() as Partial<PlayerCloudProfile>)
+        : null;
     const merged = mergeLocalAndCloudProfiles(state.profile, cloudData, user);
     state.profile = merged;
     persistLocalProfile(merged);
-    await setDoc(playerRef, merged);
+    void setDoc(playerRef, merged).catch((err) => {
+      handleFirestoreError(err, OperationType.WRITE, `players/${user.uid}`);
+    });
     state.lastSyncedAt = merged.updatedAt;
     state.syncError = null;
   } catch (err) {
     handleFirestoreError(err, OperationType.GET, `players/${user.uid}`);
-    state.syncError =
-      err instanceof Error
-        ? `Falha ao conectar ao Firestore: ${err.message}`
-        : 'Falha ao conectar ao Firestore.';
+    if (!isFirestoreOfflineError(err)) {
+      state.syncError =
+        err instanceof Error
+          ? `Falha ao conectar ao Firestore: ${err.message}`
+          : 'Falha ao conectar ao Firestore.';
+    }
   } finally {
     state.authReady = true;
     state.isSyncing = false;

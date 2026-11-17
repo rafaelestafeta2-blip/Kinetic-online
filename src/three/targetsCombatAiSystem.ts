@@ -90,7 +90,8 @@ export function updateTargetsAndCombatAI(engine: any, dt: number): void {
       engine.state.drillMode === 'INDUSTRIA_BOMB_5V5' ||
       engine.state.drillMode === 'HANGAR_BOMB_5V5' ||
       engine.state.drillMode === 'EASTERN_CITY_BOMB_5V5' ||
-      engine.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5';
+      engine.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
+      engine.state.drillMode === 'STATION_CAPTURE_5V5';
 
     if (engine.state.drillMode !== 'FREE_RANGE' && engine.targets.length > 0) {
       if (isOnlineMatchActive()) {

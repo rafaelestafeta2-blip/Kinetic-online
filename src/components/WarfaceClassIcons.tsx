@@ -305,12 +305,19 @@ export const OperatorTacticalAvatar: React.FC<{
   classId: WarfaceClassId;
   photoUrl?: string;
 }> = ({ team, classId, photoUrl }) => {
-  if (photoUrl) {
+  const [imgError, setImgError] = React.useState(false);
+
+  React.useEffect(() => {
+    setImgError(false);
+  }, [photoUrl]);
+
+  if (photoUrl && !imgError) {
     return (
       <img
         src={photoUrl}
         alt=""
         referrerPolicy="no-referrer"
+        onError={() => setImgError(true)}
         className="w-full h-full object-cover"
       />
     );

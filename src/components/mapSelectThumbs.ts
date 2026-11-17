@@ -13,6 +13,7 @@ export const MAP_SELECT_THUMBS = {
   hangar: '/assets/maps/thumbs/hangar.jpg',
   easternCity: '/assets/maps/thumbs/eastern_city.jpg',
   mirageAnubis: '/assets/maps/thumbs/mirage_anubis.jpg',
+  stationArena: '/maps/station_arena/Preview1.png',
   yard: '/assets/maps/thumbs/yard.jpg',
   range: '/assets/maps/thumbs/range.jpg',
   killhouse: '/assets/maps/thumbs/killhouse.jpg',
@@ -32,6 +33,8 @@ export function thumbForDrillMode(mode: DrillMode | string): string {
       return MAP_SELECT_THUMBS.easternCity;
     case 'MIRAGE_ANUBIS_BOMB_5V5':
       return MAP_SELECT_THUMBS.mirageAnubis;
+    case 'STATION_CAPTURE_5V5':
+      return MAP_SELECT_THUMBS.stationArena;
     case 'YARD_BOMB_5V5':
       return MAP_SELECT_THUMBS.yard;
     case 'FREE_RANGE':
@@ -43,8 +46,11 @@ export function thumbForDrillMode(mode: DrillMode | string): string {
   }
 }
 
-export function thumbForPlayMode(modeId: MainMenuPlayModeId): string {
+export function thumbForPlayMode(modeId: MainMenuPlayModeId | string): string {
   switch (modeId) {
+    case 'CAPTURE':
+      return MAP_SELECT_THUMBS.stationArena;
+    case 'CASUAL':
     case 'CASUAL_DUST2':
     case 'RANKED':
     case 'PRIVATE_ROOM':

@@ -73,16 +73,16 @@ export function getPresetHudLayout(preset: HudLayoutPresetId): CustomHudLayout {
     };
   }
 
-  // Default TWO_THUMBS (2 Dedos Padrão)
+  // Default TWO_THUMBS (2 Dedos Padrão — Alinhado com a HUD de Referência)
   return {
-    joystick: { xPercent: 13, yPercent: 74, scale: 1.0, opacity: 0.9 },
-    fire: { xPercent: 78, yPercent: 68, scale: 1.05, opacity: 0.95 },
-    leftFire: { xPercent: 22, yPercent: 34, scale: 0.95, opacity: 0.85 },
-    ads: { xPercent: 86, yPercent: 46, scale: 1.0, opacity: 0.95 },
-    jump: { xPercent: 94, yPercent: 64, scale: 1.0, opacity: 0.9 },
-    crouch: { xPercent: 94, yPercent: 86, scale: 1.0, opacity: 0.9 },
-    reload: { xPercent: 86, yPercent: 86, scale: 1.0, opacity: 0.9 },
-    contextual: { xPercent: 74, yPercent: 46, scale: 1.0, opacity: 0.9 },
+    joystick: { xPercent: 11, yPercent: 75, scale: 1.0, opacity: 0.9 },
+    fire: { xPercent: 84, yPercent: 69, scale: 1.05, opacity: 0.95 },
+    leftFire: { xPercent: 8, yPercent: 39, scale: 1.0, opacity: 0.9 },
+    ads: { xPercent: 93, yPercent: 47, scale: 1.0, opacity: 0.95 },
+    jump: { xPercent: 95, yPercent: 83, scale: 1.0, opacity: 0.9 },
+    crouch: { xPercent: 87, yPercent: 84, scale: 1.0, opacity: 0.9 },
+    reload: { xPercent: 95, yPercent: 61, scale: 1.0, opacity: 0.9 },
+    contextual: { xPercent: 74, yPercent: 47, scale: 1.0, opacity: 0.9 },
   };
 }
 

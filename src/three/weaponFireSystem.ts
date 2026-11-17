@@ -164,6 +164,8 @@ export function executeSingleShot(engine: any): void {
                   ? engine.easternCityLevelData.collider
                 : engine.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5'
                   ? engine.mirageAnubisLevelData.collider
+                : engine.state.drillMode === 'STATION_CAPTURE_5V5'
+                  ? engine.stationArenaLevelData.collider
                 : null;
       const hit = raycastCombatShot(
         engine.raycaster,
@@ -410,7 +412,15 @@ export function executeSingleShot(engine: any): void {
               ? engine.assaultLevelData.collider
               : engine.state.drillMode === 'INDUSTRIA_BOMB_5V5'
                 ? engine.industriaLevelData.collider
-                : null;
+                : engine.state.drillMode === 'HANGAR_BOMB_5V5'
+                  ? engine.hangarLevelData.collider
+                  : engine.state.drillMode === 'EASTERN_CITY_BOMB_5V5'
+                    ? engine.easternCityLevelData.collider
+                    : engine.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5'
+                      ? engine.mirageAnubisLevelData.collider
+                      : engine.state.drillMode === 'STATION_CAPTURE_5V5'
+                        ? engine.stationArenaLevelData.collider
+                        : null;
 
         const hit = raycastCombatShot(
           engine.raycaster,

@@ -31,6 +31,10 @@ import {
   disposeMirageAnubisMapGeometry,
   loadMirageAnubisMapGeometry,
 } from './mirageAnubisLevelBuilder';
+import {
+  disposeStationArenaMapGeometry,
+  loadStationArenaMapGeometry,
+} from './stationArenaLevelBuilder';
 import { TacticalLevelData } from './levelBuilder';
 import {
   enableMapAssetCache,
@@ -77,6 +81,7 @@ export interface MatchArenaPrepareParams {
   hangarLevelData: Dust2LevelBundle;
   easternCityLevelData: Dust2LevelBundle;
   mirageAnubisLevelData: Dust2LevelBundle;
+  stationArenaLevelData: Dust2LevelBundle;
   skySystem: TacticalSkySystem;
   grenadeSystem: TacticalGrenadeSystem;
   onProgress: (pct: number, statusLabel: string) => void;
@@ -108,6 +113,7 @@ export async function prepareMatchArena(
     hangarLevelData,
     easternCityLevelData,
     mirageAnubisLevelData,
+    stationArenaLevelData,
     skySystem,
     grenadeSystem,
     onProgress,
@@ -120,6 +126,7 @@ export async function prepareMatchArena(
   const isHangar = assetMode === 'HANGAR_BOMB_5V5';
   const isEasternCity = assetMode === 'EASTERN_CITY_BOMB_5V5';
   const isMirageAnubis = assetMode === 'MIRAGE_ANUBIS_BOMB_5V5';
+  const isStationArena = assetMode === 'STATION_CAPTURE_5V5';
   const isYard = assetMode === 'YARD_BOMB_5V5';
   const isFreeRange = assetMode === 'FREE_RANGE';
 
@@ -147,7 +154,7 @@ export async function prepareMatchArena(
   // Hide GLB arenas until geometry+collider bake finishes (no under-map flash).
   standerTiroLevelData.levelGroup.visible = false;
   facilityLevelData.levelGroup.visible =
-    !isDust2 && !isAssault && !isIndustria && !isHangar && !isEasternCity && !isMirageAnubis && !isYard && !isFreeRange;
+    !isDust2 && !isAssault && !isIndustria && !isHangar && !isEasternCity && !isMirageAnubis && !isStationArena && !isYard && !isFreeRange;
   yardLevelData.levelGroup.visible = isYard;
   dust2LevelData.levelGroup.visible = false;
   assaultLevelData.levelGroup.visible = false;
@@ -155,6 +162,7 @@ export async function prepareMatchArena(
   hangarLevelData.levelGroup.visible = false;
   easternCityLevelData.levelGroup.visible = false;
   mirageAnubisLevelData.levelGroup.visible = false;
+  stationArenaLevelData.levelGroup.visible = false;
 
   const loadingManager = new THREE.LoadingManager();
   let lastReportedPct = 4;
@@ -332,7 +340,28 @@ export async function prepareMatchArena(
       70,
       `COLISORES BOX3 (${mirageAnubisLevelData.collider.boundingBoxes.length}) E ${mirageAnubisLevelData.collider.triangleCount} TRIÂNGULOS PRONTOS!`
     );
-} else if (isFreeRange) {
+  } else if (isStationArena) {
+    reportProgress(8, 'ABRINDO STATION ARENA (CAPTURA 5V5) NA GPU...');
+    await loadStationArenaMapGeometry(
+      stationArenaLevelData,
+      isSoftwareGl,
+      loadingManager,
+      (byteRatio) => {
+        const mappedPct = 8 + byteRatio * 52;
+        reportProgress(
+          mappedPct,
+          `ENVIANDO STATION ARENA PARA A GPU (${Math.round(byteRatio * 100)}%)...`
+        );
+      }
+    );
+
+    stationArenaLevelData.levelGroup.visible = true;
+    assertGlbFloorReady('STATION_ARENA', stationArenaLevelData);
+    reportProgress(
+      70,
+      `COLISORES BOX3 (${stationArenaLevelData.collider.boundingBoxes.length}) E ${stationArenaLevelData.collider.triangleCount} TRIÂNGULOS PRONTOS!`
+    );
+  } else if (isFreeRange) {
     reportProgress(12, 'ABRINDO ESTANDE DE TIRO NA GPU...');
     await loadStanderTiroMapGeometry(
       standerTiroLevelData as StanderTiroBundle,
@@ -376,6 +405,8 @@ export async function prepareMatchArena(
               ? easternCityLevelData.targets
             : isMirageAnubis
               ? mirageAnubisLevelData.targets
+            : isStationArena
+              ? stationArenaLevelData.targets
             : isYard
             ? yardLevelData.targets
             : facilityLevelData.targets;
@@ -417,6 +448,8 @@ export async function prepareMatchArena(
             ? easternCityLevelData.levelGroup
           : isMirageAnubis
             ? mirageAnubisLevelData.levelGroup
+          : isStationArena
+            ? stationArenaLevelData.levelGroup
           : isYard
           ? yardLevelData.levelGroup
           : isFreeRange
@@ -432,6 +465,7 @@ export async function prepareMatchArena(
     (isHangar && hangarLevelData.mapGeometryGroup) ||
     (isEasternCity && easternCityLevelData.mapGeometryGroup) ||
     (isMirageAnubis && mirageAnubisLevelData.mapGeometryGroup) ||
+    (isStationArena && stationArenaLevelData.mapGeometryGroup) ||
     null;
 
   if (mapOnlyGroup) {
@@ -556,6 +590,7 @@ export function cleanupMatchArenaAssets(
   hangarLevelData: Dust2LevelBundle,
   easternCityLevelData: Dust2LevelBundle,
   mirageAnubisLevelData: Dust2LevelBundle,
+  stationArenaLevelData: Dust2LevelBundle,
   grenadeSystem?: TacticalGrenadeSystem
 ): void {
   // 1. Oculta arenas de partida e reativa apenas o Stander de Tiro do Lobby
@@ -565,6 +600,7 @@ export function cleanupMatchArenaAssets(
   hangarLevelData.levelGroup.visible = false;
   easternCityLevelData.levelGroup.visible = false;
   mirageAnubisLevelData.levelGroup.visible = false;
+  stationArenaLevelData.levelGroup.visible = false;
   yardLevelData.levelGroup.visible = false;
   facilityLevelData.levelGroup.visible = false;
   standerTiroLevelData.levelGroup.visible = true;
@@ -576,6 +612,7 @@ export function cleanupMatchArenaAssets(
   disposeHangarMapGeometry(hangarLevelData);
   disposeEasternCityMapGeometry(easternCityLevelData);
   disposeMirageAnubisMapGeometry(mirageAnubisLevelData);
+  disposeStationArenaMapGeometry(stationArenaLevelData);
 
   // 3. Limpa granadas ativas, fumaça e luzes temporárias
   grenadeSystem?.clearAll();

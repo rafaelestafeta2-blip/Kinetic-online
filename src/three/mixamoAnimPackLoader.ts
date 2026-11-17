@@ -85,9 +85,20 @@ function normalizeMixamoClip(clip: THREE.AnimationClip, forceName: string): THRE
     const t = cloned.tracks[i];
     if (t.name.includes(':')) t.name = t.name.replace(/:/g, '');
     // Mixamo FBX sometimes prefixes with armature name
-    if (t.name.startsWith('mixamorig')) continue;
-    const idx = t.name.indexOf('mixamorig');
-    if (idx > 0) t.name = t.name.slice(idx);
+    if (!t.name.startsWith('mixamorig')) {
+      const idx = t.name.indexOf('mixamorig');
+      if (idx > 0) t.name = t.name.slice(idx);
+    }
+    // Strip horizontal (X/Z) root-motion drift from Mixamo FBX clips so bots stay
+    // locked to their physics capsule instead of sliding 2+ meters and snapping back.
+    if (t.name === 'mixamorigHips.position' && t.values.length >= 3) {
+      const x0 = t.values[0];
+      const z0 = t.values[2];
+      for (let k = 0; k < t.values.length; k += 3) {
+        t.values[k] = x0;
+        t.values[k + 2] = z0;
+      }
+    }
   }
   return cloned;
 }
@@ -134,12 +145,8 @@ export function preloadMixamoAnimPack(
           });
           const clip = extractClip(fbx, spec.key);
           if (clip) {
-            // Prefer first assignment; run_backwards overwrites walk_back if loaded later
             if (spec.url.includes('run_backwards')) {
               out.set('RIFLE_WALK_BACK', clip);
-              // Also stash as sprint-back feel via RUN if needed later
-            } else if (!out.has(spec.key) || spec.key === 'RIFLE_WALK_BACK') {
-              out.set(spec.key, clip);
             } else {
               out.set(spec.key, clip);
             }
@@ -160,14 +167,6 @@ export function preloadMixamoAnimPack(
     }
     await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
 
-    // Map kneeling_down onto rifle crouch if pack has it
-    const kneel = out.get('KNEEL_DOWN');
-    if (kneel && !out.has('RIFLE_CROUCH' as AnimPackKey)) {
-      const crouchClip = kneel.clone();
-      crouchClip.name = 'RIFLE_CROUCH';
-      out.set('RIFLE_CROUCH' as AnimPackKey, crouchClip);
-    }
-
     packCache = out;
     return out;
   })();
@@ -176,61 +175,58 @@ export function preloadMixamoAnimPack(
 }
 
 /**
- * Overlay Animaçao pack clips onto a BotClipMap (in place / returns new map).
- * Prefers pack clips for throw/hit/fire/loco when present.
+ * Overlay Animaçao pack clips onto a BotClipMap.
+ * - For native meter-scale operator rigs (where GLB clips already include retargeted
+ *   locomotion/crouch/fire/hit/throw), preserve native clips and ONLY adapt missing
+ *   one-shots (RIFLE_JUMP, RIFLE_RELOAD_3P) via `adaptClip` so Hips never jump to 95m!
+ * - For cm-scale Pro Rifle Pack, keep clean in-place locomotion/crouch and apply
+ *   missing combat/utility one-shots (fire, hit, throw, jump, reload).
  */
-export function applyAnimPackOverlayToBotClips(base: BotClipMap): BotClipMap {
+export function applyAnimPackOverlayToBotClips(
+  base: BotClipMap,
+  options?: {
+    preserveNativeLocomotion?: boolean;
+    adaptClip?: (clip: THREE.AnimationClip, stateName: string) => THREE.AnimationClip;
+  }
+): BotClipMap {
   if (!packCache || packCache.size === 0) return base;
   const next = { ...base };
-  const overlayKeys: BotAnimState[] = [
-    'RIFLE_THROW',
-    'RIFLE_HIT',
-    'RIFLE_FIRE',
-    'RIFLE_RUN',
-    'RIFLE_WALK',
-    'RIFLE_WALK_BACK',
-    'RIFLE_WALK_LEFT',
-    'RIFLE_WALK_RIGHT',
-    'RIFLE_RUN_LEFT',
-    'RIFLE_RUN_RIGHT',
-    'RIFLE_AIM',
-    'RIFLE_CROUCH',
-    'RIFLE_SPRINT',
-    'RIFLE_JUMP',
-    'RIFLE_RELOAD_3P',
-  ];
-  for (const k of overlayKeys) {
+  const adapt = options?.adaptClip;
+
+  const missingOnlyKeys: BotAnimState[] = ['RIFLE_JUMP', 'RIFLE_RELOAD_3P'];
+  const proOneShotKeys: BotAnimState[] = ['RIFLE_THROW', 'RIFLE_HIT', 'RIFLE_FIRE'];
+  const keysToApply = options?.preserveNativeLocomotion
+    ? missingOnlyKeys
+    : [...missingOnlyKeys, ...proOneShotKeys];
+
+  for (const k of keysToApply) {
     const c = packCache.get(k);
-    if (c) next[k] = c;
-  }
-  // AnimPackKey uses same names for jump/reload extras.
-  const jumpClip = packCache.get('RIFLE_JUMP');
-  if (jumpClip) next.RIFLE_JUMP = jumpClip;
-  const reloadClip = packCache.get('RIFLE_RELOAD_3P');
-  if (reloadClip) next.RIFLE_RELOAD_3P = reloadClip;
-  // Sprint: reuse rifle_run if no dedicated sprint in pack
-  if (packCache.get('RIFLE_RUN')) {
-    next.RIFLE_SPRINT = packCache.get('RIFLE_RUN')!;
-  }
-  // Crouch walk: reuse walk at slower timescale (clip itself)
-  if (packCache.get('RIFLE_WALK') && !packCache.get('RIFLE_CROUCH_WALK' as AnimPackKey)) {
-    next.RIFLE_CROUCH_WALK = packCache.get('KNEEL_DOWN') || packCache.get('RIFLE_WALK')!;
+    if (c) {
+      next[k] = adapt ? adapt(c, k) : c;
+    }
   }
   return next;
 }
 
 /** Build a BotClipMap variant that uses pistol locomotion for pistol-armed bots. */
-export function applyPistolLocoToBotClips(base: BotClipMap): BotClipMap {
+export function applyPistolLocoToBotClips(
+  base: BotClipMap,
+  adaptClip?: (clip: THREE.AnimationClip, stateName: string) => THREE.AnimationClip
+): BotClipMap {
   if (!packCache) return base;
   const next = { ...base };
-  const idle = packCache.get('PISTOL_IDLE');
-  const walk = packCache.get('PISTOL_WALK');
-  const run = packCache.get('PISTOL_RUN');
-  const walkBack = packCache.get('PISTOL_WALK_BACK');
-  const runBack = packCache.get('PISTOL_RUN_BACK');
-  const strafeL = packCache.get('PISTOL_STRAFE_L');
-  const strafeR = packCache.get('PISTOL_STRAFE_R');
-  const crouch = packCache.get('PISTOL_CROUCH');
+  const mapClip = (c: THREE.AnimationClip | undefined, name: string) =>
+    !c ? undefined : adaptClip ? adaptClip(c, name) : c;
+
+  const idle = mapClip(packCache.get('PISTOL_IDLE'), 'RIFLE_IDLE');
+  const walk = mapClip(packCache.get('PISTOL_WALK'), 'RIFLE_WALK');
+  const run = mapClip(packCache.get('PISTOL_RUN'), 'RIFLE_RUN');
+  const walkBack = mapClip(packCache.get('PISTOL_WALK_BACK'), 'RIFLE_WALK_BACK');
+  const runBack = mapClip(packCache.get('PISTOL_RUN_BACK'), 'RIFLE_WALK_BACK');
+  const strafeL = mapClip(packCache.get('PISTOL_STRAFE_L'), 'RIFLE_WALK_LEFT');
+  const strafeR = mapClip(packCache.get('PISTOL_STRAFE_R'), 'RIFLE_WALK_RIGHT');
+  const crouch = mapClip(packCache.get('PISTOL_CROUCH'), 'RIFLE_CROUCH');
+
   if (idle) {
     next.RIFLE_IDLE = idle;
     next.RIFLE_AIM = idle;

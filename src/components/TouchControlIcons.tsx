@@ -29,12 +29,12 @@ export const CrouchProneButton: React.FC<{
       style={getPlacementStyle(placement)}
       aria-label="Agachar e Deitar no Chão"
       title="Toque para agachar e deitar no chão (Posição Prone)"
-      className={`fixed w-13 h-13 rounded-full border flex items-center justify-center pointer-events-auto z-30 select-none active:brightness-125 transition-colors cursor-pointer ${
+      className={`fixed w-13 h-13 rounded-full border flex items-center justify-center pointer-events-auto z-30 select-none active:brightness-125 transition-colors cursor-pointer shadow-[0_4px_14px_rgba(0,0,0,0.55)] ${
         isProne
           ? 'bg-amber-500 border-amber-300 text-black shadow-[0_0_18px_rgba(245,158,11,0.8)] font-bold'
           : isCrouchOrSlide
             ? 'bg-white/35 border-amber-300 text-amber-300'
-            : 'bg-black/45 border-white/35 text-white/95'
+            : 'bg-[#322920]/70 border-white/35 text-white'
       }`}
     >
       {isProne ? (
@@ -83,7 +83,7 @@ export const FireTriggerButton: React.FC<{
     }}
     style={getPlacementStyle(placement, true)}
     aria-label={equippedGrenade ? 'Tirar o Pino e Jogar Granada' : label}
-    className={`fixed ${sizeClass} rounded-full border-2 flex items-center justify-center pointer-events-auto z-30 select-none transition-colors cursor-pointer ${
+    className={`fixed ${sizeClass} rounded-full border flex items-center justify-center pointer-events-auto z-30 select-none transition-colors cursor-pointer ${
       equippedGrenade === 'FRAG'
         ? pressed
           ? 'bg-orange-500/55 border-orange-200 shadow-[0_0_28px_rgba(249,115,22,0.75)]'
@@ -94,10 +94,10 @@ export const FireTriggerButton: React.FC<{
             : 'bg-sky-500/30 border-sky-400 shadow-[0_0_20px_rgba(56,189,248,0.45)] animate-pulse'
           : pressed
             ? 'bg-white/35 border-amber-300 shadow-[0_0_24px_rgba(255,255,255,0.45)]'
-            : 'bg-black/35 border-white/55 shadow-lg'
+            : 'bg-[#322920]/70 border-white/40 shadow-[0_6px_18px_rgba(0,0,0,0.6)]'
     }`}
   >
-    <div className={`${innerSizeClass} rounded-full border border-white/25 flex flex-col items-center justify-center`}>
+    <div className={`${innerSizeClass} rounded-full flex flex-col items-center justify-center`}>
       {equippedGrenade ? (
         <>
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" className="text-white drop-shadow">
@@ -111,7 +111,7 @@ export const FireTriggerButton: React.FC<{
           </span>
         </>
       ) : (
-        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" className="-rotate-45 text-white drop-shadow">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" className="-rotate-45 text-white drop-shadow">
           <path d="M12 2C9.8 5 9 8 9 11.5H15C15 8 14.2 5 12 2Z" fill="currentColor" />
           <rect x="9" y="12.5" width="6" height="7" rx="0.5" fill="currentColor" />
           <rect x="8.5" y="20.2" width="7" height="1.8" rx="0.5" fill="currentColor" />

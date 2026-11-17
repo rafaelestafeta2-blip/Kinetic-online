@@ -6,6 +6,7 @@ import {
   isSculptedWeaponId,
 } from './sculptedFirearms';
 import { normalizeAnimatedM4A4Model } from './weaponBuilder';
+import { applyWeaponSkinToObject3D } from './weaponSkinMaterial';
 
 interface RealGlbWeaponSpec {
   id: WeaponId;
@@ -49,6 +50,7 @@ interface HandFingerCache {
 const HIDDEN_ARM_MATS = new Set([
   'arms',
   'arms_0',
+  'mat',
   'hand_d',
   'glove_d',
   'm_gloves_black',
@@ -61,6 +63,7 @@ const HIDDEN_ARM_MATS = new Set([
   'dmc5_soldier_hands_mat',
   'dmc5_soldier_shirt_mat',
   'scopereticle',
+  'hands_04',
 ]);
 
 const HIDDEN_EXTRA_NODES = new Set([
@@ -92,6 +95,7 @@ const HIDDEN_EXTRA_NODES = new Set([
   'ch22_body',
   'ch22_body_textura_0',
   'armmesh_arms_0',
+  'armmesh_mat_0',
   'arms_arms_0',
   'hand_mesh_hand_d_0',
   'hand_mesh_glove_d_0',
@@ -99,6 +103,7 @@ const HIDDEN_EXTRA_NODES = new Set([
   'skm_comando_m_shirt_blackcamo2_0',
   'scoperender_sniper_0',
   'reticle_scopereticle_0',
+  'hands_04_mesh',
 ]);
 
 function isExcludedMesh(
@@ -187,6 +192,28 @@ const WEAPON_GLB_SPECS: RealGlbWeaponSpec[] = [
     filter: (m, n, mats) => !isExcludedMesh(m, n, mats),
     offset: [0, -4.0, -9.5],
     scale: 0.0095,
+    rotX: 0.19,
+    rotY: 0,
+  },
+  {
+    id: 'SHOTGUN_12',
+    url: '/models/shotgun_animated.glb',
+    clipName: 'allanims',
+    clipTime: 0,
+    filter: (m, n, mats) => !isExcludedMesh(m, n, mats),
+    offset: [0, -4.5, -1.5],
+    scale: 0.0092,
+    rotX: 0.19,
+    rotY: 0,
+  },
+  {
+    id: 'SHOTGUN_SPAS',
+    url: '/models/weapons/automatic_shotgun.glb',
+    clipName: 'Idle',
+    clipTime: 0.05,
+    filter: (m, n, mats) => !isExcludedMesh(m, n, mats),
+    offset: [9.37, -147.74, -34.44],
+    scale: 0.0105,
     rotX: 0.19,
     rotY: 0,
   },
@@ -418,6 +445,10 @@ function populateMountWithRealGlb(
   }
   const instance = tpl.clone();
   mount.add(instance);
+  const desiredSkin = mount.userData?.desiredSkinId as string | undefined;
+  if (desiredSkin && desiredSkin !== 'default') {
+    applyWeaponSkinToObject3D(mount, weaponId, desiredSkin);
+  }
   return true;
 }
 
@@ -557,17 +588,24 @@ export async function buildLevel3DWeaponPreviewGroup(
 
 export function createBotThirdPersonWeaponMesh(
   weaponId: WeaponId | undefined,
-  _isAlly: boolean
+  _isAlly: boolean,
+  weaponSkinId?: string
 ): THREE.Group {
   preloadRealBotWeaponGlbs();
 
   const chosen: WeaponId = weaponId || 'AK47_RIFLE';
+  const skinId = weaponSkinId || 'default';
   const group = new THREE.Group();
   group.name = 'BotWorldWeapon';
+  group.userData.desiredSkinWeaponId = chosen;
+  group.userData.desiredSkinId = skinId;
 
   if (isSculptedWeaponId(chosen)) {
     const sculpted = createSculptedThirdPersonWeaponMesh(chosen, false);
     group.add(sculpted.group);
+    if (skinId !== 'default') {
+      applyWeaponSkinToObject3D(group, chosen, skinId);
+    }
     return group;
   }
 
@@ -657,9 +695,10 @@ export function alignWeaponPropToMixamoHands(
         weaponProp.position.addScaledVector(_handDir, -kickBack);
       }
 
+      _handDir.subVectors(_lCradleWorld, _rGripWorld);
       _lookTargetWorld
         .copy(_lCradleWorld)
-        .addScaledVector(_lCradleWorld.clone().sub(_rGripWorld), 2.0);
+        .addScaledVector(_handDir, 2.0);
       weaponProp.lookAt(_lookTargetWorld);
       return;
     }

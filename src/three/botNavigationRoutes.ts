@@ -107,6 +107,16 @@ export interface BotNavData {
   aimDriftX: number;
   aimDriftY: number;
   aimDriftZ: number;
+  /** Last valid floor Y to protect against overhang snaps or triangle-seam echoes. */
+  lastValidGroundY?: number;
+  /** Real wall/crate cover position evaluated against map geometry. */
+  coverSpot?: THREE.Vector3 | null;
+  /** Verified edge/corner peek position with clear LOS from coverSpot. */
+  peekSpot?: THREE.Vector3 | null;
+  /** True when coverSpot was verified against real walls/crates. */
+  hasRealCover?: boolean;
+  /** Timestamp (seconds) until next cover search is allowed. */
+  coverSearchAt?: number;
 }
 
 export interface TacticalMapRoutes {
@@ -124,6 +134,17 @@ const _losDir = new THREE.Vector3();
 const _navDir = new THREE.Vector3();
 const _steerDir = new THREE.Vector3();
 const _resolvedHoriz = { x: 0, z: 0 };
+const _covResolved = { x: 0, z: 0 };
+const _covResolved2 = { x: 0, z: 0 };
+const _covEye = new THREE.Vector3();
+const _covEnemyEye = new THREE.Vector3();
+const _covPeekEye = new THREE.Vector3();
+const _covCoverHead = new THREE.Vector3();
+const _covPeekHead = new THREE.Vector3();
+const _covRayOrigin = new THREE.Vector3();
+const _covRayDir = new THREE.Vector3();
+const _covHitPt = new THREE.Vector3();
+const _covHitNorm = new THREE.Vector3();
 const STEER_TEST_ANGLES = [0.5, -0.5, 1.0, -1.0, 1.55, -1.55, 2.15, -2.15, 2.65, -2.65];
 
 export function dampAngleShortest(
@@ -217,6 +238,19 @@ export function getMapRoutes(mode: DrillMode): TacticalMapRoutes {
       btMid: [v(-20, 0.2, 12), v(-30, 0.2, -15), v(-33, 0.2, -40)],
       siteA: v(-60, 0.2, -40),
       siteB: v(-10, 0.2, -20),
+    };
+  }
+
+  if (mode === 'STATION_CAPTURE_5V5') {
+    return {
+      vgA: [v(-10, 0.1, -16), v(-12, 0.1, -6), v(-8, 0.1, 6), v(10, 0.1, 16)],
+      vgB: [v(-10, 0.1, -16), v(4, 0.1, -8), v(12, 0.1, 4), v(10, 0.1, 16)],
+      vgMid: [v(-10, 0.1, -16), v(0, 0.1, -8), v(0, 0.1, 8), v(10, 0.1, 16)],
+      btA: [v(10, 0.1, 16), v(-8, 0.1, 6), v(-12, 0.1, -6), v(-10, 0.1, -16)],
+      btB: [v(10, 0.1, 16), v(12, 0.1, 4), v(4, 0.1, -8), v(-10, 0.1, -16)],
+      btMid: [v(10, 0.1, 16), v(0, 0.1, 8), v(0, 0.1, -8), v(-10, 0.1, -16)],
+      siteA: v(-10, 0.1, -16),
+      siteB: v(10, 0.1, 16),
     };
   }
 
@@ -667,6 +701,253 @@ export function isBotCollidingHorizontallyWithBoxes(
   return false;
 }
 
+export interface TacticalCoverResult {
+  found: boolean;
+  coverSpot: THREE.Vector3 | null;
+  peekSpot: THREE.Vector3 | null;
+}
+
+/**
+ * Evaluates real walls, pillars, and crates (ColliderBox[] + GLB triangle collider)
+ * to find a walkable spot that physically blocks crouched LOS from `enemyPos`,
+ * preferring edges/corners that allow stepping out to a verified `peekSpot` with clear LOS.
+ */
+export function findRealTacticalCoverSpot(
+  bot: YardBotEntity,
+  botPos: THREE.Vector3,
+  enemyPos: THREE.Vector3,
+  allBots: YardBotEntity[],
+  squadRole: SquadFlankRole,
+  grenadeSystem: TacticalGrenadeSystem,
+  colliders?: ColliderBox[],
+  activeGlbCollider?: Dust2TriangleCollider | null
+): TacticalCoverResult {
+  const dirX = enemyPos.x - botPos.x;
+  const dirZ = enemyPos.z - botPos.z;
+  const enemyDist = Math.hypot(dirX, dirZ);
+  const fwdX = enemyDist > 0.01 ? dirX / enemyDist : 0;
+  const fwdZ = enemyDist > 0.01 ? dirZ / enemyDist : 1;
+  // Perpendicular axis: +1 = RIGHT relative to facing enemy, -1 = LEFT
+  const perpX = -fwdZ;
+  const perpZ = fwdX;
+
+  _covEnemyEye.set(enemyPos.x, enemyPos.y + 1.38, enemyPos.z);
+
+  const candX: number[] = [];
+  const candZ: number[] = [];
+  const candHugWall: number[] = [];
+
+  const pushCandidate = (x: number, z: number, wallHugBonus: number) => {
+    // Deduplicate candidates within 0.65m of an already queued point.
+    for (let i = 0; i < candX.length; i++) {
+      const dx = candX[i] - x;
+      const dz = candZ[i] - z;
+      if (dx * dx + dz * dz < 0.42) return;
+    }
+    candX.push(x);
+    candZ.push(z);
+    candHugWall.push(wallHugBonus);
+  };
+
+  // 1) Extract cover spots from box colliders (crates, walls, pillars) near the bot.
+  if (colliders && colliders.length > 0) {
+    for (let i = 0; i < colliders.length; i++) {
+      const c = colliders[i];
+      if (c.maxY - c.minY < 0.85) continue;
+      if (c.minY > botPos.y + 1.4 || c.maxY < botPos.y + 0.85) continue;
+      const cx = (c.minX + c.maxX) * 0.5;
+      const cz = (c.minZ + c.maxZ) * 0.5;
+      const hx = (c.maxX - c.minX) * 0.5;
+      const hz = (c.maxZ - c.minZ) * 0.5;
+      // Ignore enormous perimeter walls whose center is far away unless near their face.
+      const distCenter = Math.hypot(cx - botPos.x, cz - botPos.z);
+      if (distCenter - Math.max(hx, hz) > 11.5) continue;
+
+      // Project a spot on the side of the box shielded from enemyPos, plus both corners.
+      const clampedX = THREE.MathUtils.clamp(botPos.x, c.minX - 0.55, c.maxX + 0.55);
+      const clampedZ = THREE.MathUtils.clamp(botPos.z, c.minZ - 0.55, c.maxZ + 0.55);
+      const shieldDistX = hx + 0.58;
+      const shieldDistZ = hz + 0.58;
+      const backX = Math.abs(fwdX) > Math.abs(fwdZ) ? cx - Math.sign(fwdX) * shieldDistX : clampedX;
+      const backZ = Math.abs(fwdZ) >= Math.abs(fwdX) ? cz - Math.sign(fwdZ) * shieldDistZ : clampedZ;
+
+      if (Math.hypot(backX - botPos.x, backZ - botPos.z) <= 11.5) {
+        pushCandidate(backX, backZ, 12);
+      }
+      // Corner candidates beside the box (left / right relative to enemy line)
+      const cornerSpan = Math.min(3.5, Math.hypot(hx, hz) + 0.55);
+      pushCandidate(backX + perpX * cornerSpan * 0.75 - fwdX * 0.2, backZ + perpZ * cornerSpan * 0.75 - fwdZ * 0.2, 14);
+      pushCandidate(backX - perpX * cornerSpan * 0.75 - fwdX * 0.2, backZ - perpZ * cornerSpan * 0.75 - fwdZ * 0.2, 14);
+    }
+  }
+
+  // 2) Probe GLB triangle geometry rays to discover walls, pillars, doorways, and crates.
+  if (activeGlbCollider && activeGlbCollider.ready) {
+    _covRayOrigin.set(botPos.x, botPos.y + 0.95, botPos.z);
+    const rayAngles = [-1.25, 1.25, -1.75, 1.75, -2.25, 2.25, -2.75, 2.75, 3.14, 0.75, -0.75];
+    for (let r = 0; r < rayAngles.length; r++) {
+      const a = rayAngles[r];
+      const ca = Math.cos(a);
+      const sa = Math.sin(a);
+      const rx = fwdX * ca - fwdZ * sa;
+      const rz = fwdX * sa + fwdZ * ca;
+      _covRayDir.set(rx, 0, rz).normalize();
+      const hit = activeGlbCollider.raycastDetailed(_covRayOrigin, _covRayDir, 10.5, _covHitPt, _covHitNorm);
+      if (hit && hit.distance >= 0.9 && hit.distance <= 10.2) {
+        // Stand snug in front of wall/crate hit
+        const standX = _covHitPt.x + _covHitNorm.x * 0.58;
+        const standZ = _covHitPt.z + _covHitNorm.z * 0.58;
+        pushCandidate(standX, standZ, 13);
+        // Tangent slides along wall surface to catch doorway edges / crate corners
+        const tangX = -_covHitNorm.z;
+        const tangZ = _covHitNorm.x;
+        pushCandidate(standX + tangX * 1.1, standZ + tangZ * 1.1, 11);
+        pushCandidate(standX - tangX * 1.1, standZ - tangZ * 1.1, 11);
+      }
+    }
+  }
+
+  // 3) Near-field lateral / rear radial probes to catch recessed alcoves or low cover behind bot.
+  const baseAngles = [1.35, -1.35, 1.9, -1.9, 2.45, -2.45, 2.95, -2.95];
+  const radii = [2.4, 4.6, 7.2];
+  for (let ri = 0; ri < radii.length; ri++) {
+    const rad = radii[ri];
+    for (let ai = 0; ai < baseAngles.length; ai++) {
+      if (candX.length >= 34) break;
+      const a = baseAngles[ai];
+      const ca = Math.cos(a);
+      const sa = Math.sin(a);
+      const vx = fwdX * ca - fwdZ * sa;
+      const vz = fwdX * sa + fwdZ * ca;
+      pushCandidate(botPos.x + vx * rad, botPos.z + vz * rad, 0);
+    }
+  }
+
+  const glbReady = Boolean(activeGlbCollider && activeGlbCollider.ready);
+  const botRadius = 0.36;
+  const preferredSide = squadRole === 'LEFT' ? -1 : squadRole === 'RIGHT' ? 1 : 0;
+
+  let bestScore = -Infinity;
+  let bestCover: THREE.Vector3 | null = null;
+  let bestPeek: THREE.Vector3 | null = null;
+
+  const evalLimit = Math.min(candX.length, 32);
+  for (let i = 0; i < evalLimit; i++) {
+    let px = candX[i];
+    let pz = candZ[i];
+    let py = botPos.y;
+
+    if (glbReady && activeGlbCollider) {
+      const probeY = botPos.y + 0.45;
+      py = activeGlbCollider.getGroundHeight(px, probeY, pz);
+      // Reject voids (echoed probeY) or abrupt elevation jumps (roofs/pits)
+      if (Math.abs(py - probeY) < 1e-4 || Math.abs(py - botPos.y) > 1.85) continue;
+
+      activeGlbCollider.resolveHorizontal(px, pz, py, 1.72, botRadius, _covResolved);
+      px = _covResolved.x;
+      pz = _covResolved.z;
+      // Verify resolved point is actually free standing space (not trapped inside thin wall)
+      const doubleHit = activeGlbCollider.resolveHorizontal(px, pz, py, 1.72, botRadius * 0.9, _covResolved2);
+      if (doubleHit && Math.hypot(_covResolved2.x - px, _covResolved2.z - pz) > 0.25) continue;
+    } else {
+      if (isBotCollidingHorizontallyWithBoxes(px, pz, py, botRadius, colliders)) continue;
+    }
+
+    const distFromBot = Math.hypot(px - botPos.x, pz - botPos.z);
+    if (distFromBot < 0.45 || distFromBot > 11.8) continue;
+
+    const candToEnemy = Math.hypot(enemyPos.x - px, enemyPos.z - pz);
+    if (candToEnemy < 2.2 && enemyDist > 2.8) continue;
+
+    // Must physically block LOS when crouched behind cover.
+    _covEye.set(px, py + 0.92, pz);
+    if (checkBotLineOfSight(_covEye, _covEnemyEye, grenadeSystem, colliders, activeGlbCollider)) {
+      continue;
+    }
+
+    // Evaluate both lateral peek offsets (±1.15m) to check if stepping out regains clear LOS.
+    let foundPeekSpot: THREE.Vector3 | null = null;
+    const peekOrder = preferredSide < 0 ? [-1, 1] : [1, -1];
+    const toE_x = candToEnemy > 0.01 ? (enemyPos.x - px) / candToEnemy : fwdX;
+    const toE_z = candToEnemy > 0.01 ? (enemyPos.z - pz) / candToEnemy : fwdZ;
+    const cPerpX = -toE_z;
+    const cPerpZ = toE_x;
+
+    _covCoverHead.set(px, py + 1.35, pz);
+
+    for (let pi = 0; pi < peekOrder.length; pi++) {
+      const side = peekOrder[pi];
+      let pkX = px + cPerpX * side * 1.18 + toE_x * 0.18;
+      let pkZ = pz + cPerpZ * side * 1.18 + toE_z * 0.18;
+      let pkY = py;
+
+      if (glbReady && activeGlbCollider) {
+        const pkProbeY = py + 0.45;
+        pkY = activeGlbCollider.getGroundHeight(pkX, pkProbeY, pkZ);
+        if (Math.abs(pkY - pkProbeY) < 1e-4 || Math.abs(pkY - py) > 0.95) continue;
+        activeGlbCollider.resolveHorizontal(pkX, pkZ, pkY, 1.72, botRadius, _covResolved);
+        pkX = _covResolved.x;
+        pkZ = _covResolved.z;
+        if (Math.hypot(pkX - px, pkZ - pz) < 0.55) continue;
+      } else {
+        if (isBotCollidingHorizontallyWithBoxes(pkX, pkZ, pkY, botRadius, colliders)) continue;
+      }
+
+      // Ensure bot can actually step from coverSpot to peekSpot without a solid wall between them.
+      _covPeekHead.set(pkX, pkY + 1.35, pkZ);
+      if (!checkBotLineOfSight(_covCoverHead, _covPeekHead, grenadeSystem, colliders, activeGlbCollider)) {
+        continue;
+      }
+
+      // Verify peekSpot sees the enemy!
+      _covPeekEye.set(pkX, pkY + 1.45, pkZ);
+      if (checkBotLineOfSight(_covPeekEye, _covEnemyEye, grenadeSystem, colliders, activeGlbCollider)) {
+        foundPeekSpot = new THREE.Vector3(pkX, pkY, pkZ);
+        break;
+      }
+    }
+
+    // Score this cover candidate.
+    let score = 100 + candHugWall[i];
+    if (foundPeekSpot) score += 45;
+    score -= distFromBot * 3.1;
+    // Penalize moving noticeably closer to the enemy just to take cover.
+    const closerPenalty = Math.max(0, enemyDist - candToEnemy);
+    score -= closerPenalty * 2.4;
+
+    if (preferredSide !== 0) {
+      const sideDot = (px - botPos.x) * perpX + (pz - botPos.z) * perpZ;
+      if (sideDot * preferredSide > 0.4) score += 14;
+    } else if (candToEnemy >= enemyDist - 0.3) {
+      score += 8;
+    }
+
+    // Penalize crowding teammates or stacking on an ally's claimed coverSpot.
+    for (let j = 0; j < allBots.length; j++) {
+      const ally = allBots[j];
+      if (ally === bot || ally.isDown || Boolean(ally.isAlly) !== Boolean(bot.isAlly)) continue;
+      const dAlly = Math.hypot(ally.root.position.x - px, ally.root.position.z - pz);
+      if (dAlly < 1.95) score -= 42;
+      const allyNav = ally.root.userData?.navData as BotNavData | undefined;
+      if (allyNav?.hasRealCover && allyNav.coverSpot) {
+        const dClaim = Math.hypot(allyNav.coverSpot.x - px, allyNav.coverSpot.z - pz);
+        if (dClaim < 2.1) score -= 48;
+      }
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestCover = new THREE.Vector3(px, py, pz);
+      bestPeek = foundPeekSpot;
+    }
+  }
+
+  if (bestCover) {
+    return { found: true, coverSpot: bestCover, peekSpot: bestPeek };
+  }
+  return { found: false, coverSpot: null, peekSpot: null };
+}
+
 function tryStepDirection(
   prevX: number,
   prevZ: number,
@@ -843,10 +1124,25 @@ export function moveBotWithPhysics(
     bot.root.rotation.y = dampAngleShortest(bot.root.rotation.y, enemyAngle, 14.0, dt);
   }
 
-  const floorY =
-    activeGlbCollider && activeGlbCollider.ready
-      ? activeGlbCollider.getGroundHeight(bPos.x, bPos.y + 0.35, bPos.z)
-      : 0;
+  const glbReady = Boolean(activeGlbCollider && activeGlbCollider.ready);
+  const groundProbeY = bPos.y + 0.04;
+  let floorY = glbReady
+    ? activeGlbCollider!.getGroundHeight(bPos.x, groundProbeY, bPos.z)
+    : 0;
+
+  if (glbReady) {
+    const echoedProbeMiss = Math.abs(floorY - groundProbeY) < 1e-4;
+    const suddenRoofJump = floorY > bPos.y + 1.65 && nav.verticalVel <= 0.1;
+    if (
+      (echoedProbeMiss || suddenRoofJump) &&
+      nav.lastValidGroundY != null &&
+      Math.abs(bPos.y - nav.lastValidGroundY) < 1.15
+    ) {
+      floorY = nav.lastValidGroundY;
+    } else if (!echoedProbeMiss && Math.abs(floorY - bPos.y) <= 1.65) {
+      nav.lastValidGroundY = floorY;
+    }
+  }
 
   const grounded =
     bPos.y <= floorY + 0.14 && Math.abs(nav.verticalVel) < 0.35;

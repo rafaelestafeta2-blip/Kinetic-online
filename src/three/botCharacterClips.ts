@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { alignWeaponPropToMixamoHands } from './botWeaponProps';
 import { YardBotEntity } from './yardPropsBuilder';
 
@@ -63,9 +64,60 @@ function normalizeMixamoClip(clip: THREE.AnimationClip): THREE.AnimationClip {
   return cloned;
 }
 
+export function findFirstSkinnedMesh(root: THREE.Object3D | null | undefined): THREE.SkinnedMesh | null {
+  if (!root) return null;
+  let found: THREE.SkinnedMesh | null = null;
+  root.traverse((c) => {
+    if (!found && (c as THREE.SkinnedMesh).isSkinnedMesh && (c as THREE.SkinnedMesh).skeleton) {
+      found = c as THREE.SkinnedMesh;
+    }
+  });
+  return found;
+}
+
+/**
+ * Retarget a Mixamo cm-scale FBX clip (Pro Rifle Pack rest axes) onto a meter-scale
+ * Blender operator rig (sniper / vanguard_rifleman / engineer / medic).
+ * Prevents 95m sky-teleporting and 90-degree twisted Hips/arms.
+ */
+export function retargetFbxClipToTargetRig(
+  clip: THREE.AnimationClip,
+  targetRoot: THREE.Object3D,
+  sourceRoot: THREE.Object3D,
+  clipName: string
+): THREE.AnimationClip {
+  const targetSkinned = findFirstSkinnedMesh(targetRoot);
+  const sourceSkinned = findFirstSkinnedMesh(sourceRoot);
+  if (!targetSkinned || !sourceSkinned) {
+    return clip;
+  }
+  try {
+    targetRoot.updateMatrixWorld(true);
+    sourceRoot.updateMatrixWorld(true);
+    const retargeted = SkeletonUtils.retargetClip(targetSkinned, sourceSkinned, clip, {
+      hip: 'mixamorigHips',
+      preserveHipPosition: false,
+      useFirstFramePosition: false,
+    });
+    retargeted.name = clipName;
+    for (let i = 0; i < retargeted.tracks.length; i++) {
+      const tr = retargeted.tracks[i];
+      // SkeletonUtils emits ".bones[mixamorigX].prop" which only binds when mixer root
+      // is the SkinnedMesh itself; strip ".bones[...]" so AnimationMixer(modelRoot) binds it.
+      const match = tr.name.match(/^\.bones\[([^\]]+)\]\.(.+)$/);
+      if (match) {
+        tr.name = `${match[1]}.${match[2]}`;
+      }
+    }
+    return retargeted;
+  } catch {
+    return clip;
+  }
+}
+
 /**
  * Tripo medic IBM ≠ rifleman/Mixamo bind — position tracks explode the mesh.
- * Keep quaternion (+ hips Y only) so menu/inventory idle looks correct.
+ * Keep quaternion (+ meter-scale hips Y only) so menu/inventory & match bots stay grounded.
  */
 export function retargetClipsRotationOnly(clips: BotClipMap): BotClipMap {
   const next = { ...clips };
@@ -81,11 +133,17 @@ export function retargetClipsRotationOnly(clips: BotClipMap): BotClipMap {
         qt.name = name;
         tracks.push(qt);
       } else if (name === 'mixamorigHips.position') {
-        // Keep vertical root motion only — zero XZ drift from foreign bind.
+        // Keep vertical root motion only — convert cm (≈95) to meters (≈0.95) if needed.
         const vals = new Float32Array(t.values.length);
+        let maxAbsY = 0;
+        for (let s = 1; s < t.values.length; s += 3) {
+          const ay = Math.abs(t.values[s]);
+          if (ay > maxAbsY) maxAbsY = ay;
+        }
+        const yScale = maxAbsY > 5.0 ? 0.01 : 1.0;
         for (let s = 0; s < t.values.length; s += 3) {
           vals[s] = 0;
-          vals[s + 1] = t.values[s + 1];
+          vals[s + 1] = t.values[s + 1] * yScale;
           vals[s + 2] = 0;
         }
         tracks.push(new THREE.VectorKeyframeTrack(name, t.times, vals));

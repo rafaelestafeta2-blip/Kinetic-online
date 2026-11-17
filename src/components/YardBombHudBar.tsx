@@ -32,7 +32,6 @@ export const YardBombHudBar: React.FC<YardBombHudBarProps> = ({
     return (
       <>
         <PreRoundEquipOverlay yardBomb={yardBomb} />
-        {/* Keep scoreboard visible under the equip curtain */}
         <div className="fixed top-2 left-1/2 -translate-x-1/2 z-45 pointer-events-none select-none">
           <div className="flex items-center gap-2 bg-[#070b12]/92 border border-amber-400/40 rounded-xl px-3 py-1 shadow-xl font-mono text-[10px] text-amber-200">
             EQUIP · RODADA {yardBomb.currentRound}/{yardBomb.maxRounds} ·{' '}
@@ -53,85 +52,160 @@ export const YardBombHudBar: React.FC<YardBombHudBarProps> = ({
 
   return (
     <>
-      {/* TOP-CENTER: WARFACE 5v5 PLANT THE BOMB SCOREBOARD (VANGUARD vs BLACKTHORN · 6 RODADAS) */}
-      <div className="fixed top-2 left-1/2 -translate-x-1/2 z-25 pointer-events-none select-none flex flex-col items-center gap-1 font-mono">
-        <div className="flex items-center gap-2 bg-[#070b12]/92 border border-white/20 rounded-xl px-2.5 py-1 shadow-xl">
-          {/* VANGUARD Team + Alive Pips + Round Score */}
-          <div className="flex items-center gap-1.5" title="Equipe Vanguard (Atacantes)">
-            <VanguardTeamEmblem className="w-4 h-4 shrink-0" />
-            <span className="text-[10px] font-display font-black text-sky-300 tracking-wide">
-              VANGUARD
-            </span>
-            <div className="flex items-center gap-0.5">
-              {[0, 1, 2, 3, 4].map((i) => (
-                <span
-                  key={`ally-${i}`}
-                  className={`w-2 h-2 rounded-xs border ${
-                    i < yardBomb.alliesAlive
-                      ? 'bg-sky-400 border-sky-200 shadow-[0_0_5px_rgba(56,189,248,0.8)]'
-                      : 'bg-slate-800 border-white/10'
-                  }`}
-                />
-              ))}
-            </div>
-            <span className="px-1.5 py-0.5 rounded bg-sky-500/25 border border-sky-400/50 text-xs font-black text-sky-200 tabular-nums">
-              {yardBomb.vanguardScore}
-            </span>
+      {/* TOP-CENTER: ANGLED 3-SECTION VANGUARD vs BLACKTHORN SCOREBOARD MATCHING REFERENCE SCREENSHOT */}
+      <div className="fixed top-1.5 left-1/2 -translate-x-1/2 z-25 pointer-events-none select-none flex items-stretch gap-1 font-display drop-shadow-[0_6px_18px_rgba(0,0,0,0.8)]">
+        {/* Left Wing: VANGUARD (Blue Angled Trapezoid) */}
+        <div
+          className="flex items-center gap-2 sm:gap-2.5 pl-3 pr-4 py-1 bg-gradient-to-r from-[#06294d]/95 via-[#073461]/92 to-[#041d38]/95 border-t border-b border-sky-400/70"
+          style={{
+            clipPath: 'polygon(0% 0%, 93% 0%, 100% 100%, 6% 100%)',
+          }}
+        >
+          <VanguardTeamEmblem className="w-5 h-5 shrink-0 text-sky-400" />
+          <span className="text-[10px] sm:text-xs font-display font-black text-sky-300 tracking-wider uppercase">
+            VANGUARD
+          </span>
+          <div className="flex items-center gap-1">
+            {[0, 1, 2, 3].map((i) => (
+              <span
+                key={`ally-${i}`}
+                className={`w-2.5 h-2.5 rounded-full ${
+                  i < yardBomb.alliesAlive
+                    ? 'bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.9)]'
+                    : 'bg-slate-800/90 border border-white/15'
+                }`}
+              />
+            ))}
           </div>
-
-          {/* Center Round Indicator & Timer / Bomb Status */}
-          <div className="flex flex-col items-center px-1">
-            <span className="text-[8px] font-mono font-bold text-slate-400 tracking-widest uppercase leading-none mb-0.5">
-              RODADA {yardBomb.currentRound}/{yardBomb.maxRounds}
-            </span>
-            <div
-              className={`px-2 py-0.5 rounded border text-xs font-black tabular-nums leading-none ${
-                isPlanted
-                  ? 'bg-red-600/95 border-red-300 text-white shadow-[0_0_15px_rgba(239,68,68,0.8)]'
-                  : 'bg-black/85 border-amber-400/50 text-amber-300'
-              }`}
-            >
-              {isPlanted ? `C4 [${yardBomb.plantedSite}] ${timeStr}` : timeStr}
-            </div>
-          </div>
-
-          {/* BLACKTHORN Round Score + Alive Pips + Team */}
-          <div className="flex items-center gap-1.5" title="Equipe Blackthorn (Defensores)">
-            <span className="px-1.5 py-0.5 rounded bg-red-500/25 border border-red-400/50 text-xs font-black text-red-200 tabular-nums">
-              {yardBomb.blackthornScore}
-            </span>
-            <div className="flex items-center gap-0.5">
-              {[0, 1, 2, 3, 4].map((i) => (
-                <span
-                  key={`enemy-${i}`}
-                  className={`w-2 h-2 rounded-xs border ${
-                    i < yardBomb.enemiesAlive
-                      ? 'bg-red-500 border-red-200 shadow-[0_0_5px_rgba(239,68,68,0.8)]'
-                      : 'bg-slate-800 border-white/10'
-                  }`}
-                />
-              ))}
-            </div>
-            <span className="text-[10px] font-display font-black text-red-400 tracking-wide">
-              BLACKTHORN
-            </span>
-            <BlackthornTeamEmblem className="w-4 h-4 shrink-0" />
-          </div>
+          <span className="ml-1 text-lg sm:text-xl font-display font-black text-cyan-300 tabular-nums leading-none">
+            {yardBomb.vanguardScore}
+          </span>
         </div>
 
-        {/* Current Map Location Callout & Bomb Sites A / B */}
-        <div className="flex items-center gap-1.5 bg-black/75 border border-white/15 rounded-lg px-2.5 py-0.5 text-[9px] text-slate-200">
-          <span className="px-1 rounded bg-red-500/30 border border-red-400 text-red-200 font-bold">
-            A
+        {/* Center Wing: RODADA + TIMER (Dark Metallic Inverted Trapezoid) */}
+        <div
+          className={`flex flex-col items-center justify-center px-5 py-0.5 border-t border-b ${
+            isPlanted
+              ? 'bg-gradient-to-b from-red-900/95 to-red-950/95 border-red-400 animate-pulse'
+              : 'bg-gradient-to-b from-[#1a222d]/95 to-[#0d1218]/95 border-slate-500/60'
+          }`}
+          style={{
+            clipPath: 'polygon(0% 0%, 100% 0%, 90% 100%, 10% 100%)',
+          }}
+        >
+          <span className="text-[8px] sm:text-[9px] font-display font-bold text-slate-300 tracking-widest uppercase leading-none">
+            {yardBomb.isCaptureMode
+              ? `CAPTURA · R${yardBomb.currentRound}/${yardBomb.maxRounds}`
+              : isPlanted
+                ? `BOMBA C4 [${yardBomb.plantedSite}]`
+                : 'RODADA'}
           </span>
-          <span className="px-1 rounded bg-sky-500/30 border border-sky-400 text-sky-200 font-bold">
-            B
+          <span className="text-sm sm:text-base font-display font-black text-white tabular-nums leading-tight">
+            {timeStr}
           </span>
-          <span className="text-amber-300 font-bold tracking-wider uppercase">
-            {yardBomb.calloutLabel}
+        </div>
+
+        {/* Right Wing: BLACKTHORN (Red Angled Trapezoid) */}
+        <div
+          className="flex items-center gap-2 sm:gap-2.5 pl-4 pr-3 py-1 bg-gradient-to-l from-[#4d070e]/95 via-[#3b060c]/92 to-[#280408]/95 border-t border-b border-red-500/70"
+          style={{
+            clipPath: 'polygon(7% 0%, 100% 0%, 94% 100%, 0% 100%)',
+          }}
+        >
+          <span className="mr-1 text-lg sm:text-xl font-display font-black text-red-500 tabular-nums leading-none">
+            {yardBomb.blackthornScore}
           </span>
+          <div className="flex items-center gap-1">
+            {[0, 1, 2, 3].map((i) => (
+              <span
+                key={`enemy-${i}`}
+                className={`w-2.5 h-2.5 rounded-full ${
+                  i < yardBomb.enemiesAlive
+                    ? 'bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.9)]'
+                    : 'bg-slate-800/90 border border-white/15'
+                }`}
+              />
+            ))}
+          </div>
+          <span className="text-[10px] sm:text-xs font-display font-black text-red-500 tracking-wider uppercase">
+            BLACKTHORN
+          </span>
+          <BlackthornTeamEmblem className="w-5 h-5 shrink-0 text-red-500" />
         </div>
       </div>
+
+      {/* BARRA DE STATUS DAS 2 BANDEIRAS (MODO CAPTURA 5V5 ESTILO WARFACE) */}
+      {yardBomb.isCaptureMode && yardBomb.roundState === 'PLAYING' && (
+        <div className="fixed top-11 left-1/2 -translate-x-1/2 z-25 pointer-events-none select-none flex items-center gap-2 font-mono">
+          {/* Vanguard Flag Status */}
+          <div
+            className={`px-2.5 py-0.5 rounded-md border text-[9px] sm:text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-lg ${
+              yardBomb.vanguardFlagStatus === 'CARRIED'
+                ? 'bg-red-950/95 border-red-400 text-red-200 animate-pulse shadow-[0_0_14px_rgba(239,68,68,0.7)]'
+                : yardBomb.vanguardFlagStatus === 'DROPPED'
+                  ? 'bg-amber-950/95 border-amber-400 text-amber-200 animate-pulse'
+                  : 'bg-[#061c36]/90 border-sky-400/50 text-sky-200'
+            }`}
+          >
+            <span className="text-cyan-400 text-xs leading-none">⚑</span>
+            <span>
+              {yardBomb.vanguardFlagStatus === 'CARRIED'
+                ? `NOSSA BANDEIRA: ROUBADA (${yardBomb.vanguardFlagCarrier || 'INIMIGO'})`
+                : yardBomb.vanguardFlagStatus === 'DROPPED'
+                  ? 'NOSSA BANDEIRA: DROPADA NO CHÃO (PASSE POR CIMA!)'
+                  : 'NOSSA BANDEIRA: NA BASE'}
+            </span>
+          </div>
+
+          {/* Blackthorn Flag Status */}
+          <div
+            className={`px-2.5 py-0.5 rounded-md border text-[9px] sm:text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-lg ${
+              yardBomb.blackthornFlagStatus === 'CARRIED'
+                ? 'bg-emerald-950/95 border-emerald-400 text-emerald-200 animate-pulse shadow-[0_0_14px_rgba(16,185,129,0.7)]'
+                : yardBomb.blackthornFlagStatus === 'DROPPED'
+                  ? 'bg-amber-950/95 border-amber-400 text-amber-200 animate-pulse'
+                  : 'bg-[#2a070c]/90 border-red-500/50 text-red-200'
+            }`}
+          >
+            <span className="text-red-400 text-xs leading-none">⚑</span>
+            <span>
+              {yardBomb.blackthornFlagStatus === 'CARRIED'
+                ? `BANDEIRA INIMIGA: EM POSSE (${yardBomb.blackthornFlagCarrier || 'ALIADO'})`
+                : yardBomb.blackthornFlagStatus === 'DROPPED'
+                  ? 'BANDEIRA INIMIGA: DROPADA NO CHÃO!'
+                  : 'BANDEIRA INIMIGA: NA BASE'}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ALERTA TÁTICO PREMIUM QUANDO O TIME INIMIGO CAPTURA A BANDEIRA OU EVENTO DE BANDEIRA */}
+      {yardBomb.isCaptureMode &&
+        yardBomb.roundState === 'PLAYING' &&
+        yardBomb.captureAlertText &&
+        Date.now() < (yardBomb.captureAlertUntilMs || 0) && (
+          <div className="fixed top-19 left-1/2 -translate-x-1/2 z-40 pointer-events-none select-none w-[min(92vw,520px)]">
+            <div
+              className={`px-4 py-2 rounded-xl border-2 text-center shadow-2xl backdrop-blur-md flex items-center justify-center gap-2.5 ${
+                yardBomb.captureAlertTeam === 'BLACKTHORN'
+                  ? 'bg-gradient-to-r from-red-950/95 via-red-900/95 to-red-950/95 border-red-400 shadow-[0_0_30px_rgba(239,68,68,0.75)]'
+                  : 'bg-gradient-to-r from-sky-950/95 via-cyan-900/95 to-sky-950/95 border-cyan-300 shadow-[0_0_30px_rgba(34,211,238,0.75)]'
+              }`}
+            >
+              <span className="text-lg sm:text-xl leading-none animate-bounce">⚑</span>
+              <div className="flex flex-col">
+                <span className="text-[9px] font-mono font-bold uppercase tracking-[0.22em] text-amber-300">
+                  {yardBomb.captureAlertTeam === 'BLACKTHORN'
+                    ? 'ALERTA DE DEFESA · BASE VANGUARD'
+                    : 'OPERAÇÃO DE CAPTURA · VANGUARD'}
+                </span>
+                <span className="text-xs sm:text-sm font-display font-black uppercase tracking-wider text-white drop-shadow">
+                  {yardBomb.captureAlertText}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
 
       {/* MODO ESPECTADOR TÁTICO 5V5 (Acompanhando aliados vivos até o fim da rodada) */}
       {yardBomb.roundState === 'PLAYING' && yardBomb.isSpectating && (
@@ -189,7 +263,12 @@ export const YardBombHudBar: React.FC<YardBombHudBarProps> = ({
 
       {/* INTERACTIVE PLANT / DEFUSE C4 BUTTON WHEN INSIDE BOMB SITE A OR B */}
       {(() => {
-        if (yardBomb.roundState !== 'PLAYING' || yardBomb.isSpectating || !yardBomb.nearSite) {
+        if (
+          yardBomb.isCaptureMode ||
+          yardBomb.roundState !== 'PLAYING' ||
+          yardBomb.isSpectating ||
+          !yardBomb.nearSite
+        ) {
           return null;
         }
         const isOnlineDefender =
@@ -207,7 +286,7 @@ export const YardBombHudBar: React.FC<YardBombHudBarProps> = ({
         return (
           <div
             onPointerDown={(e) => e.stopPropagation()}
-            className="fixed top-22 left-1/2 -translate-x-1/2 z-40 pointer-events-auto select-none font-mono"
+            className="fixed top-16 left-1/2 -translate-x-1/2 z-40 pointer-events-auto select-none font-mono"
           >
             <button
               type="button"
@@ -244,7 +323,7 @@ export const YardBombHudBar: React.FC<YardBombHudBarProps> = ({
         );
       })()}
 
-      {/* BANNER DE FIM DE RODADA (Reinicia automaticamente para a próxima rodada) */}
+      {/* BANNER DE FIM DE RODADA */}
       {yardBomb.roundState === 'ROUND_OVER' && (
         <div className="fixed inset-0 z-45 pointer-events-none flex items-center justify-center p-4 select-none">
           <div
@@ -299,4 +378,3 @@ export const YardBombHudBar: React.FC<YardBombHudBarProps> = ({
     </>
   );
 };
-

@@ -15,7 +15,7 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
 }) => {
   const [elapsedSec, setElapsedSec] = useState(0);
   const [matchFound, setMatchFound] = useState(false);
-  const [selectedMap, setSelectedMap] = useState<DrillMode>('ASSAULT_BOMB_5V5');
+  const [selectedMap, setSelectedMap] = useState<DrillMode>('STATION_CAPTURE_5V5');
   const selectedMapRef = useRef<DrillMode>(selectedMap);
   selectedMapRef.current = selectedMap;
 
@@ -48,8 +48,8 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
   const formattedTime = `00:${elapsedSec < 10 ? '0' : ''}${elapsedSec}`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 select-none">
-      <div className="relative w-full max-w-md bg-[#0a0f18]/95 border-2 border-amber-400/80 rounded-2xl p-5 shadow-[0_0_35px_rgba(245,158,11,0.35)] flex flex-col items-center text-center overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-2 sm:p-4 select-none overflow-y-auto">
+      <div className="relative w-full max-w-md max-h-[94dvh] overflow-y-auto bg-[#0a0f18]/95 border-2 border-amber-400/80 rounded-2xl p-3.5 sm:p-5 shadow-[0_0_35px_rgba(245,158,11,0.35)] flex flex-col items-center text-center">
         {/* Glow de fundo */}
         <div
           className={`absolute inset-0 transition-opacity duration-500 pointer-events-none ${
@@ -60,23 +60,23 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
         />
 
         {/* Radar animado / Pulsar de Matchmaking */}
-        <div className="relative w-18 h-18 mb-2.5 flex items-center justify-center">
+        <div className="relative w-12 h-12 sm:w-16 sm:h-16 mb-1.5 sm:mb-2 flex items-center justify-center shrink-0">
           <div
             className={`absolute inset-0 rounded-full border-2 animate-ping ${
               matchFound ? 'border-emerald-400 opacity-60' : 'border-amber-400 opacity-40'
             }`}
           />
           <div
-            className={`w-14 h-14 rounded-full border border-white/20 flex items-center justify-center shadow-lg ${
+            className={`w-10 h-10 sm:w-13 sm:h-13 rounded-full border border-white/20 flex items-center justify-center shadow-lg ${
               matchFound ? 'bg-emerald-950/70 border-emerald-400' : 'bg-slate-900/80 border-amber-400/60'
             }`}
           >
             {matchFound ? (
-              <svg viewBox="0 0 24 24" className="w-7 h-7 text-emerald-400 animate-bounce" fill="none">
+              <svg viewBox="0 0 24 24" className="w-6 h-6 text-emerald-400 animate-bounce" fill="none">
                 <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             ) : (
-              <svg viewBox="0 0 24 24" className="w-7 h-7 text-amber-400 animate-spin" fill="none">
+              <svg viewBox="0 0 24 24" className="w-6 h-6 text-amber-400 animate-spin" fill="none">
                 <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" strokeDasharray="14 10" />
               </svg>
             )}
@@ -84,28 +84,35 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
         </div>
 
         {/* Status da Busca */}
-        <div className="text-[11px] font-mono font-bold tracking-[0.2em] uppercase text-amber-400 mb-0.5">
+        <div className="text-[10px] sm:text-[11px] font-mono font-bold tracking-[0.2em] uppercase text-amber-400 mb-0.5">
           {matchFound ? 'SISTEMA DE MATCHMAKING' : 'PROCURANDO PARTIDA...'}
         </div>
 
-        <h2 className="text-xl sm:text-2xl font-display font-black tracking-wider uppercase text-white mb-2">
+        <h2 className="text-lg sm:text-2xl font-display font-black tracking-wider uppercase text-white mb-2">
           {matchFound ? (
             <span className="text-emerald-300 drop-shadow-[0_0_12px_rgba(52,211,153,0.8)]">
               PARTIDA ENCONTRADA!
             </span>
+          ) : selectedMap === 'STATION_CAPTURE_5V5' ? (
+            'CAPTURA DE BANDEIRA 5v5'
           ) : (
             'PLANT THE BOMB 5v5'
           )}
         </h2>
 
         {/* Seletor de Arena Oficial (.GLB) */}
-        <div className="w-full mb-3 relative z-10">
+        <div className="w-full mb-2.5 relative z-10">
           <div className="text-[9px] font-mono uppercase tracking-widest text-slate-400 mb-1">
             SELECIONAR MAPA DA OPERAÇÃO (.GLB):
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
             {(
               [
+                {
+                  id: 'STATION_CAPTURE_5V5' as DrillMode,
+                  title: 'STATION ARENA',
+                  sub: 'Captura 5v5 · 2 Bandeiras',
+                },
                 {
                   id: 'ASSAULT_BOMB_5V5' as DrillMode,
                   title: 'CS_ASSAULT',
@@ -177,17 +184,19 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
           <div className="flex items-center justify-between text-slate-300">
             <span>Mapa Selecionado:</span>
             <span className="font-bold text-amber-300">
-              {selectedMap === 'ASSAULT_BOMB_5V5'
-                ? 'CS_ASSAULT (.GLB)'
-                : selectedMap === 'INDUSTRIA_BOMB_5V5'
-                  ? 'INDUSTRIA (.GLB)'
-                  : selectedMap === 'HANGAR_BOMB_5V5'
-                    ? 'HANGAR (.GLB)'
-                    : selectedMap === 'EASTERN_CITY_BOMB_5V5'
-                      ? 'EASTERN CITY (.GLB)'
-                    : selectedMap === 'MIRAGE_ANUBIS_BOMB_5V5'
-                      ? 'MIRAGE ANUBIS (.GLB)'
-                    : 'DE_DUST2 (.GLB)'}
+              {selectedMap === 'STATION_CAPTURE_5V5'
+                ? 'STATION ARENA (CAPTURE 5V5)'
+                : selectedMap === 'ASSAULT_BOMB_5V5'
+                  ? 'CS_ASSAULT (.GLB)'
+                  : selectedMap === 'INDUSTRIA_BOMB_5V5'
+                    ? 'INDUSTRIA (.GLB)'
+                    : selectedMap === 'HANGAR_BOMB_5V5'
+                      ? 'HANGAR (.GLB)'
+                      : selectedMap === 'EASTERN_CITY_BOMB_5V5'
+                        ? 'EASTERN CITY (.GLB)'
+                      : selectedMap === 'MIRAGE_ANUBIS_BOMB_5V5'
+                        ? 'MIRAGE ANUBIS (.GLB)'
+                      : 'DE_DUST2 (.GLB)'}
             </span>
           </div>
           <div className="flex items-center justify-between text-slate-300">

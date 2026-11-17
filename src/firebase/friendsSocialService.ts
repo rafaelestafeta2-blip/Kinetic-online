@@ -175,7 +175,10 @@ export async function sendFriendRequestByCallsign(
       fromUid: user.uid,
       fromCallsign: mySync.profile.callsign,
       fromRankLevel: mySync.profile.rankLevel || 1,
-      fromAvatar: (mySync.profile.avatarDataUrl || '').slice(0, 6000),
+      fromAvatar:
+        mySync.profile.avatarDataUrl && mySync.profile.avatarDataUrl.length <= 65000
+          ? mySync.profile.avatarDataUrl
+          : '',
       sentAt: new Date().toISOString(),
     };
     targetInbox.updatedAtMs = Date.now();
@@ -213,7 +216,10 @@ export async function acceptFriendRequest(req: FriendRequestEntry): Promise<void
       uid: user.uid,
       callsign: mySync.profile.callsign,
       rankLevel: mySync.profile.rankLevel || 1,
-      avatarDataUrl: (mySync.profile.avatarDataUrl || '').slice(0, 6000),
+      avatarDataUrl:
+        mySync.profile.avatarDataUrl && mySync.profile.avatarDataUrl.length <= 65000
+          ? mySync.profile.avatarDataUrl
+          : '',
       addedAt: nowIso,
     };
     senderInbox.updatedAtMs = Date.now();

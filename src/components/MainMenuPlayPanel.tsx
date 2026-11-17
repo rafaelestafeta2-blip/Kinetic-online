@@ -46,7 +46,7 @@ export const MainMenuPlayPanel: React.FC<MainMenuPlayPanelProps> = ({
   onHover,
 }) => {
   const [selectedPlayMode, setSelectedPlayMode] =
-    useState<MainMenuPlayModeId>('CASUAL_DUST2');
+    useState<MainMenuPlayModeId>('CAPTURE');
   const [activeSidebarId, setActiveSidebarId] =
     useState<LeftSidebarButtonId>('INICIO');
 
@@ -84,16 +84,14 @@ export const MainMenuPlayPanel: React.FC<MainMenuPlayPanelProps> = ({
       PLAY_MODE_OPTIONS.find((m) => m.id === selectedPlayMode) ||
       PLAY_MODE_OPTIONS[0];
     switch (selectedPlayMode) {
-      case 'CASUAL_DUST2':
-      case 'CASUAL_ASSAULT':
-      case 'CASUAL_INDUSTRIA':
-      case 'CASUAL_HANGAR':
-      case 'CASUAL_EASTERN_CITY':
-      case 'CASUAL_MIRAGE_ANUBIS':
-        onStartMatchmaking(modeObj.arena || 'DUST2_BOMB_5V5');
+      case 'CAPTURE':
+        onStartDrill('STATION_CAPTURE_5V5');
         break;
       case 'RANKED':
         onOpenRankedScreen(modeObj.arena || 'DUST2_BOMB_5V5');
+        break;
+      case 'CASUAL':
+        onStartMatchmaking(modeObj.arena || 'STATION_CAPTURE_5V5');
         break;
       case 'PRIVATE_ROOM':
         onOpenOnlineLobby(modeObj.arena || 'DUST2_BOMB_5V5');
@@ -131,7 +129,6 @@ export const MainMenuPlayPanel: React.FC<MainMenuPlayPanelProps> = ({
         selectedPlayMode={selectedPlayMode}
         onCyclePlayMode={setSelectedPlayMode}
         onLaunchSelectedMode={handleLaunchSelectedMode}
-        onStartMapTest={(mode) => onStartDrill(mode)}
         onOpenRankedScreen={() => onOpenRankedScreen('DUST2_BOMB_5V5')}
         onOpenRanksModal={onOpenRanksTab}
         onOpenInventory={onOpenInventory}

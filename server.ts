@@ -295,6 +295,7 @@ async function startServer(): Promise<void> {
           clientMeta.roomId &&
           (msg.type === 'PLAYER_STATE' ||
             msg.type === 'COMBAT_HIT' ||
+            msg.type === 'GRENADE_THROW' ||
             msg.type === 'BOMB_EVENT' ||
             msg.type === 'CLASS_SUPPORT' ||
             msg.type === 'ROUND_EVENT' ||
@@ -304,7 +305,16 @@ async function startServer(): Promise<void> {
             const uid = String(msg.uid || clientMeta.uid || '');
             const t = Array.isArray(msg.t) ? msg.t : null;
             const player = msg.player as
-              | { x?: number; y?: number; z?: number; yaw?: number }
+              | {
+                  x?: number;
+                  y?: number;
+                  z?: number;
+                  yaw?: number;
+                  loadProgress?: number;
+                  isLoaded?: boolean;
+                  classId?: string;
+                  weaponId?: string;
+                }
               | undefined;
             if (uid && t && t.length >= 4) {
               recordServerPlayerPose(
@@ -315,6 +325,21 @@ async function startServer(): Promise<void> {
                 Number(t[2]),
                 Number(t[3])
               );
+              const meta = roomMetaMap.get(clientMeta.roomId);
+              const existingMember = meta?.memberPlayers.get(uid);
+              if (meta && existingMember) {
+                meta.memberPlayers.set(uid, {
+                  ...existingMember,
+                  x: Number(t[0]),
+                  y: Number(t[1]),
+                  z: Number(t[2]),
+                  yaw: Number(t[3]),
+                  weaponId: t[5] ?? existingMember.weaponId,
+                  classId: t[11] ?? existingMember.classId,
+                  isLoaded: true,
+                  loadProgress: 100,
+                });
+              }
             } else if (uid && player) {
               recordServerPlayerPose(
                 clientMeta.roomId,
@@ -324,6 +349,11 @@ async function startServer(): Promise<void> {
                 Number(player.z || 0),
                 Number(player.yaw || 0)
               );
+              const meta = roomMetaMap.get(clientMeta.roomId);
+              if (meta) {
+                const prev = meta.memberPlayers.get(uid) || {};
+                meta.memberPlayers.set(uid, { ...prev, ...player, uid });
+              }
             }
           }
 
@@ -357,7 +387,9 @@ async function startServer(): Promise<void> {
               senderUid: clientMeta.uid,
               ts: Date.now(),
             },
-            msg.type === 'PLAYER_STATE' ? clientMeta.uid : null
+            msg.type === 'PLAYER_STATE' || msg.type === 'GRENADE_THROW'
+              ? clientMeta.uid
+              : null
           );
         }
       } catch {

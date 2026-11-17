@@ -17,14 +17,19 @@ import {
   MIRAGE_ANUBIS_BOMB_SITE_A,
   MIRAGE_ANUBIS_BOMB_SITE_B,
 } from '../three/mirageAnubisLevelBuilder';
+import {
+  STATION_ARENA_VANGUARD_FLAG_BASE,
+  STATION_ARENA_BLACKTHORN_FLAG_BASE,
+} from '../three/stationArenaLevelBuilder';
 import { YARD_BOMB_SITE_A, YARD_BOMB_SITE_B } from '../three/yardMapData';
-import { DrillMode } from '../types/game';
+import { DrillMode, YardBombHudInfo } from '../types/game';
 
 interface MinimapRadarProps {
   playerX: number;
   playerZ: number;
   playerYaw: number;
   drillMode?: DrillMode;
+  yardBomb?: YardBombHudInfo;
   targets?: Array<{
     id: string;
     sector: 'RANGE' | 'KILLHOUSE';
@@ -32,13 +37,14 @@ interface MinimapRadarProps {
     z: number;
     isDown: boolean;
     isAlly?: boolean;
+    isRevealed?: boolean;
   }>;
 }
 
 const YARD_RADAR_SRC = '/assets/aistudio/Yard_Map_Radar_7754e5f9.webp';
 
 export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
-  ({ playerX, playerZ, playerYaw, drillMode, targets }) => {
+  ({ playerX, playerZ, playerYaw, drillMode, yardBomb, targets }) => {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const radarImgRef = useRef<HTMLImageElement | null>(null);
 
@@ -56,7 +62,7 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      const size = 104;
+      const size = 112;
       const center = size / 2;
       const isYard = drillMode === 'YARD_BOMB_5V5';
       const isDust2 = drillMode === 'DUST2_BOMB_5V5';
@@ -65,23 +71,24 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
       const isHangar = drillMode === 'HANGAR_BOMB_5V5';
       const isEasternCity = drillMode === 'EASTERN_CITY_BOMB_5V5';
       const isMirageAnubis = drillMode === 'MIRAGE_ANUBIS_BOMB_5V5';
+      const isStationCapture = drillMode === 'STATION_CAPTURE_5V5';
       const isBombMode = isYard || isDust2 || isAssault || isIndustria || isHangar || isEasternCity || isMirageAnubis;
-      const scale = isDust2 || isAssault || isIndustria || isHangar || isEasternCity || isMirageAnubis ? 0.85 : isYard ? 1.35 : 2.0;
-      const maxRange = center - 6;
+      const scale = isStationCapture ? 1.35 : isDust2 || isAssault || isIndustria || isHangar || isEasternCity || isMirageAnubis ? 0.88 : isYard ? 1.38 : 2.0;
+      const maxRange = center - 7;
 
       ctx.clearRect(0, 0, size, size);
-      ctx.fillStyle = isDust2 ? '#18140e' : '#0e141c';
+      ctx.fillStyle = isDust2 || isMirageAnubis ? '#1e1914' : '#121820';
       ctx.fillRect(0, 0, size, size);
 
       ctx.save();
       ctx.translate(center, center);
 
-      const drawSectorRect = (wx: number, wz: number, w: number, d: number, fill: string, stroke = 'rgba(255,255,255,0.22)') => {
+      const drawSectorRect = (wx: number, wz: number, w: number, d: number, fill: string, stroke = 'rgba(255,255,255,0.38)') => {
         const rx = (wx - playerX) * scale;
         const rz = (wz - playerZ) * scale;
         ctx.fillStyle = fill;
         ctx.strokeStyle = stroke;
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 1.1;
         ctx.fillRect(rx - (w * scale) / 2, rz - (d * scale) / 2, w * scale, d * scale);
         ctx.strokeRect(rx - (w * scale) / 2, rz - (d * scale) / 2, w * scale, d * scale);
       };
@@ -99,42 +106,44 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
           worldH
         );
       } else if (isDust2) {
-        // Authentic Counter-Strike de_dust2 radar sectors in world coordinates
-        drawSectorRect(-18, 19, 56, 12, '#2d261c'); // T Spawn
-        drawSectorRect(22, 8, 28, 16, '#292218'); // Outside Long
-        drawSectorRect(35, -28, 14, 52, '#332a1e'); // Long A Street
-        drawSectorRect(28, -60, 22, 20, '#3d3020', 'rgba(248,113,113,0.45)'); // Site A
-        drawSectorRect(2, -38, 16, 26, '#2f271d'); // Short A / Catwalk
-        drawSectorRect(-11, -14, 12, 54, '#262017'); // Mid Alley & Doors
-        drawSectorRect(-4, -56, 26, 16, '#1f242d'); // CT Spawn Underpass
-        drawSectorRect(-38, -26, 22, 26, '#231d16'); // Upper B Tunnels
-        drawSectorRect(-22, -36, 16, 12, '#1c1812'); // Lower B Tunnels
-        drawSectorRect(-40, -64, 24, 24, '#2c251c', 'rgba(56,189,248,0.45)'); // Site B
+        drawSectorRect(-18, 19, 56, 12, '#73604c'); // T Spawn
+        drawSectorRect(22, 8, 28, 16, '#6b5845'); // Outside Long
+        drawSectorRect(35, -28, 14, 52, '#7c6752'); // Long A Street
+        drawSectorRect(28, -60, 22, 20, '#8a725a', 'rgba(248,113,113,0.65)'); // Site A
+        drawSectorRect(2, -38, 16, 26, '#715d49'); // Short A / Catwalk
+        drawSectorRect(-11, -14, 12, 54, '#665442'); // Mid Alley & Doors
+        drawSectorRect(-4, -56, 26, 16, '#5c4c3b'); // CT Spawn Underpass
+        drawSectorRect(-38, -26, 22, 26, '#64523f'); // Upper B Tunnels
+        drawSectorRect(-22, -36, 16, 12, '#584838'); // Lower B Tunnels
+        drawSectorRect(-40, -64, 24, 24, '#7d6852', 'rgba(56,189,248,0.65)'); // Site B
       } else if (isAssault) {
-        // Authentic Counter-Strike cs_assault radar sectors in world coordinates
-        drawSectorRect(-16, 40, 56, 24, '#1b2634'); // Outer CT Street & Courtyard
-        drawSectorRect(-40, 36, 18, 16, '#273649'); // Highway Overpass Bridge
-        drawSectorRect(-26, 12, 28, 22, '#233040', 'rgba(248,113,113,0.45)'); // Loading Dock & Site A
-        drawSectorRect(-3, 2, 24, 26, '#2d3b4e', 'rgba(56,189,248,0.45)'); // Main Assault Warehouse & Site B
-        drawSectorRect(-9, -7, 16, 10, '#36465c'); // Upper Warehouse Catwalk / Hostage Room
-        drawSectorRect(14, 18, 14, 28, '#1e2938'); // East Backdoor Alley
+        drawSectorRect(-16, 40, 56, 24, '#334155');
+        drawSectorRect(-40, 36, 18, 16, '#475569');
+        drawSectorRect(-26, 12, 28, 22, '#3b4c63', 'rgba(248,113,113,0.55)');
+        drawSectorRect(-3, 2, 24, 26, '#475973', 'rgba(56,189,248,0.55)');
+        drawSectorRect(-9, -7, 16, 10, '#526682');
+        drawSectorRect(14, 18, 14, 28, '#2d3b4e');
       } else if (isIndustria) {
-        // Post-lift collider AABB footprint (not Yard stub — that made players look "outside").
-        drawSectorRect(12, 11, 190, 186, '#1e293b');
-        drawSectorRect(8, -28, 28, 24, '#334155'); // south apron / attacker
+        drawSectorRect(12, 11, 190, 186, '#283548');
+        drawSectorRect(8, -28, 28, 24, '#3b4d66');
       } else if (isHangar) {
-        drawSectorRect(0, -2.5, 80, 36, '#1e293b');
-        drawSectorRect(0, -14, 22, 14, '#334155'); // south gate
+        drawSectorRect(0, -2.5, 80, 36, '#283548');
+        drawSectorRect(0, -14, 22, 14, '#3b4d66');
       } else if (isEasternCity) {
-        drawSectorRect(-8.5, 4.5, 140, 128, '#1e293b');
-        drawSectorRect(0, -20, 24, 20, '#334155'); // south street
-        drawSectorRect(-36, -4, 18, 16, '#3f1d1d', 'rgba(248,113,113,0.35)');
-        drawSectorRect(28, 16, 18, 16, '#1d2f3f', 'rgba(56,189,248,0.35)');
+        drawSectorRect(-8.5, 4.5, 140, 128, '#283548');
+        drawSectorRect(0, -20, 24, 20, '#3b4d66');
+        drawSectorRect(-36, -4, 18, 16, '#4c2626', 'rgba(248,113,113,0.45)');
+        drawSectorRect(28, 16, 18, 16, '#233b4e', 'rgba(56,189,248,0.45)');
       } else if (isMirageAnubis) {
-        drawSectorRect(-32.5, -31.5, 110, 112, '#292218');
-        drawSectorRect(-33, -40, 22, 18, '#3d3020'); // south approach
+        drawSectorRect(-32.5, -31.5, 110, 112, '#6c5844');
+        drawSectorRect(-33, -40, 22, 18, '#826b53');
+      } else if (isStationCapture) {
+        drawSectorRect(0, 0, 56, 48, '#243042');
+        drawSectorRect(-10, -16, 16, 12, '#12355b', 'rgba(56,189,248,0.75)');
+        drawSectorRect(10, 16, 16, 12, '#4c141d', 'rgba(239,68,68,0.75)');
+        drawSectorRect(0, 0, 18, 22, '#334155');
       } else {
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
         ctx.lineWidth = 1;
         for (let g = -40; g <= 40; g += 20) {
           ctx.beginPath();
@@ -146,12 +155,12 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
           ctx.lineTo(center, g);
           ctx.stroke();
         }
-        drawSectorRect(-6, 0, 8, 18, '#25313d');
-        drawSectorRect(8, -10, 12, 16, '#2c3a47');
-        drawSectorRect(0, -18, 22, 6, '#1f2933');
+        drawSectorRect(-6, 0, 8, 18, '#334155');
+        drawSectorRect(8, -10, 12, 16, '#3e4f66');
+        drawSectorRect(0, -18, 22, 6, '#293548');
       }
 
-      // Draw Bomb Site A and B pins on minimap for Yard, Dust2, and Assault
+      // Draw Bomb Site A and B pins on minimap
       if (isBombMode) {
         const siteA = isDust2
           ? DUST2_BOMB_SITE_A
@@ -189,22 +198,65 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
             rz = Math.sin(ang) * maxRange;
           }
           ctx.fillStyle = color;
-          ctx.fillRect(rx - 5, rz - 5, 10, 10);
+          ctx.beginPath();
+          ctx.roundRect(rx - 5.5, rz - 5.5, 11, 11, 2.5);
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+          ctx.lineWidth = 0.9;
+          ctx.stroke();
           ctx.fillStyle = '#ffffff';
-          ctx.font = 'bold 8px monospace';
+          ctx.font = 'bold 8px sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillText(label, rx, rz + 0.5);
         };
         drawSitePin(siteA.x, siteA.z, 'A', '#dc2626');
         drawSitePin(siteB.x, siteB.z, 'B', '#0284c7');
+      } else if (isStationCapture) {
+        const vgFlag = yardBomb?.vanguardFlagPos || STATION_ARENA_VANGUARD_FLAG_BASE;
+        const btFlag = yardBomb?.blackthornFlagPos || STATION_ARENA_BLACKTHORN_FLAG_BASE;
+        const drawFlagPin = (fx: number, fz: number, color: string, status?: string) => {
+          let rx = (fx - playerX) * scale;
+          let rz = (fz - playerZ) * scale;
+          const dist = Math.hypot(rx, rz);
+          if (dist > maxRange) {
+            const ang = Math.atan2(rz, rx);
+            rx = Math.cos(ang) * maxRange;
+            rz = Math.sin(ang) * maxRange;
+          }
+          if (status === 'CARRIED' || status === 'DROPPED') {
+            ctx.beginPath();
+            ctx.arc(rx, rz, 7.5, 0, Math.PI * 2);
+            ctx.strokeStyle = status === 'DROPPED' ? '#facc15' : color;
+            ctx.lineWidth = 1.4;
+            ctx.stroke();
+          }
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.roundRect(rx - 5.5, rz - 5.5, 11, 11, 3);
+          ctx.fill();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.0;
+          ctx.stroke();
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 9px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('⚑', rx, rz + 0.5);
+        };
+        drawFlagPin(vgFlag.x, vgFlag.z, '#0ea5e9', yardBomb?.vanguardFlagStatus);
+        drawFlagPin(btFlag.x, btFlag.z, '#ef4444', yardBomb?.blackthornFlagStatus);
       }
 
-      // Target & Ally pings
+      // Target & Ally pings (Warface / Call of Duty Fog-of-War: Enemies ONLY appear when firing or eliminating an ally!)
       if (targets && targets.length > 0) {
+        const isFreeRange = drillMode === 'FREE_RANGE';
         for (let i = 0; i < targets.length; i++) {
           const t = targets[i];
           if (t.isDown) continue;
+          const canShow = Boolean(t.isAlly) || Boolean(t.isRevealed) || isFreeRange;
+          if (!canShow) continue;
+
           const relX = (t.x - playerX) * scale;
           const relZ = (t.z - playerZ) * scale;
           const dist = Math.hypot(relX, relZ);
@@ -216,49 +268,66 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
             tz = Math.sin(ang) * maxRange;
           }
 
+          if (!t.isAlly && !isFreeRange) {
+            // Pulsing red Warface/CoD gunfire ping ring
+            ctx.beginPath();
+            ctx.arc(tx, tz, 6.2, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(239, 68, 68, 0.55)';
+            ctx.lineWidth = 1.4;
+            ctx.stroke();
+          }
+
           ctx.beginPath();
-          ctx.arc(tx, tz, 3.2, 0, Math.PI * 2);
+          ctx.arc(tx, tz, 3.4, 0, Math.PI * 2);
           ctx.fillStyle = t.isAlly ? '#38bdf8' : '#ef4444';
           ctx.fill();
           ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 0.8;
+          ctx.lineWidth = 1.0;
           ctx.stroke();
         }
       }
 
-      // Rotate for player vision cone & yellow teardrop marker
+      // Rotate for player vision cone & yellow directional arrow marker (matching reference image)
       ctx.rotate(-playerYaw);
 
       ctx.beginPath();
       ctx.moveTo(0, 0);
-      ctx.lineTo(-18, -32);
-      ctx.arc(0, 0, 36, -Math.PI / 2 - 0.52, -Math.PI / 2 + 0.52);
+      ctx.lineTo(-16, -30);
+      ctx.arc(0, 0, 34, -Math.PI / 2 - 0.48, -Math.PI / 2 + 0.48);
       ctx.closePath();
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.16)';
       ctx.fill();
 
+      // Crisp yellow chevron arrow for player
       ctx.beginPath();
-      ctx.moveTo(0, -8);
-      ctx.bezierCurveTo(6, -1, 6, 6, 0, 6);
-      ctx.bezierCurveTo(-6, 6, -6, -1, 0, -8);
+      ctx.moveTo(0, -7.5);
+      ctx.lineTo(5.8, 5.5);
+      ctx.lineTo(0, 2.5);
+      ctx.lineTo(-5.8, 5.5);
       ctx.closePath();
       ctx.fillStyle = '#facc15';
       ctx.fill();
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#18181b';
+      ctx.lineWidth = 1.2;
       ctx.stroke();
 
       ctx.restore();
-    }, [playerX, playerZ, playerYaw, drillMode, targets]);
+    }, [playerX, playerZ, playerYaw, drillMode, yardBomb, targets]);
 
     return (
-      <div className="relative w-24 h-24 sm:w-28 sm:h-28 bg-[#141c24]/90 border border-white/30 shadow-lg overflow-hidden shrink-0 pointer-events-none">
+      <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-xl bg-[#181614]/90 border border-white/35 shadow-[0_6px_20px_rgba(0,0,0,0.65)] overflow-hidden shrink-0 pointer-events-none">
         <canvas
           ref={canvasRef}
-          width={104}
-          height={104}
+          width={112}
+          height={112}
           className="w-full h-full block"
         />
+        {/* Compass S badge at top of minimap matching reference screenshot */}
+        <div className="absolute top-1 left-1/2 -translate-x-1/2 flex items-center gap-0.5 pointer-events-none">
+          <span className="px-1 py-0.2 rounded bg-sky-500/90 text-[8px] font-black text-white leading-tight shadow">
+            S
+          </span>
+        </div>
       </div>
     );
   },
@@ -267,5 +336,11 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
     prev.playerZ === next.playerZ &&
     prev.playerYaw === next.playerYaw &&
     prev.drillMode === next.drillMode &&
+    prev.yardBomb?.vanguardFlagStatus === next.yardBomb?.vanguardFlagStatus &&
+    prev.yardBomb?.blackthornFlagStatus === next.yardBomb?.blackthornFlagStatus &&
+    prev.yardBomb?.vanguardFlagPos?.x === next.yardBomb?.vanguardFlagPos?.x &&
+    prev.yardBomb?.vanguardFlagPos?.z === next.yardBomb?.vanguardFlagPos?.z &&
+    prev.yardBomb?.blackthornFlagPos?.x === next.yardBomb?.blackthornFlagPos?.x &&
+    prev.yardBomb?.blackthornFlagPos?.z === next.yardBomb?.blackthornFlagPos?.z &&
     prev.targets === next.targets
 );

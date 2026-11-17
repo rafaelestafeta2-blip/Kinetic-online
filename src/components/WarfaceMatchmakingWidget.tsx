@@ -20,13 +20,17 @@ interface WarfaceMatchmakingWidgetProps {
 
 const REQUIRED_PUBLIC_PLAYERS = 10;
 
-const QUEUE_MAP_PICKS: Array<{ id: DrillMode; short: string }> = [
-  { id: 'DUST2_BOMB_5V5', short: 'DUST2' },
-  { id: 'ASSAULT_BOMB_5V5', short: 'ASSAULT' },
-  { id: 'INDUSTRIA_BOMB_5V5', short: 'INDUSTRIA' },
-  { id: 'HANGAR_BOMB_5V5', short: 'HANGAR' },
-  { id: 'EASTERN_CITY_BOMB_5V5', short: 'EASTERN' },
-  { id: 'MIRAGE_ANUBIS_BOMB_5V5', short: 'MIRAGE' },
+const CASUAL_MAP_POOL: Array<{
+  id: DrillMode;
+  title: string;
+  subtitle: string;
+}> = [
+  { id: 'DUST2_BOMB_5V5', title: 'DE_DUST2', subtitle: 'Deserto Clássico • Bomb A / B' },
+  { id: 'ASSAULT_BOMB_5V5', title: 'CS_ASSAULT', subtitle: 'Galpão Industrial • Bomb A / B' },
+  { id: 'INDUSTRIA_BOMB_5V5', title: 'INDUSTRIA', subtitle: 'Refinaria • Bomb A / B' },
+  { id: 'HANGAR_BOMB_5V5', title: 'HANGAR', subtitle: 'Base Aérea • Bomb A / B' },
+  { id: 'EASTERN_CITY_BOMB_5V5', title: 'EASTERN CITY', subtitle: 'Cidade Leste • Bomb A / B' },
+  { id: 'MIRAGE_ANUBIS_BOMB_5V5', title: 'MIRAGE ANUBIS', subtitle: 'Fortaleza Deserto • Bomb A / B' },
 ];
 
 export const WarfaceMatchmakingWidget: React.FC<WarfaceMatchmakingWidgetProps> = ({
@@ -40,9 +44,10 @@ export const WarfaceMatchmakingWidget: React.FC<WarfaceMatchmakingWidgetProps> =
   const [isConnecting, setIsConnecting] = useState(true);
   const [matchFound, setMatchFound] = useState(false);
   const [queueError, setQueueError] = useState<string | null>(null);
+  const [showCasualMapModal, setShowCasualMapModal] = useState(false);
   const launchedRef = useRef(false);
 
-  // Cronômetro em segundo plano
+  // Cronômetro da Sala Casual
   useEffect(() => {
     const timer = window.setInterval(() => {
       setElapsedSec((prev) => prev + 1);
@@ -50,7 +55,7 @@ export const WarfaceMatchmakingWidget: React.FC<WarfaceMatchmakingWidgetProps> =
     return () => window.clearInterval(timer);
   }, []);
 
-  // Entra ou cria automaticamente uma sala pública (isPrivate: false) para o mapa selecionado
+  // Entra ou cria automaticamente uma sala pública para o mapa escolhido na Sala Casual
   useEffect(() => {
     let cancelled = false;
     setActiveRoom(null);
@@ -66,7 +71,7 @@ export const WarfaceMatchmakingWidget: React.FC<WarfaceMatchmakingWidgetProps> =
         setIsConnecting(false);
         if (!room) {
           setQueueError(
-            'A fila recusou este mapa. Publique as regras do Firestore ou use ENTRAR C/ BOTS.'
+            'Fila offline no momento. Você pode iniciar a partida com Bots táticos.'
           );
         }
       })
@@ -79,15 +84,12 @@ export const WarfaceMatchmakingWidget: React.FC<WarfaceMatchmakingWidgetProps> =
     };
   }, [selectedMode]);
 
-  // Escuta em tempo real a entrada dos jogadores reais na sala pública e aguarda fechar 10/10
   useEffect(() => {
     const unsub = subscribeOnlineRoom((room) => {
       setActiveRoom(room);
       if (!room || launchedRef.current) return;
 
       const realCount = Object.keys(room.players || {}).length;
-
-      // Só inicia automaticamente a partida pública quando juntar os 10 jogadores reais (ou se a sala já mudou para PLAYING)
       if (room.status === 'PLAYING' || realCount >= REQUIRED_PUBLIC_PLAYERS) {
         launchedRef.current = true;
         setMatchFound(true);
@@ -106,18 +108,8 @@ export const WarfaceMatchmakingWidget: React.FC<WarfaceMatchmakingWidgetProps> =
   const playersCount = activeRoom ? Object.keys(activeRoom.players || {}).length : 1;
   const mins = String(Math.floor(elapsedSec / 60)).padStart(2, '0');
   const secs = String(elapsedSec % 60).padStart(2, '0');
-  const mapLabel =
-    selectedMode === 'ASSAULT_BOMB_5V5'
-      ? 'CS_ASSAULT'
-      : selectedMode === 'INDUSTRIA_BOMB_5V5'
-        ? 'INDUSTRIA'
-        : selectedMode === 'HANGAR_BOMB_5V5'
-          ? 'HANGAR'
-          : selectedMode === 'EASTERN_CITY_BOMB_5V5'
-            ? 'EASTERN CITY'
-          : selectedMode === 'MIRAGE_ANUBIS_BOMB_5V5'
-            ? 'MIRAGE ANUBIS'
-          : 'DE_DUST2';
+  const currentMapMeta =
+    CASUAL_MAP_POOL.find((m) => m.id === selectedMode) || CASUAL_MAP_POOL[0];
 
   const handleCancel = async () => {
     soundEngine.playMenuSelect();
@@ -126,163 +118,228 @@ export const WarfaceMatchmakingWidget: React.FC<WarfaceMatchmakingWidgetProps> =
   };
 
   return (
-    <div
-      onPointerDown={(e) => e.stopPropagation()}
-      onClick={(e) => e.stopPropagation()}
-      className="fixed top-12 left-3 z-45 w-[245px] sm:w-[275px] pointer-events-none select-none font-sans"
-    >
+    <>
+      {/* SALA DA PARTIDA CASUAL 5V5 (COM SELETOR DE MAPA DENTRO DA SALA ANTES DE COMEÇAR) */}
       <div
-        className={`pointer-events-auto rounded-xl border backdrop-blur-md px-3 py-2 shadow-[0_8px_28px_rgba(0,0,0,0.85)] transition-colors ${
-          matchFound
-            ? 'bg-emerald-950/90 border-emerald-400/70'
-            : 'bg-[#090d14]/92 border-amber-400/50'
-        }`}
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+        className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 select-none font-sans pointer-events-auto"
       >
-        <div className="flex items-center justify-between gap-1.5">
-          <div className="flex items-center gap-2 min-w-0">
-            {/* Radar / Spinner de Procura em Segundo Plano */}
-            <div className="relative w-3.5 h-3.5 flex items-center justify-center shrink-0">
-              <span
-                className={`absolute inset-0 rounded-full border-2 ${
-                  matchFound
-                    ? 'border-emerald-400 animate-ping'
-                    : 'border-amber-400 border-t-transparent animate-spin'
-                }`}
-              />
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${
-                  matchFound ? 'bg-emerald-400' : 'bg-amber-400'
-                }`}
-              />
+        <div className="w-full max-w-[540px] rounded-2xl border border-amber-400/50 bg-[#0b1018] text-white shadow-[0_12px_40px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col">
+          {/* Header da Sala Casual */}
+          <div className="px-4 py-3 bg-gradient-to-r from-[#182232] via-[#101722] to-[#182232] border-b border-white/10 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="relative w-3.5 h-3.5 flex items-center justify-center shrink-0">
+                <span
+                  className={`absolute inset-0 rounded-full border-2 ${
+                    matchFound
+                      ? 'border-emerald-400 animate-ping'
+                      : 'border-amber-400 border-t-transparent animate-spin'
+                  }`}
+                />
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    matchFound ? 'bg-emerald-400' : 'bg-amber-400'
+                  }`}
+                />
+              </div>
+              <div>
+                <h3 className="font-display font-black text-sm sm:text-base uppercase tracking-wider text-amber-300 leading-none">
+                  SALA DA PARTIDA CASUAL 5V5
+                </h3>
+                <span className="text-[10px] font-mono text-slate-400">
+                  Escolha o mapa da sala antes de iniciar · Tempo na fila {mins}:{secs}
+                </span>
+              </div>
             </div>
 
-            <span
-              className={`text-[10px] sm:text-[11px] font-display font-black uppercase tracking-wider truncate ${
-                matchFound ? 'text-emerald-300' : 'text-amber-300'
-              }`}
-            >
-              {matchFound ? 'PARTIDA ENCONTRADA!' : 'PROCURANDO PARTIDA'}
-            </span>
-            <span className="text-[9px] font-mono font-bold text-slate-200 tabular-nums bg-white/10 px-1.5 py-0.5 rounded">
-              {mins}:{secs}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-1 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                soundEngine.playMenuSelect();
-                onChangeMode(
-                  selectedMode === 'DUST2_BOMB_5V5'
-                    ? 'ASSAULT_BOMB_5V5'
-                    : selectedMode === 'ASSAULT_BOMB_5V5'
-                      ? 'INDUSTRIA_BOMB_5V5'
-                      : selectedMode === 'INDUSTRIA_BOMB_5V5'
-                        ? 'HANGAR_BOMB_5V5'
-                        : selectedMode === 'HANGAR_BOMB_5V5'
-                          ? 'EASTERN_CITY_BOMB_5V5'
-                        : selectedMode === 'EASTERN_CITY_BOMB_5V5'
-                          ? 'MIRAGE_ANUBIS_BOMB_5V5'
-                        : 'DUST2_BOMB_5V5'
-                );
-              }}
-              title="Alternar mapa da fila"
-              className="px-1.5 py-0.5 rounded bg-white/8 hover:bg-white/15 border border-white/10 text-[8px] font-mono font-bold text-cyan-300 uppercase cursor-pointer"
-            >
-              {mapLabel}
-            </button>
             <button
               type="button"
               onClick={() => void handleCancel()}
-              title="Cancelar procura de partida"
-              className="w-4 h-4 rounded bg-red-500/20 hover:bg-red-500/35 border border-red-400/40 text-[9px] font-mono font-bold text-red-200 flex items-center justify-center cursor-pointer"
+              className="px-2.5 py-1 rounded bg-red-500/20 hover:bg-red-500/35 border border-red-400/40 text-xs font-mono font-bold text-red-200 cursor-pointer"
             >
-              ✕
+              SAIR ✕
             </button>
           </div>
-        </div>
 
-        {/* Visible map thumbs — Industry/Hangar/Eastern/Mirage were cycle-only. */}
-        <div className="mt-1.5 grid grid-cols-6 gap-0.5">
-          {QUEUE_MAP_PICKS.map((m) => {
-            const active = selectedMode === m.id;
-            return (
-              <button
-                key={m.id}
-                type="button"
-                title={m.short}
-                disabled={matchFound}
-                onClick={() => {
-                  if (matchFound || selectedMode === m.id) return;
-                  soundEngine.playMenuSelect();
-                  onChangeMode(m.id);
-                }}
-                className={`relative overflow-hidden rounded border cursor-pointer transition-all ${
-                  active
-                    ? 'border-amber-400 ring-1 ring-amber-400/40'
-                    : 'border-white/10 hover:border-white/30'
-                } ${matchFound ? 'opacity-60 cursor-not-allowed' : ''}`}
-              >
+          {/* Corpo da Sala Casual: Card do Mapa + Botão Escolher Mapa + Jogadores */}
+          <div className="p-4 space-y-3.5">
+            <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-[#121926] border border-amber-400/40">
+              <div className="flex items-center gap-3 min-w-0">
                 <img
-                  src={thumbForDrillMode(m.id)}
-                  alt={m.short}
-                  className="w-full h-6 object-cover object-center"
+                  src={thumbForDrillMode(currentMapMeta.id)}
+                  alt={currentMapMeta.title}
+                  className="w-24 h-14 rounded-lg border border-amber-400/50 object-cover shrink-0"
                   draggable={false}
                 />
+                <div className="min-w-0">
+                  <span className="text-[9px] font-mono font-bold uppercase tracking-widest text-amber-400">
+                    MAPA DA SALA CASUAL
+                  </span>
+                  <div className="font-display font-black text-lg text-white uppercase tracking-wide truncate">
+                    {currentMapMeta.title}
+                  </div>
+                  <div className="text-[11px] font-mono text-slate-400 truncate">
+                    {currentMapMeta.subtitle}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                disabled={matchFound}
+                onClick={() => {
+                  soundEngine.playMenuSelect();
+                  setShowCasualMapModal(true);
+                }}
+                className="px-3.5 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-display font-black text-xs uppercase tracking-wider shadow-[0_0_15px_rgba(245,158,11,0.4)] shrink-0 cursor-pointer transition-all"
+              >
+                TROCAR MAPA 🗺️
               </button>
-            );
-          })}
-        </div>
+            </div>
 
-        {/* Barra de 10 Slots de Jogadores Reais */}
-        <div className="mt-1.5 flex items-center gap-1.5">
-          <div className="grid grid-cols-10 gap-0.5 flex-1">
-            {Array.from({ length: REQUIRED_PUBLIC_PLAYERS }).map((_, idx) => {
-              const filled = idx < playersCount;
-              return (
-                <div
-                  key={idx}
-                  className={`h-1.5 rounded-xs transition-all duration-300 ${
-                    filled
-                      ? matchFound
-                        ? 'bg-emerald-400 shadow-[0_0_6px_#34d399]'
-                        : 'bg-amber-400 shadow-[0_0_6px_#fbbf24]'
-                      : 'bg-white/12'
-                  }`}
-                />
-              );
-            })}
+            {/* Barra de 10 Slots de Jogadores na Sala */}
+            <div className="p-3 rounded-xl bg-black/50 border border-white/10 space-y-2">
+              <div className="flex items-center justify-between text-xs font-mono">
+                <span className="text-slate-300 uppercase">
+                  OPERADORES NA SALA CASUAL:
+                </span>
+                <span className="font-black text-amber-300 tabular-nums">
+                  {playersCount} / {REQUIRED_PUBLIC_PLAYERS}
+                </span>
+              </div>
+              <div className="grid grid-cols-10 gap-1">
+                {Array.from({ length: REQUIRED_PUBLIC_PLAYERS }).map((_, idx) => {
+                  const filled = idx < playersCount;
+                  return (
+                    <div
+                      key={idx}
+                      className={`h-2 rounded-sm transition-all duration-300 ${
+                        filled
+                          ? matchFound
+                            ? 'bg-emerald-400 shadow-[0_0_6px_#34d399]'
+                            : 'bg-amber-400 shadow-[0_0_6px_#fbbf24]'
+                          : 'bg-white/12'
+                      }`}
+                    />
+                  );
+                })}
+              </div>
+              <div className="text-[10px] font-mono text-slate-400">
+                {queueError
+                  ? queueError
+                  : isConnecting
+                    ? 'Sincronizando sala pública...'
+                    : matchFound
+                      ? 'Partida pronta! Carregando mapa...'
+                      : `${isWebSocketConnected() ? 'Servidor Online Ativo' : 'Modo Local'} · Aguardando jogadores ou inicie agora`}
+              </div>
+            </div>
+
+            {/* Ações da Sala Casual */}
+            <div className="flex items-center justify-end gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => void handleCancel()}
+                className="px-4 py-2.5 rounded-lg bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-display font-bold uppercase tracking-wider text-slate-200 cursor-pointer"
+              >
+                CANCELAR
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  soundEngine.playMenuSelect();
+                  const launchArena = activeRoom?.arenaMode || selectedMode;
+                  if (activeRoom && Object.keys(activeRoom.players || {}).length >= 2) {
+                    await startMatchInActiveRoom();
+                  } else {
+                    await leaveActiveRoom();
+                  }
+                  onMatchReady(launchArena);
+                }}
+                className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-display font-black text-xs sm:text-sm uppercase tracking-wider shadow-[0_0_20px_rgba(16,185,129,0.45)] cursor-pointer"
+              >
+                INICIAR PARTIDA AGORA »
+              </button>
+            </div>
           </div>
-          <span className="text-[9px] font-mono font-black text-amber-300 tabular-nums shrink-0">
-            {playersCount}/{REQUIRED_PUBLIC_PLAYERS}
-          </span>
-        </div>
-
-        <div className="mt-1 flex items-center justify-between gap-2 text-[8px] font-mono text-slate-300">
-          <span className="truncate">
-            {queueError
-              ? queueError
-              : isConnecting
-                ? 'Conectando à fila global...'
-                : matchFound
-                  ? '10/10 Jogadores prontos! Iniciando mapa...'
-                  : `${isWebSocketConnected() ? 'WS+Cloud ativo' : 'Reconectando WS...'} · Aguardando (${playersCount}/10)`}
-          </span>
-          <button
-            type="button"
-            onClick={async () => {
-              soundEngine.playMenuSelect();
-              const launchArena = activeRoom?.arenaMode || selectedMode;
-              await leaveActiveRoom();
-              onMatchReady(launchArena);
-            }}
-            className="shrink-0 px-1.5 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/50 text-[8px] font-mono font-bold text-amber-300 uppercase cursor-pointer"
-          >
-            ENTRAR C/ BOTS ›
-          </button>
         </div>
       </div>
-    </div>
+
+      {/* MENU FOCADO PARA ESCOLHER O MAPA DENTRO DA SALA CASUAL */}
+      {showCasualMapModal && (
+        <div
+          onClick={() => setShowCasualMapModal(false)}
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 select-none pointer-events-auto"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-[640px] rounded-2xl border-2 border-amber-400/60 bg-[#0b1018] p-4 sm:p-5 shadow-2xl flex flex-col max-h-[88vh]"
+          >
+            <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-3">
+              <div>
+                <h3 className="font-display font-black text-base sm:text-lg uppercase tracking-wider text-amber-300">
+                  ESCOLHER MAPA DA PARTIDA CASUAL
+                </h3>
+                <p className="text-xs font-mono text-slate-400">
+                  Selecione o mapa em que deseja jogar a Partida Casual 5v5
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCasualMapModal(false)}
+                className="px-3 py-1 rounded bg-white/10 hover:bg-white/20 text-xs font-mono font-bold text-slate-200 cursor-pointer"
+              >
+                VOLTAR ✕
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 overflow-y-auto">
+              {CASUAL_MAP_POOL.map((m) => {
+                const active = selectedMode === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => {
+                      soundEngine.playMenuSelect();
+                      onChangeMode(m.id);
+                      setShowCasualMapModal(false);
+                    }}
+                    className={`group rounded-xl border text-left transition-all cursor-pointer overflow-hidden flex flex-col ${
+                      active
+                        ? 'bg-amber-500/20 border-2 border-amber-400 text-white shadow-[0_0_20px_rgba(245,158,11,0.3)]'
+                        : 'bg-black/50 border-white/15 text-slate-300 hover:border-amber-400/50 hover:text-white'
+                    }`}
+                  >
+                    <div className="relative h-24 w-full overflow-hidden">
+                      <img
+                        src={thumbForDrillMode(m.id)}
+                        alt={m.title}
+                        className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
+                        draggable={false}
+                      />
+                      {active && (
+                        <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 font-mono font-black text-[9px] uppercase">
+                          SELECIONADO ✓
+                        </span>
+                      )}
+                    </div>
+                    <div className="p-2.5">
+                      <div className="font-display font-black text-xs sm:text-sm uppercase tracking-wider text-white">
+                        {m.title}
+                      </div>
+                      <div className="text-[10px] font-mono text-slate-400 truncate mt-0.5">
+                        {m.subtitle}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };

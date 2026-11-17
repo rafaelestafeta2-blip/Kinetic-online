@@ -18,6 +18,7 @@ import {
   samplePeerPoseForRender,
 } from '../multiplayer/peerSnapshotBuffer';
 import { getTeamSpawnForArena, OnlinePlayerState } from '../multiplayer/onlineTypes';
+import { getEquippedWeaponSkinId, getPlayerInventoryState } from '../progression/loadoutSystem';
 
 export interface OnlineMatchSyncContext {
   dt: number;
@@ -132,7 +133,9 @@ export function syncOnlineMatchFrame(ctx: OnlineMatchSyncContext): void {
   const localPlayer = getLocalOnlinePlayerState();
   if (!room || !localPlayer) return;
 
-  // 1. Publish local player feet transform over WebSocket (throttled in combatNetcode)
+  const localClassId = getPlayerInventoryState().selectedClass || localPlayer.classId || 'FUZILEIRO';
+
+  // 1. Publish local player feet transform over WebSocket (25Hz + keepalive in combatNetcode)
   publishLocalPlayerTransform({
     x: ctx.localFeetPos.x,
     y: ctx.localFeetPos.y,
@@ -140,6 +143,8 @@ export function syncOnlineMatchFrame(ctx: OnlineMatchSyncContext): void {
     yaw: ctx.yaw,
     pitch: ctx.pitch,
     weaponId: ctx.activeWeapon,
+    weaponSkinId: getEquippedWeaponSkinId(ctx.activeWeapon),
+    classId: localClassId,
     health: Math.max(0, Math.round(ctx.health)),
     isDown: ctx.isPlayerDead || ctx.health <= 0,
     isCrouching: ctx.isCrouching,
@@ -175,9 +180,12 @@ export function syncOnlineMatchFrame(ctx: OnlineMatchSyncContext): void {
       else enemiesAlive++;
     }
 
+    const prevBoundUid = bot.root.userData.remotePlayerUid;
     bot.root.userData.remotePlayerUid = remote.uid;
     bot.callsign = remote.callsign;
     bot.weaponId = remote.weaponId || 'M4_CARBINE';
+    bot.weaponSkinId = remote.weaponSkinId || 'default';
+    bot.classId = remote.classId || 'FUZILEIRO';
     bot.isAlly = isSameTeam;
     bot.health = remote.health;
     bot.maxHealth = 100;
@@ -185,11 +193,40 @@ export function syncOnlineMatchFrame(ctx: OnlineMatchSyncContext): void {
     if (bot.armorMesh) bot.armorMesh.visible = bot.armorHealth > 0;
     bot.isDown = remote.isDown || remote.health <= 0;
     bot.isTelegraphing = true;
+    bot.root.matrixAutoUpdate = true;
+    bot.pivotGroup.matrixAutoUpdate = true;
+    bot.root.frustumCulled = false;
+    bot.pivotGroup.frustumCulled = false;
 
     syncBotCharacterAppearance(bot, ctx.isSoftwareGl);
 
     // Only enemy real players can be shot by local raycasts
     syncShootableHitboxes(bot, ctx.shootableMeshes, !isSameTeam && !bot.isDown);
+
+    // Ensure snapshot buffer is seeded if this peer was already in the room before WS packets arrived
+    let sampledPose = samplePeerPoseForRender(remote.uid, 65);
+    if (!sampledPose) {
+      pushPeerPose(remote.uid, {
+        x: remote.x,
+        y: remote.y,
+        z: remote.z,
+        yaw: remote.yaw,
+        pitch: remote.pitch,
+        isCrouching: remote.isCrouching,
+        ts: Date.now(),
+      });
+      sampledPose = samplePeerPoseForRender(remote.uid, 65);
+    }
+
+    const renderPose = sampledPose || {
+      x: remote.x,
+      y: remote.y,
+      z: remote.z,
+      yaw: remote.yaw,
+      pitch: remote.pitch,
+      isCrouching: remote.isCrouching,
+      ts: Date.now(),
+    };
 
     if (bot.isDown) {
       // Keep corpse visible for Warface revive window (same-team medics).
@@ -207,37 +244,18 @@ export function syncOnlineMatchFrame(ctx: OnlineMatchSyncContext): void {
           bot.root.position.set(0, -999, 0);
         }
       } else {
-        // Enemy corpses: hide (no revive).
-        bot.root.visible = false;
-        bot.root.position.set(0, -999, 0);
+        // Enemy corpses: keep visible briefly for death animation then hide
+        const ctrl = bot.root.userData?.botAnimCtrl as BotAnimController | undefined;
+        if (ctrl && ctrl.deathElapsed >= 2.8) {
+          bot.root.visible = false;
+          bot.root.position.set(0, -999, 0);
+        }
       }
-      // Still update pose so medic finds the body at last known position.
       if (bot.root.visible) {
-        pushPeerPose(remote.uid, {
-          x: remote.x,
-          y: remote.y,
-          z: remote.z,
-          yaw: remote.yaw,
-          pitch: remote.pitch,
-          isCrouching: remote.isCrouching,
-          ts: remote.updatedAtMs || Date.now(),
-        });
-        const corpsePose =
-          samplePeerPoseForRender(remote.uid, 90) || {
-            x: remote.x,
-            y: remote.y,
-            z: remote.z,
-            yaw: remote.yaw,
-            pitch: remote.pitch,
-            isCrouching: false,
-            ts: Date.now(),
-          };
-        const gy = ctx.getGroundHeight(corpsePose.x, corpsePose.y, corpsePose.z);
-        bot.root.position.set(corpsePose.x, gy, corpsePose.z);
-        bot.root.rotation.y = corpsePose.yaw + Math.PI;
+        const gy = ctx.getGroundHeight(renderPose.x, renderPose.y, renderPose.z);
+        bot.root.position.set(renderPose.x, gy, renderPose.z);
+        bot.root.rotation.y = renderPose.yaw + Math.PI;
         bot.pivotGroup.position.y = 0;
-        // Death clip owns the pose. Forcing -90° stacked a ragdoll on the
-        // Mixamo fall and left a twisted corpse the medic could not read.
       }
       continue;
     }
@@ -248,45 +266,21 @@ export function syncOnlineMatchFrame(ctx: OnlineMatchSyncContext): void {
     bot.pivotGroup.rotation.x = 0;
     bot.root.visible = true;
 
-    // Snapshot buffer: store latest wire pose, render from delayed interp sample (~100ms).
-    pushPeerPose(remote.uid, {
-      x: remote.x,
-      y: remote.y,
-      z: remote.z,
-      yaw: remote.yaw,
-      pitch: remote.pitch,
-      isCrouching: remote.isCrouching,
-      ts: remote.updatedAtMs || Date.now(),
-    });
-    const renderPose =
-      samplePeerPoseForRender(remote.uid, 90) || {
-        x: remote.x,
-        y: remote.y,
-        z: remote.z,
-        yaw: remote.yaw,
-        pitch: remote.pitch,
-        isCrouching: remote.isCrouching,
-        ts: Date.now(),
-      };
-
     const targetGroundY = ctx.getGroundHeight(renderPose.x, renderPose.y, renderPose.z);
-    let targetY = targetGroundY;
-    if (remote.isLoaded) {
-      if (renderPose.y > targetGroundY + 0.14 && renderPose.y <= targetGroundY + 3.8) {
-        targetY = renderPose.y;
-      } else if (Math.abs(renderPose.y - targetGroundY) <= 0.16) {
-        targetY = targetGroundY;
-      } else {
-        targetY = renderPose.y;
-      }
+    let targetY = renderPose.y;
+    if (Math.abs(renderPose.y - targetGroundY) <= 0.32 || renderPose.y < targetGroundY - 0.35) {
+      targetY = targetGroundY;
+    } else if (renderPose.y > targetGroundY + 4.0) {
+      targetY = targetGroundY;
     }
 
     const dx = renderPose.x - bot.root.position.x;
     const dz = renderPose.z - bot.root.position.z;
     const planarDistSq = dx * dx + dz * dz;
 
-    if (planarDistSq > 64 || bot.root.position.y < -100) {
+    if (prevBoundUid !== remote.uid || planarDistSq > 144 || bot.root.position.y < -100) {
       bot.root.position.set(renderPose.x, targetY, renderPose.z);
+      bot.root.rotation.y = renderPose.yaw + Math.PI;
       const ctrl = bot.root.userData?.botAnimCtrl as BotAnimController | undefined;
       if (ctrl) {
         ctrl.prevX = renderPose.x;
@@ -295,15 +289,13 @@ export function syncOnlineMatchFrame(ctx: OnlineMatchSyncContext): void {
         ctrl.smoothedSpeed = 0;
       }
     } else {
-      // Slightly snappier than before — buffer already smooths jitter.
-      const interpAlpha = Math.min(1, ctx.dt * 18);
-      bot.root.position.x += dx * interpAlpha;
-      bot.root.position.z += dz * interpAlpha;
-      bot.root.position.y += (targetY - bot.root.position.y) * Math.min(1, ctx.dt * 22);
+      bot.root.position.x = THREE.MathUtils.damp(bot.root.position.x, renderPose.x, 28, ctx.dt);
+      bot.root.position.z = THREE.MathUtils.damp(bot.root.position.z, renderPose.z, 28, ctx.dt);
+      bot.root.position.y = THREE.MathUtils.damp(bot.root.position.y, targetY, 26, ctx.dt);
     }
 
     const targetModelYaw = renderPose.yaw + Math.PI;
-    bot.root.rotation.y = lerpAngleRadians(bot.root.rotation.y, targetModelYaw, ctx.dt * 16);
+    bot.root.rotation.y = lerpAngleRadians(bot.root.rotation.y, targetModelYaw, Math.min(1, ctx.dt * 24));
     bot.root.rotation.x = 0;
     bot.root.rotation.z = 0;
 
@@ -311,11 +303,15 @@ export function syncOnlineMatchFrame(ctx: OnlineMatchSyncContext): void {
       bot.root.userData.botAnimCtrl.crouchStance = renderPose.isCrouching;
     }
 
-    // Trigger remote gunshot animation & spatial 3D audio
+    // Trigger remote gunshot animation & spatial 3D audio + Warface/CoD radar ping
     const prevShotAt = lastRemoteShotSeenMap[remote.uid] || 0;
     if (remote.lastShotAtMs > prevShotAt) {
       lastRemoteShotSeenMap[remote.uid] = remote.lastShotAtMs;
       triggerBotFireAnimation(bot);
+      if (!bot.isAlly) {
+        bot.root.userData = bot.root.userData || {};
+        bot.root.userData.radarRevealedUntilMs = performance.now() + 3800;
+      }
       playSpatialBotGunshot(
         bot.root.position,
         ctx.playerPos,

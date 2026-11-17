@@ -4,6 +4,8 @@ import { OpticType, ReloadPhase, WeaponId } from '../types/game';
 import { ProceduralTextures } from './textures';
 import { WeaponAttachmentSystem } from './attachmentSystem';
 import { createSculptedFirstPersonWeaponGroup } from './sculptedFirearms';
+import { getEquippedWeaponSkinId } from '../progression/loadoutSystem';
+import { applyWeaponSkinToObject3D } from './weaponSkinMaterial';
 
 // Direct GitHub Raw URLs & bundled local mirrors for all 8 animated 3D FPS weapons and Arms Rig
 export const MARK_23_GITHUB_RAW_URL =
@@ -16,6 +18,12 @@ export const P50_PISTOL_LOCAL_URL = MARK_23_LOCAL_URL;
 export const SMG_45_GITHUB_RAW_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/2a1d928d36a1c6caa00e3d37806eb76366e194f5/fps_animated_smg.glb';
 export const SMG_45_LOCAL_URL = '/models/fps_animated_smg.glb';
+
+export const SHOTGUN_12_GITHUB_RAW_URL = '/models/shotgun_animated.glb';
+export const SHOTGUN_12_LOCAL_URL = '/models/shotgun_animated.glb';
+
+export const SHOTGUN_SPAS_GITHUB_RAW_URL = '/models/weapons/automatic_shotgun.glb';
+export const SHOTGUN_SPAS_LOCAL_URL = '/models/weapons/automatic_shotgun.glb';
 
 export const M4_FPS_PACK_GITHUB_RAW_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/764ad262156d6371a9fdf172f30267aa431d5b78/Acessorio/Armas/fps_animated_carbine%20(1).glb';
@@ -141,6 +149,7 @@ export interface TacticalWeaponRig {
   rightHandGroup: THREE.Group;
   rightTriggerFinger: THREE.Group;
   setActiveWeapon: (weaponId: WeaponId) => void;
+  applyWeaponSkin: (weaponId: WeaponId, skinId: string) => void;
   setTriggerPull: (pullAlpha: number) => void;
   triggerFireAnimation: (isAds?: boolean) => void;
   triggerReloadAnimation: (durationSec: number) => void;
@@ -680,6 +689,7 @@ export function buildTacticalWeaponRig(
 
   let activeWeapon: WeaponId = 'P50_PISTOL';
   let animElapsed = 0;
+  const pendingSkinByWeapon: Partial<Record<WeaponId, string>> = {};
 
   // Shared Materials
   const matAnodizedUpper = new THREE.MeshPhysicalMaterial({
@@ -856,22 +866,8 @@ export function buildTacticalWeaponRig(
   m4BodyGroup.add(flashHiderGroup);
 
   // -------------------------------------------------------------------------
-  // 1B. SCULPTED PBR WEAPONS FOR SHOTGUN_12, SHOTGUN_SPAS & SMG_MP5
+  // 1B. SCULPTED PBR WEAPON FOR SMG_MP5
   // -------------------------------------------------------------------------
-  let shotgun12PumpGroup: THREE.Group | null = null;
-  const buildShotgun12Group = (): THREE.Group => {
-    const built = createSculptedFirstPersonWeaponGroup('SHOTGUN_12');
-    if (built.pumpGroup) {
-      built.pumpGroup.userData.baseZ = built.pumpGroup.position.z;
-      built.pumpGroup.userData.pullSign = -1;
-      shotgun12PumpGroup = built.pumpGroup;
-    }
-    return built.group;
-  };
-
-  const buildShotgunSpasGroup = (): THREE.Group => {
-    return createSculptedFirstPersonWeaponGroup('SHOTGUN_SPAS').group;
-  };
 
   const buildSmgMp5Group = (): THREE.Group => {
     return createSculptedFirstPersonWeaponGroup('SMG_MP5').group;
@@ -1513,10 +1509,12 @@ export function buildTacticalWeaponRig(
             } else if (
               matName.includes('lense') ||
               matName.includes('lens') ||
-              m.name.toLowerCase().includes('lense')
+              matName === 'glasses' ||
+              m.name.toLowerCase().includes('lense') ||
+              m.name.toLowerCase().includes('glasses')
             ) {
               std.transparent = true;
-              std.opacity = 0.14;
+              std.opacity = matName === 'glasses' ? 0.22 : 0.14;
               std.roughness = 0.05;
               std.metalness = 0.1;
               if (std.color) std.color.setHex(0x88ccff);
@@ -1571,6 +1569,10 @@ export function buildTacticalWeaponRig(
 
       mountGroup.add(modelScene);
       entry.loaded = true;
+      const initialSkin =
+        pendingSkinByWeapon[opts.weaponId] ||
+        getEquippedWeaponSkinId(opts.weaponId);
+      applyWeaponSkinToObject3D(entry.mountGroup, opts.weaponId, initialSkin);
 
       if (gltf.animations && gltf.animations.length > 0) {
         const mixer = new THREE.AnimationMixer(modelScene);
@@ -1677,6 +1679,11 @@ export function buildTacticalWeaponRig(
     const mountGroup = new THREE.Group();
     const body = buildMeshFn();
     mountGroup.add(body);
+    applyWeaponSkinToObject3D(
+      mountGroup,
+      weaponId,
+      pendingSkinByWeapon[weaponId] || getEquippedWeaponSkinId(weaponId)
+    );
     mountGroup.visible = activeWeapon === weaponId;
     weaponMotionAnchor.add(mountGroup);
     return {
@@ -1737,11 +1744,44 @@ export function buildTacticalWeaponRig(
     // [2B] MP5A3 Tactical 9mm (Engineer SMG)
     SMG_MP5: createProceduralWeaponEntry('SMG_MP5', buildSmgMp5Group),
 
-    // [2C] M870 Breacher 12-Gauge Pump Shotgun (Medic Primary)
-    SHOTGUN_12: createProceduralWeaponEntry('SHOTGUN_12', buildShotgun12Group),
+    // [2C] M870 Breacher 12-Gauge Pump Shotgun (`shotgun_animated.glb` — Medic Primary)
+    SHOTGUN_12: createAnimatedWeaponEntry({
+      weaponId: 'SHOTGUN_12',
+      localUrl: SHOTGUN_12_LOCAL_URL,
+      githubUrl: SHOTGUN_12_GITHUB_RAW_URL,
+      scale: 0.0118,
+      rotY: Math.PI,
+      pos: [-0.026, -0.112, 0.195],
+      mainBoneName: 'shotgun',
+      mainBoneScale: 0.0118,
+      subclipWindows: {
+        Fire: [0.0, 1.13],
+        Reload: [1.17, 2.93],
+        Reload_Empty: [1.17, 4.23],
+        Draw: [3.37, 4.23],
+        Holster: [2.97, 3.37],
+        Idle: [4.27, 5.3],
+      },
+    }),
 
-    // [2D] SPAS-12 Combat 12-Gauge Shotgun (Medic Semi-Auto)
-    SHOTGUN_SPAS: createProceduralWeaponEntry('SHOTGUN_SPAS', buildShotgunSpasGroup),
+    // [2D] SPAS-12 / Automatic Tactical Shotgun (`automatic_shotgun.glb` — Medic Primary)
+    SHOTGUN_SPAS: createAnimatedWeaponEntry({
+      weaponId: 'SHOTGUN_SPAS',
+      localUrl: SHOTGUN_SPAS_LOCAL_URL,
+      githubUrl: SHOTGUN_SPAS_GITHUB_RAW_URL,
+      scale: 0.01,
+      rotY: Math.PI,
+      pos: [-0.0937, -1.585, 0.36],
+      mainBoneName: 'B_Automatic_Shotgun_Basic',
+      mainBoneScale: 0.01,
+      clipAliases: {
+        Draw: 'Draw',
+        Fire: 'Fire',
+        Reload: 'Reload',
+        Reload_Empty: 'Reload',
+        Holster: 'Holster',
+      },
+    }),
 
     // [3] M4A1 Tactical Carbine (`fps_animated_carbine_m4.glb` — 2K PBR textures & clean rig)
     M4_CARBINE: createAnimatedWeaponEntry({
@@ -1972,20 +2012,24 @@ export function buildTacticalWeaponRig(
       laserOriginWorldPos.position.set(0.02, 0.004, -0.23);
       peqLaserBeam.position.copy(laserOriginWorldPos.position);
       ejectionPortWorldPos.position.set(0.022, 0.014, -0.03);
-    } else if (weaponId === 'SHOTGUN_12' || weaponId === 'SHOTGUN_SPAS') {
-      rightBasePos.set(0.022, -0.056, 0.115);
-      rightBaseEuler.set(-1.62, -0.08, 0.1);
-      leftBasePos.set(-0.026, -0.032, -0.24);
-      leftBaseEuler.set(-1.42, 0.22, -0.24);
-
-      opticsContainer.position.set(0, 0.039, 0.01);
+    } else if (weaponId === 'SHOTGUN_12') {
+      opticsContainer.position.set(-0.012, 0.068, -0.05);
       opticsContainer.scale.setScalar(0.84);
-      suppressorGroup.position.set(0, 0.012, -0.60);
-      muzzleWorldPos.position.set(0, 0.012, -0.57);
-      muzzleFlashGroup.position.set(0, 0.012, -0.55);
-      laserOriginWorldPos.position.set(0.024, -0.014, -0.42);
+      suppressorGroup.position.set(-0.012, 0.055, -0.78);
+      muzzleWorldPos.position.set(-0.012, 0.055, -0.76);
+      muzzleFlashGroup.position.set(-0.012, 0.055, -0.75);
+      laserOriginWorldPos.position.set(0.016, 0.032, -0.52);
       peqLaserBeam.position.copy(laserOriginWorldPos.position);
-      ejectionPortWorldPos.position.set(0.026, 0.01, -0.01);
+      ejectionPortWorldPos.position.set(0.018, 0.02, -0.13);
+    } else if (weaponId === 'SHOTGUN_SPAS') {
+      opticsContainer.position.set(0, 0.043, -0.07);
+      opticsContainer.scale.setScalar(0.84);
+      suppressorGroup.position.set(0, -0.05, -0.45);
+      muzzleWorldPos.position.set(0, -0.05, -0.42);
+      muzzleFlashGroup.position.set(0, -0.05, -0.41);
+      laserOriginWorldPos.position.set(0.022, -0.05, -0.32);
+      peqLaserBeam.position.copy(laserOriginWorldPos.position);
+      ejectionPortWorldPos.position.set(0.025, -0.06, -0.1);
     } else if (weaponId === 'AK47_RIFLE') {
       rightBasePos.set(0.022, -0.054, 0.086);
       rightBaseEuler.set(-1.62, -0.08, 0.1);
@@ -2063,7 +2107,10 @@ export function buildTacticalWeaponRig(
     }
 
     opticsContainer.visible =
-      weaponId !== 'AK12_RIFLE' && weaponId !== 'KNIFE_TACTICAL';
+      weaponId !== 'AK12_RIFLE' &&
+      weaponId !== 'KNIFE_TACTICAL' &&
+      weaponId !== 'SHOTGUN_12' &&
+      weaponId !== 'SHOTGUN_SPAS';
     leftHandGroup.position.copy(leftBasePos);
     leftHandGroup.rotation.copy(leftBaseEuler);
     rightHandGroup.position.copy(rightBasePos);
@@ -2096,6 +2143,17 @@ export function buildTacticalWeaponRig(
   // =========================================================================
   // 6. WEAPON SWITCHING & ANIMATION DISPATCHERS FOR ALL 8 WEAPONS
   // =========================================================================
+  const applyWeaponSkin = (weaponId: WeaponId, skinId: string) => {
+    pendingSkinByWeapon[weaponId] = skinId;
+    const entry = weaponPacks[weaponId];
+    if (entry) {
+      applyWeaponSkinToObject3D(entry.mountGroup, weaponId, skinId);
+    }
+    if (weaponId === 'M4_CARBINE') {
+      applyWeaponSkinToObject3D(m4BodyGroup, weaponId, skinId);
+    }
+  };
+
   const setActiveWeapon = (weaponId: WeaponId) => {
     activeWeapon = weaponId;
 
@@ -2111,8 +2169,6 @@ export function buildTacticalWeaponRig(
     const usesUniversalArms =
       !activeEntry.loaded ||
       weaponId === 'SNIPER_TACTICAL' ||
-      weaponId === 'SHOTGUN_12' ||
-      weaponId === 'SHOTGUN_SPAS' ||
       weaponId === 'SMG_MP5';
     armsRigContainer.visible = usesUniversalArms;
 
@@ -2121,11 +2177,15 @@ export function buildTacticalWeaponRig(
     configureWeaponAnchors(weaponId);
     attachmentSystem.updateWeaponAlignment(weaponId);
 
+    applyWeaponSkin(
+      weaponId,
+      pendingSkinByWeapon[weaponId] || getEquippedWeaponSkinId(weaponId)
+    );
+
     playWeaponPackAction(activeEntry, 'Draw', undefined, 1.15);
   };
 
   let sniperBoltHandTimer = 0;
-  let shotgunPumpTimer = 0;
   /** Last AK loco donor action name — stop when switching weapons / becoming busy. */
   let akLocoDonorKey: string | null = null;
 
@@ -2137,6 +2197,7 @@ export function buildTacticalWeaponRig(
   const AK_LOCO_DONOR_ELIGIBLE: ReadonlySet<WeaponId> = new Set([
     'P50_PISTOL',
     'SMG_45',
+    'SHOTGUN_12',
     'M4_CARBINE',
     'CARBINE_AR',
     'AK12_RIFLE',
@@ -2195,16 +2256,13 @@ export function buildTacticalWeaponRig(
   const triggerFireAnimation = (isAds = false) => {
     const activeEntry = weaponPacks[activeWeapon];
     const speed =
-      activeWeapon === 'SNIPER_BOLT'
+      activeWeapon === 'SNIPER_BOLT' || activeWeapon === 'SHOTGUN_12'
         ? 1.45
         : activeWeapon === 'SNIPER_TACTICAL'
           ? 1.85
           : 1.3;
     if (activeWeapon === 'SNIPER_TACTICAL') {
       sniperBoltHandTimer = 1.08;
-    }
-    if (activeWeapon === 'SHOTGUN_12') {
-      shotgunPumpTimer = 0.56;
     }
     // Prefer Aim_Fire clip on AK-47 when ADS (clip already in pack).
     if (
@@ -2362,12 +2420,12 @@ export function buildTacticalWeaponRig(
         }
       }
 
-      // AK-12 Idle only: keep Idle looping when standing (no Walk/Run in pack).
+      // AK-12 & SHOTGUN_12 Idle only: keep Idle looping when standing (no Walk/Run in pack).
       if (
         reloadPhase === 'IDLE' &&
         !nativeLoco &&
         !busy &&
-        activeWeapon === 'AK12_RIFLE' &&
+        (activeWeapon === 'AK12_RIFLE' || activeWeapon === 'SHOTGUN_12') &&
         activeEntry.actions['Idle'] &&
         !useAkDonor
       ) {
@@ -2471,34 +2529,6 @@ export function buildTacticalWeaponRig(
 
     root.updateMatrixWorld(true);
 
-    if (shotgun12PumpGroup) {
-      const baseZ: number = shotgun12PumpGroup.userData?.baseZ ?? -0.25;
-      const pullSign: number = shotgun12PumpGroup.userData?.pullSign ?? 1;
-      if (activeWeapon === 'SHOTGUN_12' && shotgunPumpTimer > 0) {
-        shotgunPumpTimer = Math.max(0, shotgunPumpTimer - dt);
-        const p = 1 - shotgunPumpTimer / 0.56;
-        // Crisp backward-then-forward 12ga pump rack stroke
-        const stroke =
-          p < 0.25
-            ? 0
-            : p < 0.58
-              ? (p - 0.25) / 0.33
-              : p < 0.88
-                ? 1 - (p - 0.58) / 0.3
-                : 0;
-        const pumpBackZ = stroke * 0.085;
-        shotgun12PumpGroup.position.z = baseZ + pullSign * pumpBackZ;
-        leftHandGroup.position.set(
-          leftBasePos.x,
-          leftBasePos.y,
-          leftBasePos.z + pumpBackZ
-        );
-      } else {
-        shotgun12PumpGroup.position.z = baseZ;
-        leftHandGroup.position.copy(leftBasePos);
-      }
-    }
-
     if (armsRigCtrl && armsRigContainer.visible) {
       if (activeWeapon === 'SNIPER_TACTICAL' && sniperBoltHandTimer > 0) {
         sniperBoltHandTimer = Math.max(0, sniperBoltHandTimer - dt);
@@ -2591,6 +2621,7 @@ export function buildTacticalWeaponRig(
     rightHandGroup,
     rightTriggerFinger,
     setActiveWeapon,
+    applyWeaponSkin,
     setTriggerPull,
     triggerFireAnimation,
     triggerReloadAnimation,
@@ -2670,21 +2701,15 @@ export function getOpticAdsTransform(
       rotZ: 0,
     };
   }
-  if (activeWeapon === 'SHOTGUN_12' || activeWeapon === 'SHOTGUN_SPAS') {
-    if (optic === 'lpvo') {
-      return {
-        pos: new THREE.Vector3(0, -0.068, -0.155),
-        rotZ: 0,
-      };
-    }
-    if (optic === 'holo') {
-      return {
-        pos: new THREE.Vector3(0, -0.072, -0.2),
-        rotZ: 0,
-      };
-    }
+  if (activeWeapon === 'SHOTGUN_12') {
     return {
-      pos: new THREE.Vector3(0, -0.046, -0.215),
+      pos: new THREE.Vector3(0.026, -0.084, -0.22),
+      rotZ: 0,
+    };
+  }
+  if (activeWeapon === 'SHOTGUN_SPAS') {
+    return {
+      pos: new THREE.Vector3(0, -0.0433, -0.18),
       rotZ: 0,
     };
   }

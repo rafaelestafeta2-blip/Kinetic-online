@@ -16,6 +16,7 @@ import {
   botNeedsRepath,
   checkBotLineOfSight,
   clearBotNeedsRepath,
+  findRealTacticalCoverSpot,
   getMapRoutes,
   getWaypointTowardPlantedSite,
   isTargetInFieldOfView,
@@ -76,6 +77,58 @@ function ensureNavExtras(nav: BotNavData): void {
   if (nav.aimDriftX == null) nav.aimDriftX = 0;
   if (nav.aimDriftY == null) nav.aimDriftY = 0;
   if (nav.aimDriftZ == null) nav.aimDriftZ = 0;
+  if (nav.coverSpot === undefined) nav.coverSpot = null;
+  if (nav.peekSpot === undefined) nav.peekSpot = null;
+  if (nav.hasRealCover == null) nav.hasRealCover = false;
+  if (nav.coverSearchAt == null) nav.coverSearchAt = 0;
+}
+
+function tryEnterRealCover(
+  bot: YardBotEntity,
+  nav: BotNavData,
+  enemyPos: THREE.Vector3,
+  bots: YardBotEntity[],
+  grenadeSystem: TacticalGrenadeSystem,
+  colliders: ColliderBox[] | undefined,
+  activeGlbCollider: Dust2TriangleCollider | null | undefined,
+  nowSec: number,
+  minSec: number,
+  maxSec: number
+): boolean {
+  if (nowSec < (nav.coverSearchAt || 0)) {
+    return false;
+  }
+  nav.coverSearchAt = nowSec + 1.35;
+  const role = nav.squadRole || 'HOLD';
+  const res = findRealTacticalCoverSpot(
+    bot,
+    bot.root.position,
+    enemyPos,
+    bots,
+    role,
+    grenadeSystem,
+    colliders,
+    activeGlbCollider
+  );
+  if (!res.found || !res.coverSpot) {
+    nav.hasRealCover = false;
+    nav.coverSpot = null;
+    nav.peekSpot = null;
+    return false;
+  }
+  if (!nav.coverSpot) nav.coverSpot = res.coverSpot;
+  else nav.coverSpot.copy(res.coverSpot);
+  if (res.peekSpot) {
+    if (!nav.peekSpot) nav.peekSpot = res.peekSpot;
+    else nav.peekSpot.copy(res.peekSpot);
+  } else {
+    nav.peekSpot = null;
+  }
+  nav.hasRealCover = true;
+  nav.tacticalState = 'COVER';
+  nav.coverTimer = minSec + Math.random() * (maxSec - minSec);
+  nav.isJigglePeek = false;
+  return true;
 }
 
 /**
@@ -171,6 +224,11 @@ function getOrInitBotNav(bot: YardBotEntity, mode: DrillMode, index: number): Bo
     peekPrefireTimer: 0,
     isJigglePeek: false,
     aimRecoil: 0, aimDriftX: 0, aimDriftY: 0, aimDriftZ: 0,
+    lastValidGroundY: undefined,
+    coverSpot: null,
+    peekSpot: null,
+    hasRealCover: false,
+    coverSearchAt: 0,
   };
   bot.root.userData = bot.root.userData || {};
   bot.root.userData.navData = navData;
@@ -258,8 +316,9 @@ export function updateSmartBotNavigation(
     mode === 'INDUSTRIA_BOMB_5V5' ||
     mode === 'HANGAR_BOMB_5V5' ||
     mode === 'EASTERN_CITY_BOMB_5V5' ||
-    mode === 'MIRAGE_ANUBIS_BOMB_5V5';
-  const isC4Planted = isBombMode && yardBomb.info.bombStatus === 'PLANTED';
+    mode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
+    mode === 'STATION_CAPTURE_5V5';
+  const isC4Planted = isBombMode && mode !== 'STATION_CAPTURE_5V5' && yardBomb.info.bombStatus === 'PLANTED';
   const plantedSite: 'A' | 'B' = yardBomb.info.plantedSite === 'B' ? 'B' : 'A';
   const plantedSitePos = plantedSite === 'A' ? routes.siteA : routes.siteB;
 
@@ -403,19 +462,43 @@ export function updateSmartBotNavigation(
         nav.tacticalState = 'DEFEND_PLANTED';
         bot.isTelegraphing = false;
       }
+    } else if (
+      (nav.tacticalState === 'COVER' || nav.tacticalState === 'PEEK') &&
+      nav.hasRealCover &&
+      nav.coverSpot &&
+      (visibleEnemyPos || chasedTargetPos)
+    ) {
+      // Hold cover / corner-peek cadence even while solid wall hides the enemy.
+      bot.isTelegraphing = true;
+      lockLookAtTarget = visibleEnemyPos || chasedTargetPos;
+      if (visibleEnemyPos) {
+        nav.acquireTimer = (nav.acquireTimer || 0) + dt;
+      } else {
+        nav.acquireTimer = 0;
+      }
     } else if (visibleEnemyPos) {
       const inCoverCycle =
         nav.tacticalState === 'COVER' || nav.tacticalState === 'PEEK';
       if (!inCoverCycle && nav.tacticalState !== 'COMBAT' && bot.isAlly) {
         triggerTacticalRadioCallout('ENEMY_SPOTTED');
       }
-      // First contact → often drop into cover instead of open strafe.
+      // First contact → try real wall/crate cover instead of open crouch.
       if (!inCoverCycle && nav.tacticalState !== 'COMBAT') {
-        if (Math.random() < 0.55) {
-          nav.tacticalState = 'COVER';
-          nav.coverTimer = 0.7 + Math.random() * 0.9;
-          nav.coverSide = Math.random() > 0.5 ? 1 : -1;
-        } else {
+        const enteredCover =
+          Math.random() < 0.62 &&
+          tryEnterRealCover(
+            bot,
+            nav,
+            visibleEnemyPos,
+            bots,
+            grenadeSystem,
+            colliders,
+            activeGlbCollider,
+            nowSec,
+            0.85,
+            1.65
+          );
+        if (!enteredCover) {
           nav.tacticalState = 'COMBAT';
         }
       } else if (!inCoverCycle) {
@@ -426,18 +509,23 @@ export function updateSmartBotNavigation(
       nav.acquireTimer = (nav.acquireTimer || 0) + dt;
     } else if (chasedTargetPos) {
       nav.tacticalState = 'INVESTIGATE';
+      nav.hasRealCover = false;
+      if (bot.root.userData?.botAnimCtrl) {
+        bot.root.userData.botAnimCtrl.crouchStance = false;
+      }
       bot.isTelegraphing = true;
       lockLookAtTarget = chasedTargetPos;
       nav.acquireTimer = 0;
     } else if (isBombMode && bot.isAlly) {
       const distSiteA = Math.hypot(bPos.x - routes.siteA.x, bPos.z - routes.siteA.z);
       const distSiteB = Math.hypot(bPos.x - routes.siteB.x, bPos.z - routes.siteB.z);
-      if ((distSiteA <= 3.2 || distSiteB <= 3.2) && yardBomb.info.bombStatus === 'CARRIED') {
+      if (mode !== 'STATION_CAPTURE_5V5' && (distSiteA <= 3.2 || distSiteB <= 3.2) && yardBomb.info.bombStatus === 'CARRIED') {
         if (nav.tacticalState !== 'PLANTING') {
           triggerTacticalRadioCallout('PLANTING_C4');
           nav.lastKeypadDigit = -1;
         }
         nav.tacticalState = 'PLANTING';
+        nav.hasRealCover = false;
         bot.isTelegraphing = false;
         nav.plantOrDefuseTimer += dt;
         const digitIdx = Math.min(7, Math.floor((nav.plantOrDefuseTimer / 3.2) * 8));
@@ -455,13 +543,16 @@ export function updateSmartBotNavigation(
         }
       } else if (isEscortAlly && playerAlive && bPos.distanceTo(playerPos) <= 26.0) {
         nav.tacticalState = 'FOLLOW_PLAYER';
+        nav.hasRealCover = false;
         bot.isTelegraphing = false;
       } else {
         nav.tacticalState = 'PATROL';
+        nav.hasRealCover = false;
         bot.isTelegraphing = false;
       }
     } else {
       nav.tacticalState = 'PATROL';
+      nav.hasRealCover = false;
       bot.isTelegraphing = false;
       nav.acquireTimer = 0;
     }
@@ -503,9 +594,10 @@ export function updateSmartBotNavigation(
       (nav.tacticalState === 'COMBAT' ||
         nav.tacticalState === 'COVER' ||
         nav.tacticalState === 'PEEK') &&
-      visibleEnemyPos
+      (visibleEnemyPos || (nav.hasRealCover && nav.coverSpot && chasedTargetPos))
     ) {
-      const distToEnemy = bPos.distanceTo(visibleEnemyPos);
+      const combatFocusPos = visibleEnemyPos || chasedTargetPos!;
+      const distToEnemy = bPos.distanceTo(combatFocusPos);
       const isSniperBot = bot.weaponId === 'SNIPER_BOLT' || bot.weaponId === 'SNIPER_TACTICAL';
       const idealDist = isSniperBot ? 15.0 : 4.6;
 
@@ -517,17 +609,24 @@ export function updateSmartBotNavigation(
       const role = nav.squadRole || 'HOLD';
       const roleSide = role === 'LEFT' ? -1 : role === 'RIGHT' ? 1 : nav.strafeDir;
 
-      if (nav.tacticalState === 'COMBAT' && distToEnemy < idealDist + 9) {
+      if (nav.tacticalState === 'COMBAT' && visibleEnemyPos && distToEnemy < idealDist + 9) {
         const roll = Math.random();
         if (roll < 0.03) {
-          nav.tacticalState = 'COVER';
-          // Human hold: vary cover time; HOLD roles linger longer.
-          nav.coverTimer =
-            (role === 'HOLD' ? 1.05 : 0.7) + Math.random() * (role === 'HOLD' ? 1.35 : 1.0);
-          nav.coverSide = roleSide >= 0 ? 1 : -1;
-          nav.isJigglePeek = false;
-          if (bot.root.userData?.botAnimCtrl) {
-            bot.root.userData.botAnimCtrl.crouchStance = true;
+          const entered = tryEnterRealCover(
+            bot,
+            nav,
+            visibleEnemyPos,
+            bots,
+            grenadeSystem,
+            colliders,
+            activeGlbCollider,
+            nowSec,
+            role === 'HOLD' ? 1.05 : 0.75,
+            role === 'HOLD' ? 2.25 : 1.7
+          );
+          if (!entered && (role === 'LEFT' || role === 'RIGHT' || role === 'PRESS')) {
+            nav.flankTimer = 1.35 + Math.random() * 1.15;
+            nav.strafeDir = roleSide;
           }
         } else if (roll < 0.05 && (role === 'LEFT' || role === 'RIGHT' || role === 'PRESS')) {
           // Squad-directed flank — not a random solo dart.
@@ -547,17 +646,32 @@ export function updateSmartBotNavigation(
       }
       if (nav.flankTimer > 0) nav.flankTimer -= dt;
       if (nav.tacticalState === 'COVER') {
+        const coverDist =
+          nav.hasRealCover && nav.coverSpot
+            ? Math.hypot(bPos.x - nav.coverSpot.x, bPos.z - nav.coverSpot.z)
+            : 0;
+        // Let bot finish sprinting to the crate/wall before starting peek countdown.
+        if (nav.hasRealCover && coverDist > 1.35 && nav.coverTimer < 0.35) {
+          nav.coverTimer = 0.35;
+        }
         nav.coverTimer -= dt;
         if (nav.coverTimer <= 0) {
-          nav.tacticalState = 'PEEK';
-          // Human peek mix: jiggle (~28%) vs commit expose.
-          nav.isJigglePeek = Math.random() < 0.28;
-          nav.peekTimer = nav.isJigglePeek
-            ? 0.22 + Math.random() * 0.2
-            : 0.48 + Math.random() * 0.55;
-          nav.peekPrefireDelay = 0.12 + Math.random() * 0.2;
-          nav.peekPrefireTimer = nav.peekPrefireDelay;
-          nav.acquireTimer = 0;
+          if (nav.hasRealCover && nav.peekSpot) {
+            nav.tacticalState = 'PEEK';
+            nav.isJigglePeek = Math.random() < 0.28;
+            nav.peekTimer = nav.isJigglePeek
+              ? 0.25 + Math.random() * 0.22
+              : 0.55 + Math.random() * 0.6;
+            nav.peekPrefireDelay = 0.12 + Math.random() * 0.18;
+            nav.peekPrefireTimer = nav.peekPrefireDelay;
+            nav.acquireTimer = 0;
+          } else if (!visibleEnemyPos && chasedTargetPos) {
+            nav.tacticalState = 'INVESTIGATE';
+            nav.hasRealCover = false;
+          } else {
+            nav.tacticalState = 'COMBAT';
+            nav.hasRealCover = false;
+          }
           if (bot.root.userData?.botAnimCtrl) {
             bot.root.userData.botAnimCtrl.crouchStance = false;
           }
@@ -565,15 +679,20 @@ export function updateSmartBotNavigation(
       } else if (nav.tacticalState === 'PEEK') {
         nav.peekTimer -= dt;
         if (nav.peekTimer <= 0) {
-          // Jiggle peeks almost always snap back to cover.
-          if (nav.isJigglePeek || Math.random() < 0.62) {
+          if (!visibleEnemyPos && chasedTargetPos) {
+            // Finished peek and enemy left LKP → investigate instead of peeking forever.
+            nav.tacticalState = 'INVESTIGATE';
+            nav.hasRealCover = false;
+          } else if (
+            nav.hasRealCover &&
+            nav.coverSpot &&
+            (nav.isJigglePeek || Math.random() < 0.65)
+          ) {
             nav.tacticalState = 'COVER';
-            nav.coverTimer = 0.55 + Math.random() * 1.15;
-            if (bot.root.userData?.botAnimCtrl) {
-              bot.root.userData.botAnimCtrl.crouchStance = true;
-            }
+            nav.coverTimer = 0.65 + Math.random() * 1.1;
           } else {
             nav.tacticalState = 'COMBAT';
+            nav.hasRealCover = false;
           }
           nav.isJigglePeek = false;
           nav.peekPrefireTimer = 0;
@@ -592,29 +711,96 @@ export function updateSmartBotNavigation(
         nav.strafeTimer = 0;
       }
 
-      _navDir.subVectors(visibleEnemyPos, bPos);
+      _navDir.subVectors(combatFocusPos, bPos);
       _navDir.y = 0;
       if (_navDir.lengthSq() > 0.001) _navDir.normalize();
 
       if (nav.tacticalState === 'COVER') {
-        const side = nav.coverSide || roleSide;
-        _combatMoveGoal.set(
-          bPos.x - _navDir.z * side * 2.8 - _navDir.x * 1.6,
-          bPos.y,
-          bPos.z + _navDir.x * side * 2.8 - _navDir.z * 1.6
-        );
-        moveTarget = _combatMoveGoal;
-        moveSpeed = 2.05;
+        if (nav.hasRealCover && nav.coverSpot) {
+          const distCover = Math.hypot(bPos.x - nav.coverSpot.x, bPos.z - nav.coverSpot.z);
+          if (bot.root.userData?.botAnimCtrl) {
+            bot.root.userData.botAnimCtrl.crouchStance = distCover <= 1.25;
+          }
+          // If arrived at cover but enemy flanked us and still has clear crouched LOS, re-eval or fight back.
+          if (distCover <= 0.9 && visibleEnemyPos) {
+            _botHead.set(bPos.x, bPos.y + 0.92, bPos.z);
+            _targetEye.set(visibleEnemyPos.x, visibleEnemyPos.y + 1.38, visibleEnemyPos.z);
+            if (checkBotLineOfSight(_botHead, _targetEye, grenadeSystem, colliders, activeGlbCollider)) {
+              const movedCover = tryEnterRealCover(
+                bot,
+                nav,
+                visibleEnemyPos,
+                bots,
+                grenadeSystem,
+                colliders,
+                activeGlbCollider,
+                nowSec,
+                0.7,
+                1.4
+              );
+              if (!movedCover) {
+                nav.tacticalState = 'COMBAT';
+                nav.hasRealCover = false;
+                if (bot.root.userData?.botAnimCtrl) {
+                  bot.root.userData.botAnimCtrl.crouchStance = false;
+                }
+              }
+            }
+          }
+          if (nav.tacticalState === 'COVER' && nav.coverSpot) {
+            if (distCover > 4.5) {
+              moveTarget = pickApproachWaypoint(
+                bPos,
+                nav.coverSpot,
+                mode,
+                Boolean(bot.isAlly),
+                4.5,
+                botNeedsRepath(nav, bot),
+                nav
+              );
+              moveSpeed = 3.65;
+            } else if (distCover > 0.52) {
+              _combatMoveGoal.copy(nav.coverSpot);
+              moveTarget = _combatMoveGoal;
+              moveSpeed = 3.25;
+            } else {
+              _combatMoveGoal.copy(nav.coverSpot);
+              moveTarget = _combatMoveGoal;
+              moveSpeed = 0;
+            }
+          } else {
+            moveTarget = bPos;
+            moveSpeed = 0;
+          }
+        } else {
+          // No physical wall/crate cover nearby → don't crouch in open air, fight dynamically.
+          nav.tacticalState = 'COMBAT';
+          if (bot.root.userData?.botAnimCtrl) {
+            bot.root.userData.botAnimCtrl.crouchStance = false;
+          }
+          moveTarget = bPos;
+          moveSpeed = 0;
+        }
       } else if (nav.tacticalState === 'PEEK') {
-        const side = nav.coverSide || roleSide;
-        const peekOut = nav.isJigglePeek ? 0.32 : 0.55;
-        _combatMoveGoal.set(
-          bPos.x - _navDir.z * side * 0.4 + _navDir.x * peekOut,
-          bPos.y,
-          bPos.z + _navDir.x * side * 0.4 + _navDir.z * peekOut
-        );
-        moveTarget = _combatMoveGoal;
-        moveSpeed = nav.isJigglePeek ? 2.35 : 2.7;
+        if (bot.root.userData?.botAnimCtrl) {
+          bot.root.userData.botAnimCtrl.crouchStance = false;
+        }
+        if (nav.hasRealCover && nav.peekSpot) {
+          const distPeek = Math.hypot(bPos.x - nav.peekSpot.x, bPos.z - nav.peekSpot.z);
+          _combatMoveGoal.copy(nav.peekSpot);
+          moveTarget = _combatMoveGoal;
+          moveSpeed = distPeek > 0.35 ? (nav.isJigglePeek ? 2.55 : 3.0) : 0;
+        } else {
+          const side = nav.coverSide || roleSide;
+          const peekOut = nav.isJigglePeek ? 0.35 : 0.6;
+          _combatMoveGoal.set(
+            bPos.x - _navDir.z * side * 0.55 + _navDir.x * peekOut,
+            bPos.y,
+            bPos.z + _navDir.x * side * 0.55 + _navDir.z * peekOut
+          );
+          moveTarget = _combatMoveGoal;
+          moveSpeed = nav.isJigglePeek ? 2.35 : 2.75;
+        }
       } else if (
         nav.flankTimer > 0 ||
         ((role === 'LEFT' || role === 'RIGHT' || role === 'PRESS') &&
@@ -624,9 +810,9 @@ export function updateSmartBotNavigation(
         const wide = role === 'PRESS' ? 3.2 : role === 'HOLD' ? 2.4 : 4.6;
         const ring = Math.max(idealDist, Math.min(distToEnemy, idealDist + 3.5));
         _flankScratch.set(
-          visibleEnemyPos.x - _navDir.x * ring - _navDir.z * side * wide,
+          combatFocusPos.x - _navDir.x * ring - _navDir.z * side * wide,
           bPos.y,
-          visibleEnemyPos.z - _navDir.z * ring + _navDir.x * side * wide
+          combatFocusPos.z - _navDir.z * ring + _navDir.x * side * wide
         );
         // Route flank goals through A* so wide arcs don't jam door frames.
         moveTarget = pickApproachWaypoint(
@@ -643,9 +829,9 @@ export function updateSmartBotNavigation(
         const sideX = -_navDir.z * roleSide * 0.12;
         const sideZ = _navDir.x * roleSide * 0.12;
         _combatMoveGoal.set(
-          visibleEnemyPos.x - _navDir.x * idealDist + sideX * 2.0,
+          combatFocusPos.x - _navDir.x * idealDist + sideX * 2.0,
           bPos.y,
-          visibleEnemyPos.z - _navDir.z * idealDist + sideZ * 2.0
+          combatFocusPos.z - _navDir.z * idealDist + sideZ * 2.0
         );
         moveTarget = _combatMoveGoal;
         moveSpeed = distToEnemy > 12.0 ? 4.55 : 3.95;
@@ -658,9 +844,19 @@ export function updateSmartBotNavigation(
         moveTarget = _combatMoveGoal;
         moveSpeed = 2.6;
       } else {
-        if (Math.random() < 0.018) {
-          nav.tacticalState = 'COVER';
-          nav.coverTimer = 0.7 + Math.random() * 0.9;
+        if (visibleEnemyPos && Math.random() < 0.022) {
+          tryEnterRealCover(
+            bot,
+            nav,
+            visibleEnemyPos,
+            bots,
+            grenadeSystem,
+            colliders,
+            activeGlbCollider,
+            nowSec,
+            0.75,
+            1.55
+          );
         }
         _combatMoveGoal.set(
           bPos.x - _navDir.z * roleSide * 0.9 - _navDir.x * 0.35,
@@ -742,10 +938,44 @@ export function updateSmartBotNavigation(
       moveSpeed = 0;
     }
 
+    // Mode Capture (STATION_CAPTURE_5V5): Flag carriers sprint home to their base, and bots recover dropped flags!
+    if (mode === 'STATION_CAPTURE_5V5') {
+      const isAllyCarrier =
+        bot.isAlly && yardBomb.info.blackthornFlagStatus === 'CARRIED' && yardBomb.info.blackthornFlagCarrier === bot.callsign;
+      const isEnemyCarrier =
+        !bot.isAlly && yardBomb.info.vanguardFlagStatus === 'CARRIED' && yardBomb.info.vanguardFlagCarrier === bot.callsign;
+
+      if (isAllyCarrier) {
+        moveTarget = pickApproachWaypoint(bPos, routes.siteA, mode, true, 3.0, false, nav);
+        moveSpeed = 4.75;
+      } else if (isEnemyCarrier) {
+        moveTarget = pickApproachWaypoint(bPos, routes.siteB, mode, false, 3.0, false, nav);
+        moveSpeed = 4.75;
+      } else if (!visibleEnemyPos) {
+        if (bot.isAlly && yardBomb.info.vanguardFlagStatus === 'DROPPED' && yardBomb.info.vanguardFlagPos) {
+          _combatMoveGoal.set(
+            yardBomb.info.vanguardFlagPos.x,
+            yardBomb.info.vanguardFlagPos.y,
+            yardBomb.info.vanguardFlagPos.z
+          );
+          moveTarget = pickApproachWaypoint(bPos, _combatMoveGoal, mode, true, 2.2, false, nav);
+          moveSpeed = 4.55;
+        } else if (!bot.isAlly && yardBomb.info.blackthornFlagStatus === 'DROPPED' && yardBomb.info.blackthornFlagPos) {
+          _combatMoveGoal.set(
+            yardBomb.info.blackthornFlagPos.x,
+            yardBomb.info.blackthornFlagPos.y,
+            yardBomb.info.blackthornFlagPos.z
+          );
+          moveTarget = pickApproachWaypoint(bPos, _combatMoveGoal, mode, false, 2.2, false, nav);
+          moveSpeed = 4.55;
+        }
+      }
+    }
+
     // Long closes: always prefer collision-mesh / corridor path over beelines.
     if (
       visibleEnemyPos &&
-      (nav.tacticalState === 'COMBAT' || nav.tacticalState === 'COVER') &&
+      nav.tacticalState === 'COMBAT' &&
       moveTarget === _combatMoveGoal
     ) {
       const distE = Math.hypot(bPos.x - visibleEnemyPos.x, bPos.z - visibleEnemyPos.z);
@@ -813,6 +1043,10 @@ export function updateSmartBotNavigation(
           nav.burstShotsLeft -= 1;
           nav.burstShotTimer = isSniper ? 0.55 : 0.11 + Math.random() * 0.04;
           triggerBotFireAnimation(bot);
+          if (!bot.isAlly) {
+            bot.root.userData = bot.root.userData || {};
+            bot.root.userData.radarRevealedUntilMs = performance.now() + 3400;
+          }
           if (isBotReloading(bot)) {
             nav.burstShotsLeft = 0;
             continue;
@@ -905,6 +1139,8 @@ export function updateSmartBotNavigation(
                 visibleEnemyBot.reviveUntilSec = now + 40;
                 visibleEnemyBot.reviveExpired = false;
                 visibleEnemyBot.root.visible = true;
+                bot.root.userData = bot.root.userData || {};
+                bot.root.userData.radarRevealedUntilMs = performance.now() + 4500;
               }
               onRegisterKill?.(bot.callsign || (bot.isAlly ? 'RECON-02' : 'KRAKEN-BT'), bot.isAlly ? 'VANGUARD' : 'BLACKTHORN', visibleEnemyBot.callsign || (visibleEnemyBot.isAlly ? 'RECON-02' : 'KRAKEN-BT'), visibleEnemyBot.isAlly ? 'VANGUARD' : 'BLACKTHORN', weapon, isHeadshot);
             }

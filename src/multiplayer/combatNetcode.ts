@@ -7,11 +7,13 @@
  * vs shipping the full OnlinePlayerState every tick. Receivers expand back to full state.
  */
 
-import { WeaponId } from '../types/game';
+import { WarfaceClassId, WeaponId } from '../types/game';
 import { OnlineHitEvent, OnlinePlayerState, OnlineRoomState } from './onlineTypes';
 
-/** Target transform send rate during combat (~15 Hz steady, instant on vitals). */
-export const COMBAT_TRANSFORM_INTERVAL_MS = 66;
+/** Target transform send rate during combat (~25 Hz steady, instant on vitals). */
+export const COMBAT_TRANSFORM_INTERVAL_MS = 40;
+/** Periodic heartbeat while stationary so remote interpolation ring stays fresh. */
+export const COMBAT_KEEPALIVE_INTERVAL_MS = 240;
 
 /** Compact transform payload (wire format). */
 export interface CompactTransformWire {
@@ -30,7 +32,9 @@ export interface CompactTransformWire {
     0 | 1, // isDown
     0 | 1, // isCrouching
     0 | 1, // isFiring
-    number // lastShotAtMs (0 = unchanged / not firing edge)
+    number, // lastShotAtMs (0 = unchanged / not firing edge)
+    WarfaceClassId?, // chosen operator class
+    string? // equipped weaponSkinId
   ];
   /** Legacy full player blob (lobby / fallback). */
   player?: OnlinePlayerState;
@@ -52,7 +56,8 @@ export function resetCombatNetcodeThrottle(): void {
 
 /**
  * Builds an updated local player state and returns whether it should be sent now.
- * Throttles to COMBAT_TRANSFORM_INTERVAL_MS unless firing/down state flips.
+ * Throttles to COMBAT_TRANSFORM_INTERVAL_MS unless firing/down state flips,
+ * and sends a keepalive every COMBAT_KEEPALIVE_INTERVAL_MS when stationary.
  */
 export function prepareCombatTransformSend(
   me: OnlinePlayerState,
@@ -63,6 +68,8 @@ export function prepareCombatTransformSend(
     yaw: number;
     pitch: number;
     weaponId: WeaponId;
+    weaponSkinId?: string;
+    classId?: WarfaceClassId;
     health: number;
     isDown: boolean;
     isCrouching: boolean;
@@ -70,6 +77,7 @@ export function prepareCombatTransformSend(
   },
   nowMs = Date.now()
 ): { updated: OnlinePlayerState; shouldSend: boolean } {
+  const nextSkinId = params.weaponSkinId ?? me.weaponSkinId ?? 'default';
   const updated: OnlinePlayerState = {
     ...me,
     x: Number(params.x.toFixed(2)),
@@ -78,10 +86,14 @@ export function prepareCombatTransformSend(
     yaw: Number(params.yaw.toFixed(3)),
     pitch: Number(params.pitch.toFixed(3)),
     weaponId: params.weaponId,
+    weaponSkinId: nextSkinId,
+    classId: params.classId ?? me.classId ?? 'FUZILEIRO',
     health: Math.max(0, Math.round(params.health)),
     isDown: params.isDown,
     isCrouching: params.isCrouching,
     isFiring: params.isFiring,
+    isLoaded: true,
+    loadProgress: 100,
     lastShotAtMs: params.isFiring ? nowMs : me.lastShotAtMs,
     updatedAtMs: nowMs,
   };
@@ -90,14 +102,18 @@ export function prepareCombatTransformSend(
     params.isFiring ||
     params.isDown !== me.isDown ||
     params.health !== me.health ||
-    params.weaponId !== me.weaponId;
+    params.weaponId !== me.weaponId ||
+    nextSkinId !== (me.weaponSkinId || 'default') ||
+    (params.classId && params.classId !== me.classId);
 
-  if (!vitalChange && nowMs - lastTransformSendMs < COMBAT_TRANSFORM_INTERVAL_MS) {
+  const elapsedSinceLastSend = nowMs - lastTransformSendMs;
+  if (!vitalChange && elapsedSinceLastSend < COMBAT_TRANSFORM_INTERVAL_MS) {
     return { updated, shouldSend: false };
   }
 
-  const fingerprint = `${updated.x}|${updated.y}|${updated.z}|${updated.yaw}|${updated.pitch}|${updated.weaponId}|${updated.health}|${updated.isDown ? 1 : 0}|${updated.isCrouching ? 1 : 0}|${updated.isFiring ? 1 : 0}`;
-  if (!vitalChange && fingerprint === lastSentSnapshot) {
+  const fingerprint = `${updated.x}|${updated.y}|${updated.z}|${updated.yaw}|${updated.pitch}|${updated.weaponId}|${nextSkinId}|${updated.classId}|${updated.health}|${updated.isDown ? 1 : 0}|${updated.isCrouching ? 1 : 0}|${updated.isFiring ? 1 : 0}`;
+  const isKeepaliveDue = elapsedSinceLastSend >= COMBAT_KEEPALIVE_INTERVAL_MS;
+  if (!vitalChange && !isKeepaliveDue && fingerprint === lastSentSnapshot) {
     return { updated, shouldSend: false };
   }
 
@@ -129,6 +145,8 @@ export function sendCombatTransformWs(
       player.isCrouching ? 1 : 0,
       player.isFiring ? 1 : 0,
       player.isFiring ? player.lastShotAtMs : 0,
+      player.classId || 'FUZILEIRO',
+      player.weaponSkinId || 'default',
     ],
   };
   wsClient.send(JSON.stringify(packet));
@@ -147,7 +165,18 @@ export function applyIncomingPlayerState(
   }
 ): OnlinePlayerState | null {
   if (msg.player?.uid) {
-    return msg.player;
+    if (!existing) {
+      return {
+        ...msg.player,
+        updatedAtMs: Date.now(),
+      };
+    }
+    return {
+      ...existing,
+      ...msg.player,
+      classId: msg.player.classId || existing.classId || 'FUZILEIRO',
+      updatedAtMs: Date.now(),
+    };
   }
   if (!msg.t || !Array.isArray(msg.t) || msg.t.length < 10) return null;
   const [
@@ -162,6 +191,8 @@ export function applyIncomingPlayerState(
     isCrouching,
     isFiring,
     lastShotAtMs,
+    classId,
+    weaponSkinId,
   ] = msg.t;
   const base: OnlinePlayerState = existing
     ? { ...existing }
@@ -173,6 +204,8 @@ export function applyIncomingPlayerState(
         mmr: 1000,
         avatarDataUrl: '',
         weaponId: 'M4_CARBINE',
+        weaponSkinId: 'default',
+        classId: 'FUZILEIRO',
         x: 0,
         y: 0,
         z: 0,
@@ -199,10 +232,23 @@ export function applyIncomingPlayerState(
   base.yaw = Number(yaw);
   base.pitch = Number(pitch);
   base.weaponId = weaponId as WeaponId;
+  if (typeof weaponSkinId === 'string' && weaponSkinId) {
+    base.weaponSkinId = weaponSkinId;
+  } else if (!base.weaponSkinId) {
+    base.weaponSkinId = 'default';
+  }
+  if (classId) {
+    base.classId = classId as WarfaceClassId;
+  } else if (!base.classId) {
+    base.classId = 'FUZILEIRO';
+  }
   base.health = Number(health);
   base.isDown = Boolean(isDown);
   base.isCrouching = Boolean(isCrouching);
   base.isFiring = Boolean(isFiring);
+  // A player sending live combat transforms is inside the arena
+  base.isLoaded = true;
+  base.loadProgress = 100;
   if (lastShotAtMs) base.lastShotAtMs = Number(lastShotAtMs);
   base.updatedAtMs = Date.now();
   return base;

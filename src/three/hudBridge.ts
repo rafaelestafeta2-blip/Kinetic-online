@@ -10,7 +10,7 @@ import { HudState } from '../types/game';
 export interface RadarTargetSource {
   id: string;
   sector: 'RANGE' | 'KILLHOUSE';
-  root: { position: { x: number; z: number } };
+  root: { position: { x: number; z: number }; userData?: Record<string, any> };
   isDown: boolean;
   isAlly?: boolean;
 }
@@ -22,6 +22,7 @@ export interface HudRadarCacheEntry {
   z: number;
   isDown: boolean;
   isAlly?: boolean;
+  isRevealed?: boolean;
 }
 
 export interface HudEmitContext {
@@ -39,25 +40,34 @@ export interface HudEmitContext {
 
 function syncRadarCache(
   targets: RadarTargetSource[],
-  cached: HudRadarCacheEntry[]
+  cached: HudRadarCacheEntry[],
+  drillMode: HudState['drillMode']
 ): HudRadarCacheEntry[] {
+  const nowMs = performance.now();
+  const isRange = drillMode === 'FREE_RANGE';
   if (cached.length !== targets.length) {
-    return targets.map((t) => ({
-      id: t.id,
-      sector: t.sector,
-      x: t.root.position.x,
-      z: t.root.position.z,
-      isDown: t.isDown,
-      isAlly: t.isAlly,
-    }));
+    return targets.map((t) => {
+      const revealedUntil = Number(t.root.userData?.radarRevealedUntilMs || 0);
+      return {
+        id: t.id,
+        sector: t.sector,
+        x: t.root.position.x,
+        z: t.root.position.z,
+        isDown: t.isDown,
+        isAlly: t.isAlly,
+        isRevealed: Boolean(t.isAlly) || isRange || nowMs < revealedUntil,
+      };
+    });
   }
   for (let i = 0; i < targets.length; i++) {
     const t = targets[i];
     const c = cached[i];
+    const revealedUntil = Number(t.root.userData?.radarRevealedUntilMs || 0);
     c.x = t.root.position.x;
     c.z = t.root.position.z;
     c.isDown = t.isDown;
     c.isAlly = t.isAlly;
+    c.isRevealed = Boolean(t.isAlly) || isRange || nowMs < revealedUntil;
   }
   return cached;
 }
@@ -68,6 +78,15 @@ function syncRadarCache(
  */
 export function buildHudFingerprint(state: HudState, yaw: number): string {
   const bomb = state.yardBomb;
+  const radarSig = (state.radarTargets || [])
+    .map((t) =>
+      t.isDown
+        ? '0'
+        : t.isAlly || t.isRevealed
+          ? `${t.isAlly ? 'A' : 'E'}${Math.round(t.x)}:${Math.round(t.z)}`
+          : 'H'
+    )
+    .join(',');
   return [
     state.screen,
     state.activeWeapon,
@@ -129,6 +148,7 @@ export function buildHudFingerprint(state: HudState, yaw: number): string {
     bomb?.enemiesAlive ?? -1,
     bomb?.roundState || '-',
     bomb?.plantProgress != null ? Math.round(bomb.plantProgress * 10) : 0,
+    radarSig,
   ].join('|');
 }
 
@@ -140,7 +160,11 @@ export function emitHudIfChanged(
   ctx: HudEmitContext,
   onHudUpdate: (state: HudState) => void
 ): boolean {
-  ctx.cachedRadarTargets = syncRadarCache(ctx.targets, ctx.cachedRadarTargets);
+  ctx.cachedRadarTargets = syncRadarCache(
+    ctx.targets,
+    ctx.cachedRadarTargets,
+    ctx.state.drillMode
+  );
 
   ctx.state.playerPos.x = ctx.playerPos.x;
   ctx.state.playerPos.y = ctx.playerPos.y;

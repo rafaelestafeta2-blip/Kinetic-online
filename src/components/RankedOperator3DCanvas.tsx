@@ -16,11 +16,13 @@ import {
   createSecondaryWebGLRenderer,
   disposeSecondaryWebGLRenderer,
 } from '../three/webglContextGuard';
+import { applyWeaponSkinToObject3D } from '../three/weaponSkinMaterial';
 import { WeaponId } from '../types/game';
 import { WarfaceClassId } from './WarfaceClassIcons';
 
 interface RankedOperator3DCanvasProps {
   activeWeapon: WeaponId;
+  weaponSkinId?: string;
   operatorClass?: WarfaceClassId;
   team?: 'VANGUARD' | 'BLACKTHORN';
   externalRotateSignal?: { nonce: number; delta: number };
@@ -28,6 +30,7 @@ interface RankedOperator3DCanvasProps {
 
 export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
   activeWeapon,
+  weaponSkinId = 'default',
   operatorClass,
   team = 'VANGUARD',
   externalRotateSignal,
@@ -35,9 +38,10 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const weaponRef = useRef<WeaponId>(activeWeapon);
+  const skinRef = useRef<string>(weaponSkinId);
   const classRef = useRef<WarfaceClassId | undefined>(operatorClass);
   const swapSelectionRef = useRef<
-    ((w: WeaponId, c?: WarfaceClassId) => void) | null
+    ((w: WeaponId, c?: WarfaceClassId, s?: string) => void) | null
   >(null);
   const nudgeYawRef = useRef<((delta: number) => void) | null>(null);
   const isBlackthorn = team === 'BLACKTHORN';
@@ -45,10 +49,11 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
   useEffect(() => {
     weaponRef.current = activeWeapon;
     classRef.current = operatorClass;
+    skinRef.current = weaponSkinId;
     if (swapSelectionRef.current) {
-      swapSelectionRef.current(activeWeapon, operatorClass);
+      swapSelectionRef.current(activeWeapon, operatorClass, weaponSkinId);
     }
-  }, [activeWeapon, operatorClass]);
+  }, [activeWeapon, operatorClass, weaponSkinId]);
 
   useEffect(() => {
     if (externalRotateSignal && externalRotateSignal.nonce > 0 && nudgeYawRef.current) {
@@ -224,6 +229,7 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
 
     let currentModelRoot: THREE.Object3D | null = null;
     let currentAvatarKind: CharacterAvatarKind | null = null;
+    let mountedWeaponId: WeaponId | null = null;
     let mixer: THREE.AnimationMixer | null = null;
     let rHandBone: THREE.Object3D | null = null;
     let lHandBone: THREE.Object3D | null = null;
@@ -237,7 +243,8 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
 
     const mountCharacterForSelection = (
       targetWeapon: WeaponId,
-      targetClass?: WarfaceClassId
+      targetClass?: WarfaceClassId,
+      targetSkin?: string
     ) => {
       if (disposed) return;
       const cloned = cloneVanguardCharacterAvatar(
@@ -335,7 +342,12 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
       if (weaponProp) {
         operatorPivot.remove(weaponProp);
       }
-      weaponProp = createBotThirdPersonWeaponMesh(targetWeapon, true);
+      mountedWeaponId = targetWeapon;
+      weaponProp = createBotThirdPersonWeaponMesh(
+        targetWeapon,
+        true,
+        targetSkin || skinRef.current
+      );
       operatorPivot.add(weaponProp);
 
       mixer = new THREE.AnimationMixer(modelRoot);
@@ -354,22 +366,31 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
 
     swapSelectionRef.current = (
       nextWeapon: WeaponId,
-      nextClass?: WarfaceClassId
+      nextClass?: WarfaceClassId,
+      nextSkin?: string
     ) => {
       if (disposed) return;
+      const desiredSkin = nextSkin || 'default';
       const wantKind = resolveCharacterAvatarKind(nextWeapon, nextClass, true);
       if (currentModelRoot === null || currentAvatarKind !== wantKind) {
-        mountCharacterForSelection(nextWeapon, nextClass);
+        mountCharacterForSelection(nextWeapon, nextClass, desiredSkin);
         return;
       }
       if (!rHandBone) return;
-      if (weaponProp) {
-        operatorPivot.remove(weaponProp);
+      if (mountedWeaponId !== nextWeapon || !weaponProp) {
+        if (weaponProp) {
+          operatorPivot.remove(weaponProp);
+        }
+        mountedWeaponId = nextWeapon;
+        weaponProp = createBotThirdPersonWeaponMesh(nextWeapon, true, desiredSkin);
+        operatorPivot.add(weaponProp);
+        operatorPivot.updateMatrixWorld(true);
+        alignWeaponPropToMixamoHands(weaponProp, operatorPivot, rHandBone, lHandBone);
+      } else {
+        weaponProp.userData = weaponProp.userData || {};
+        weaponProp.userData.desiredSkinId = desiredSkin;
+        applyWeaponSkinToObject3D(weaponProp, nextWeapon, desiredSkin);
       }
-      weaponProp = createBotThirdPersonWeaponMesh(nextWeapon, true);
-      operatorPivot.add(weaponProp);
-      operatorPivot.updateMatrixWorld(true);
-      alignWeaponPropToMixamoHands(weaponProp, operatorPivot, rHandBone, lHandBone);
     };
 
     void Promise.all([
@@ -377,7 +398,11 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
       preloadRealBotWeaponGlbs(),
     ]).then(() => {
       if (disposed) return;
-      mountCharacterForSelection(weaponRef.current, classRef.current);
+      mountCharacterForSelection(
+        weaponRef.current,
+        classRef.current,
+        skinRef.current
+      );
     });
 
     let manualYawOffset = 0;

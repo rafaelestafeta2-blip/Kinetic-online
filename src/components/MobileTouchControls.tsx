@@ -199,7 +199,7 @@ const MobileTouchControlsBase: React.FC<MobileTouchControlsProps> = ({
         aria-label="Área livre da tela para movimentar a câmera e mirar"
       />
 
-      {/* LEFT THUMB ZONE: VIRTUAL JOYSTICK */}
+      {/* LEFT THUMB ZONE: VIRTUAL JOYSTICK WITH 4 DIRECTIONAL TRIANGLES MATCHING REFERENCE */}
       <div
         style={getPlacementStyle(layout.joystick)}
         className="fixed pointer-events-auto z-30 select-none"
@@ -208,30 +208,29 @@ const MobileTouchControlsBase: React.FC<MobileTouchControlsProps> = ({
           ref={joyContainerRef}
           onPointerDown={handleJoyPointerDown}
           style={{ touchAction: 'none' }}
-          className={`relative w-32 h-32 rounded-full bg-black/25 border flex items-center justify-center transition-colors ${
+          className={`relative w-32 h-32 rounded-full bg-[#322920]/65 border flex items-center justify-center transition-colors shadow-[0_6px_18px_rgba(0,0,0,0.55)] ${
             isSprinting
-              ? 'border-amber-400/80 shadow-[0_0_16px_rgba(250,204,21,0.25)]'
-              : 'border-white/25'
+              ? 'border-amber-400/85 shadow-[0_0_16px_rgba(250,204,21,0.3)]'
+              : 'border-white/35'
           }`}
         >
+          {/* 4 directional triangles inside joystick ring (top, bottom, left, right) */}
           <svg
-            width="44"
-            height="22"
-            viewBox="0 0 44 22"
-            fill="none"
-            className={`absolute -top-3.5 pointer-events-none transition-colors ${
-              isSprinting ? 'text-amber-400' : 'text-white/75'
-            }`}
+            viewBox="0 0 100 100"
+            className="absolute inset-0 w-full h-full pointer-events-none text-white/75"
+            fill="currentColor"
           >
-            <path d="M6 16C11 11 16.5 9 22 9C27.5 9 33 11 38 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            <path d="M17 7L22 2L27 7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+            <polygon points="50,6 44,15 56,15" />
+            <polygon points="50,94 44,85 56,85" />
+            <polygon points="6,50 15,44 15,56" />
+            <polygon points="94,50 85,44 85,56" />
           </svg>
 
           <div
             className={`w-12 h-12 rounded-full border-2 pointer-events-none transition-transform duration-75 ${
               joyActive
-                ? 'bg-white/85 border-white scale-105 shadow-md'
-                : 'bg-white/65 border-white/80'
+                ? 'bg-white/95 border-white scale-105 shadow-md'
+                : 'bg-white/80 border-white/90'
             }`}
             style={{ transform: `translate(${knobOffset.x}px, ${knobOffset.y}px)` }}
           />
@@ -254,13 +253,13 @@ const MobileTouchControlsBase: React.FC<MobileTouchControlsProps> = ({
         {...bindTap(onToggleAds)}
         style={getPlacementStyle(layout.ads)}
         aria-label="Mirar"
-        className={`fixed w-13 h-13 rounded-full border flex items-center justify-center pointer-events-auto z-30 select-none transition-colors active:brightness-125 cursor-pointer ${
+        className={`fixed w-14 h-14 rounded-full border flex items-center justify-center pointer-events-auto z-30 select-none transition-colors active:brightness-125 cursor-pointer shadow-[0_4px_14px_rgba(0,0,0,0.55)] ${
           hud.isAds
             ? 'bg-white/35 border-amber-300 text-amber-300 shadow-[0_0_15px_rgba(250,204,21,0.4)]'
-            : 'bg-black/45 border-white/35 text-white/90'
+            : 'bg-[#322920]/70 border-white/35 text-white'
         }`}
       >
-        <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
           <circle cx="12" cy="12" r="7.5" stroke="currentColor" strokeWidth="1.8" />
           <circle cx="12" cy="12" r="2" stroke="currentColor" strokeWidth="1.5" />
           <line x1="12" y1="2" x2="12" y2="7" stroke="currentColor" strokeWidth="1.8" />
@@ -276,7 +275,7 @@ const MobileTouchControlsBase: React.FC<MobileTouchControlsProps> = ({
         {...bindTap(onJump)}
         style={getPlacementStyle(layout.jump)}
         aria-label="Pular"
-        className="fixed w-13 h-13 rounded-full bg-black/45 border border-white/35 text-white/95 flex items-center justify-center pointer-events-auto z-30 select-none active:brightness-125 transition-colors cursor-pointer"
+        className="fixed w-13 h-13 rounded-full bg-[#322920]/70 border border-white/35 text-white flex items-center justify-center pointer-events-auto z-30 select-none active:brightness-125 transition-colors cursor-pointer shadow-[0_4px_14px_rgba(0,0,0,0.55)]"
       >
         <svg width="25" height="25" viewBox="0 0 24 24" fill="none">
           <circle cx="13" cy="4.5" r="2.2" fill="currentColor" />
@@ -300,8 +299,8 @@ const MobileTouchControlsBase: React.FC<MobileTouchControlsProps> = ({
           equippedGrenade={hud.equippedGrenade}
           pressed={leftFirePressed}
           placement={layout.leftFire}
-          sizeClass="w-16 h-16"
-          innerSizeClass="w-13 h-13"
+          sizeClass="w-18 h-18"
+          innerSizeClass="w-15 h-15"
           label="2º Botão de Tiro Esquerdo"
           onPointerDown={handleLeftFirePointerDown}
           onFireHeld={onFireHeld}
@@ -314,10 +313,10 @@ const MobileTouchControlsBase: React.FC<MobileTouchControlsProps> = ({
         {...bindTap(() => onReload(false))}
         style={getPlacementStyle(layout.reload)}
         aria-label="Recarregar"
-        className={`fixed w-12 h-12 rounded-full border flex items-center justify-center pointer-events-auto z-30 select-none active:brightness-125 transition-colors cursor-pointer ${
+        className={`fixed w-13 h-13 rounded-full border flex items-center justify-center pointer-events-auto z-30 select-none active:brightness-125 transition-colors cursor-pointer shadow-[0_4px_14px_rgba(0,0,0,0.55)] ${
           hud.reloadPhase !== 'IDLE'
             ? 'bg-amber-500/40 border-amber-300 text-amber-200'
-            : 'bg-black/45 border-white/35 text-white/95'
+            : 'bg-[#322920]/70 border-white/35 text-white'
         }`}
       >
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none">

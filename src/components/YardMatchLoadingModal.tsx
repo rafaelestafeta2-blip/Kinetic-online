@@ -1,7 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { soundEngine } from '../audio/soundEngine';
 import { BLACKTHORN_ROSTER, VANGUARD_ROSTER } from '../data/matchRoster';
-import { getCloudSyncState, getPlayerCallsign } from '../firebase/playerCloudSync';
+import {
+  getCloudSyncState,
+  getPlayerCallsign,
+  subscribePlayerProfile,
+} from '../firebase/playerCloudSync';
 import {
   isOnlineMatchActive,
   publishLocalLoadProgress,
@@ -152,7 +156,7 @@ const YARD_RADAR_IMAGE = '/assets/aistudio/Yard_Map_Radar_7754e5f9.webp';
 const TUTORIAL_STORAGE_KEY = 'kinetic_plant_bomb_tutorial_played';
 const BRIEFING_DURATION_MS = 40000;
 /** Soft UI countdown only — must NOT force-start match before GLB+collider ready. */
-const ONLINE_BARRIER_TIMEOUT_MS = 25000;
+const ONLINE_BARRIER_TIMEOUT_MS = 45000;
 /**
  * Soft wait for prepare. After this we settle: if prepare finishes soon, enter;
  * if still hung, abort (or force-enter TESTE MAPA) — never spin at 99% forever.
@@ -178,9 +182,12 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
   const [isFirstTimeTutorial, setIsFirstTimeTutorial] = useState(false);
   const [statusText, setStatusText] = useState('INICIALIZANDO THREE.LOADINGMANAGER & DRACOLOADER...');
   const [onlineRoom, setOnlineRoom] = useState<OnlineRoomState | null>(null);
+  const [profile, setProfile] = useState(() => getCloudSyncState().profile);
 
   const completedRef = useRef(false);
   const localMapReadyRef = useRef(false);
+  const localReadyAtMsRef = useRef<number | null>(null);
+  const lastBarrierPingMsRef = useRef(0);
   const lastProgressSentRef = useRef(-1);
   const onPrepareMapRef = useRef(onPrepareMap);
   onPrepareMapRef.current = onPrepareMap;
@@ -206,6 +213,8 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
             ? mode === 'MAP_TEST_MIRAGE'
               ? 'TESTE · MIRAGE'
               : 'MIRAGE ANUBIS'
+          : mode === 'STATION_CAPTURE_5V5'
+            ? 'STATION ARENA'
           : mode === 'ASSAULT_BOMB_5V5'
           ? 'CS_ASSAULT'
           : mode === 'FREE_RANGE'
@@ -236,8 +245,12 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
   };
 
   useEffect(() => {
-    const unsub = subscribeOnlineRoom((room) => setOnlineRoom(room));
-    return () => unsub();
+    const unsubRoom = subscribeOnlineRoom((room) => setOnlineRoom(room));
+    const unsubProfile = subscribePlayerProfile((sync) => setProfile(sync.profile));
+    return () => {
+      unsubRoom();
+      unsubProfile();
+    };
   }, []);
 
   // Barreira de sincronização online: libera a partida assim que TODOS os jogadores da sala chegarem a 100%
@@ -281,6 +294,7 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
       mode === 'HANGAR_BOMB_5V5' ||
       mode === 'EASTERN_CITY_BOMB_5V5' ||
       mode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
+      mode === 'STATION_CAPTURE_5V5' ||
       mode === 'FREE_RANGE' ||
       mode === 'MAP_TEST_INDUSTRIA' ||
       mode === 'MAP_TEST_HANGAR' ||
@@ -374,11 +388,13 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
         }
         if (cancelled) return;
         localMapReadyRef.current = true;
+        localReadyAtMsRef.current = performance.now();
+        lastBarrierPingMsRef.current = performance.now();
         setProgress(100);
         setIsArenaReady(true);
 
         if (isOnline) {
-          publishLocalLoadProgress(100, true);
+          publishLocalLoadProgress(100, true, true);
           setStatusText('AGUARDANDO TODOS OS JOGADORES DA SALA CARREGAREM OS RECURSOS 3D...');
         } else if (!firstTime) {
           window.setTimeout(() => {
@@ -398,7 +414,8 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
     void runRealPreparation();
 
     const tick = window.setInterval(() => {
-      const elapsed = performance.now() - startTime;
+      const nowPerf = performance.now();
+      const elapsed = nowPerf - startTime;
       const remainingSec = Math.max(0, Math.ceil((BRIEFING_DURATION_MS - elapsed) / 1000));
       setSecondsLeft(remainingSec);
 
@@ -423,9 +440,17 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
         );
       }
 
-      if (isOnline && localMapReadyRef.current && elapsed >= ONLINE_BARRIER_TIMEOUT_MS && !completedRef.current) {
-        window.clearInterval(tick);
-        finishLoading();
+      if (isOnline && localMapReadyRef.current && !completedRef.current) {
+        if (nowPerf - lastBarrierPingMsRef.current >= 1500) {
+          lastBarrierPingMsRef.current = nowPerf;
+          publishLocalLoadProgress(100, true, true);
+        }
+        const waitAfterReadyMs =
+          localReadyAtMsRef.current !== null ? nowPerf - localReadyAtMsRef.current : 0;
+        if (waitAfterReadyMs >= ONLINE_BARRIER_TIMEOUT_MS) {
+          window.clearInterval(tick);
+          finishLoading();
+        }
       } else if (firstTime && localMapReadyRef.current && elapsed >= BRIEFING_DURATION_MS && !completedRef.current) {
         window.clearInterval(tick);
         finishLoading();
@@ -447,8 +472,7 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
   const onlineReadyCount = onlinePlayers.filter((p) => p.isLoaded || (p.loadProgress ?? 0) >= 100).length;
 
   const playerSelectedClass = getPlayerInventoryState().selectedClass;
-  const profile = getCloudSyncState().profile;
-  const localCallsign = getPlayerCallsign();
+  const localCallsign = profile.callsign || getPlayerCallsign();
   const showcase = useMemo(
     () => pickShowcaseAchievement(profile.unlockedAchievements || []),
     [profile.unlockedAchievements]
@@ -463,10 +487,10 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
           return {
             callsign: p.callsign,
             title: ready ? '✓ 100% PRONTO' : `CARREGANDO ${p.loadProgress ?? 0}%`,
-            classId: isLocal ? playerSelectedClass : 'FUZILEIRO',
+            classId: isLocal ? playerSelectedClass : (p.classId || 'FUZILEIRO'),
             isPlayer: isLocal,
             isReady: ready,
-            avatarDataUrl: p.avatarDataUrl || (isLocal ? profile.avatarDataUrl : undefined),
+            avatarDataUrl: (isLocal ? profile.avatarDataUrl : undefined) || p.avatarDataUrl,
             rankLevel: p.rankLevel || (isLocal ? profile.rankLevel : 1),
             bannerTitle: isLocal ? showcase?.title : undefined,
             bannerIcon: isLocal ? showcase?.icon : undefined,
@@ -492,14 +516,16 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
     ? onlinePlayers
         .filter((p) => p.team === 'BLACKTHORN')
         .map((p) => {
+          const isLocal = p.uid === profile.uid || p.callsign === localCallsign;
           const ready = Boolean(p.isLoaded || (p.loadProgress ?? 0) >= 100);
           return {
             callsign: p.callsign,
             title: ready ? '✓ 100% PRONTO' : `CARREGANDO ${p.loadProgress ?? 0}%`,
-            classId: 'ENGENHEIRO' as WarfaceClassId,
+            classId: isLocal ? playerSelectedClass : (p.classId || 'ENGENHEIRO'),
+            isPlayer: isLocal,
             isReady: ready,
-            avatarDataUrl: p.avatarDataUrl || undefined,
-            rankLevel: p.rankLevel || 1,
+            avatarDataUrl: (isLocal ? profile.avatarDataUrl : undefined) || p.avatarDataUrl,
+            rankLevel: p.rankLevel || (isLocal ? profile.rankLevel : 1),
           };
         })
     : BLACKTHORN_ROSTER.map((op, idx) => ({
@@ -524,7 +550,7 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
             OPERAÇÃO TÁTICA · {mapCodeLabel}
           </div>
           <h1 className="text-2xl sm:text-4xl font-display font-black tracking-wider text-white uppercase mt-1">
-            MAPA: {mapCodeLabel} (BOMB 5V5)
+            MAPA: {mapCodeLabel} ({mode === 'STATION_CAPTURE_5V5' ? 'CAPTURE 5V5' : 'BOMB 5V5'})
           </h1>
           <p className="text-xs font-mono text-slate-300 mt-1">
             Sincronizando recursos 3D e aguardando jogadores da sala...
@@ -565,7 +591,9 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
         <div className="text-right font-mono text-[10px] sm:text-xs">
           <span className="text-amber-400 font-bold">MAPA: {mapCodeLabel}</span>
           <span className="text-slate-400 mx-1.5">·</span>
-          <span className="text-sky-300">PLANT THE BOMB</span>
+          <span className="text-sky-300">
+            {mode === 'STATION_CAPTURE_5V5' ? 'CAPTURE THE FLAG' : 'PLANT THE BOMB'}
+          </span>
         </div>
       </header>
 
@@ -663,7 +691,11 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
         <div className="flex items-center justify-between gap-2 text-[10px] sm:text-xs font-mono text-slate-300 mt-1.5">
           <div className="shrink-0">
             <span className="text-slate-400 block text-[9px]">Modo de Jogo:</span>
-            <span className="font-bold text-white">Plant the Bomb (5 vs 5)</span>
+            <span className="font-bold text-white">
+              {mode === 'STATION_CAPTURE_5V5'
+                ? 'Capture the Flag (5 vs 5 · 6 Rodadas)'
+                : 'Plant the Bomb (5 vs 5)'}
+            </span>
           </div>
           <div className="flex-1 text-center px-2 text-[10px] sm:text-[11px] text-amber-200 font-bold leading-snug">
             {statusText}

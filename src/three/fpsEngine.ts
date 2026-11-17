@@ -42,7 +42,11 @@ import {
   savePlayerXp,
 } from '../progression/ranks';
 import { canGrantMatchProgressionRewards } from '../progression/matchProgressionGate';
-import { getClassCombatModifiers } from '../progression/loadoutSystem';
+import {
+  getClassCombatModifiers,
+  getEquippedWeaponSkinId,
+  subscribePlayerInventory,
+} from '../progression/loadoutSystem';
 import { BallisticsFXPool } from './ballisticsPool';
 import { TacticalGrenadeSystem } from './grenadeSystem';
 import {
@@ -93,6 +97,12 @@ import {
   loadMirageAnubisMapGeometry,
 } from './mirageAnubisLevelBuilder';
 import {
+  STATION_ARENA_ATTACKER_SPAWN,
+  STATION_ARENA_SPAWN_YAW,
+  buildStationArenaLevel,
+  loadStationArenaMapGeometry,
+} from './stationArenaLevelBuilder';
+import {
   buildDust2Level,
   Dust2LevelBundle,
   DUST2_T_SPAWN,
@@ -107,6 +117,7 @@ import {
 } from './matchAssetManager';
 import {
   triggerBotFireAnimation,
+  triggerBotGrenadeAnimation,
   triggerBotHitAnimation,
   updateAllBotCharacters,
 } from './botCharacterSystem';
@@ -127,10 +138,12 @@ import {
   leaveActiveRoom,
   publishBombStateChange,
   publishCombatHit,
+  publishGrenadeThrow,
   publishRoundEvent,
   resetLocalOnlinePlayerForNextRound,
   subscribeOnlineBombEvents,
   subscribeOnlineClassSupport,
+  subscribeOnlineGrenadeEvents,
   subscribeOnlineHitEvents,
   subscribeOnlineRoundEvents,
 } from '../multiplayer/onlineRoomService';
@@ -219,9 +232,11 @@ export class TacticalFPSEngine {
   private container: HTMLElement;
   private onHudUpdate: (state: HudState) => void;
   private unsubOnlineHits: (() => void) | null = null;
+  private unsubOnlineGrenades: (() => void) | null = null;
   private unsubOnlineClassSupport: (() => void) | null = null;
   private unsubOnlineBomb: (() => void) | null = null;
   private unsubOnlineRounds: (() => void) | null = null;
+  private unsubInventory: (() => void) | null = null;
   /** Warface local-player revive window (bomb modes). */
   private playerReviveUntilSec = 0;
   private playerReviveExpired = false;
@@ -246,6 +261,7 @@ export class TacticalFPSEngine {
   private hangarLevelData: Dust2LevelBundle;
   private easternCityLevelData: Dust2LevelBundle;
   private mirageAnubisLevelData: Dust2LevelBundle;
+  private stationArenaLevelData: Dust2LevelBundle;
   private yardBombSystem: YardBombSystem;
   private colliders: ColliderBox[] = [];
   private targets: TacticalTargetEntity[] = [];
@@ -619,6 +635,10 @@ export class TacticalFPSEngine {
     this.textures = createProceduralTextures(this.renderer);
     this.weaponRig = buildTacticalWeaponRig(this.textures, this.isSoftwareGl);
     this.camera.add(this.weaponRig.root);
+    this.unsubInventory = subscribePlayerInventory(() => {
+      const w = this.state.activeWeapon;
+      this.weaponRig.applyWeaponSkin(w, getEquippedWeaponSkinId(w));
+    });
     this.playerDeathTp = new PlayerDeathThirdPersonController(
       this.scene,
       this.isSoftwareGl
@@ -677,6 +697,10 @@ export class TacticalFPSEngine {
     this.mirageAnubisLevelData.levelGroup.visible = false;
     this.scene.add(this.mirageAnubisLevelData.levelGroup);
 
+    this.stationArenaLevelData = buildStationArenaLevel(this.isSoftwareGl);
+    this.stationArenaLevelData.levelGroup.visible = false;
+    this.scene.add(this.stationArenaLevelData.levelGroup);
+
     this.yardBombSystem = new YardBombSystem(this.scene);
 
     this.colliders = standerData.colliders;
@@ -697,15 +721,22 @@ export class TacticalFPSEngine {
     this.grenadeSystem = new TacticalGrenadeSystem(
       this.scene,
       this.camera,
-      (blastCenter, blastRadius) =>
-        this.handleFragGrenadeDetonation(blastCenter, blastRadius),
-      (type) => {
+      (blastCenter, blastRadius, isRemote) =>
+        this.handleFragGrenadeDetonation(blastCenter, blastRadius, Boolean(isRemote)),
+      (type, origin, velocity) => {
         if (type === 'FRAG') {
           this.state.fragGrenades = Math.max(0, this.state.fragGrenades - 1);
         } else {
           this.state.smokeGrenades = Math.max(0, this.state.smokeGrenades - 1);
         }
         this.state.equippedGrenade = null;
+        if (isOnlineMatchActive()) {
+          publishGrenadeThrow(
+            type,
+            [origin.x, origin.y, origin.z],
+            [velocity.x, velocity.y, velocity.z]
+          );
+        }
         this.emitHud();
       }
     );
@@ -775,6 +806,7 @@ export class TacticalFPSEngine {
       hangarLevelData: this.hangarLevelData,
       easternCityLevelData: this.easternCityLevelData,
       mirageAnubisLevelData: this.mirageAnubisLevelData,
+      stationArenaLevelData: this.stationArenaLevelData,
       skySystem: this.skySystem,
       grenadeSystem: this.grenadeSystem,
       onProgress,
@@ -797,6 +829,7 @@ export class TacticalFPSEngine {
       this.hangarLevelData,
       this.easternCityLevelData,
       this.mirageAnubisLevelData,
+      this.stationArenaLevelData,
       this.grenadeSystem
     );
     this.colliders = this.standerTiroLevelData.colliders;
@@ -874,7 +907,8 @@ export class TacticalFPSEngine {
                 this.state.drillMode === 'INDUSTRIA_BOMB_5V5' ||
                 this.state.drillMode === 'HANGAR_BOMB_5V5' ||
                 this.state.drillMode === 'EASTERN_CITY_BOMB_5V5' ||
-                this.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5';
+                this.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
+                this.state.drillMode === 'STATION_CAPTURE_5V5';
               if (bomb) {
                 const specBot = this.playerDeathTp.startSpectating(
                   this.targets as YardBotEntity[]
@@ -913,6 +947,36 @@ export class TacticalFPSEngine {
         evt.amount,
         evt.phase || 'APPLY'
       );
+    });
+
+    this.unsubOnlineGrenades?.();
+    this.unsubOnlineGrenades = subscribeOnlineGrenadeEvents((evt) => {
+      if (!isOnlineMatchActive()) return;
+      const localOp = getLocalOnlinePlayerState();
+      if (localOp && evt.senderUid === localOp.uid) return;
+      const originVec = new THREE.Vector3(
+        Number(evt.origin?.[0] || 0),
+        Number(evt.origin?.[1] || 0),
+        Number(evt.origin?.[2] || 0)
+      );
+      const velVec = new THREE.Vector3(
+        Number(evt.velocity?.[0] || 0),
+        Number(evt.velocity?.[1] || 0),
+        Number(evt.velocity?.[2] || 0)
+      );
+      this.grenadeSystem?.spawnBotGrenade(
+        originVec,
+        velVec,
+        evt.grenadeType === 'SMOKE' ? 'SMOKE' : 'FRAG',
+        true
+      );
+      for (let i = 0; i < this.targets.length; i++) {
+        const bot = this.targets[i];
+        if (bot.root.userData?.remotePlayerUid === evt.senderUid && !bot.isDown) {
+          triggerBotGrenadeAnimation(bot);
+          break;
+        }
+      }
     });
 
     this.unsubOnlineBomb?.();
@@ -1011,6 +1075,7 @@ export class TacticalFPSEngine {
     if (mode === 'HANGAR_BOMB_5V5') return this.hangarLevelData.collider;
     if (mode === 'EASTERN_CITY_BOMB_5V5') return this.easternCityLevelData.collider;
     if (mode === 'MIRAGE_ANUBIS_BOMB_5V5') return this.mirageAnubisLevelData.collider;
+    if (mode === 'STATION_CAPTURE_5V5') return this.stationArenaLevelData.collider;
     return null;
   }
 
@@ -1146,6 +1211,9 @@ export class TacticalFPSEngine {
     if (mode === 'MIRAGE_ANUBIS_BOMB_5V5') {
       return this.mirageAnubisLevelData.collider.getGroundHeight(x, y, z);
     }
+    if (mode === 'STATION_CAPTURE_5V5') {
+      return this.stationArenaLevelData.collider.getGroundHeight(x, y, z);
+    }
     let groundHeight = 0;
     const r = 0.15;
     for (let i = 0; i < this.colliders.length; i++) {
@@ -1244,7 +1312,8 @@ export class TacticalFPSEngine {
       this.state.drillMode === 'INDUSTRIA_BOMB_5V5' ||
       this.state.drillMode === 'HANGAR_BOMB_5V5' ||
       this.state.drillMode === 'EASTERN_CITY_BOMB_5V5' ||
-      this.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5'
+      this.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
+      this.state.drillMode === 'STATION_CAPTURE_5V5'
     ) {
       this.yardBombSystem?.recordKillEvent(
         killerName,
@@ -1284,7 +1353,8 @@ export class TacticalFPSEngine {
       this.state.drillMode === 'INDUSTRIA_BOMB_5V5' ||
       this.state.drillMode === 'HANGAR_BOMB_5V5' ||
       this.state.drillMode === 'EASTERN_CITY_BOMB_5V5' ||
-      this.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5';
+      this.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
+      this.state.drillMode === 'STATION_CAPTURE_5V5';
     if (isBombMode) {
       markLocalPlayerDownForRevive(this as any);
     } else {
@@ -1530,6 +1600,7 @@ export class TacticalFPSEngine {
     this.state.secondaryWeapon = 'P50_PISTOL';
     this.state.activeWeapon = weaponId;
     this.weaponRig.setActiveWeapon(weaponId);
+    this.weaponRig.applyWeaponSkin(weaponId, getEquippedWeaponSkinId(weaponId));
     this.state.reloadPhase = 'IDLE';
     this.state.reloadProgress = 0;
     this.state.boltLockedBack = false;
@@ -1782,7 +1853,8 @@ export class TacticalFPSEngine {
 
   private handleFragGrenadeDetonation(
     blastCenter: THREE.Vector3,
-    blastRadius: number
+    blastRadius: number,
+    isRemote = false
   ): void {
     // Spawn extra metallic/fire spark burst at detonation point
     _hitNormal.set(0, 1, 0);
@@ -1795,6 +1867,11 @@ export class TacticalFPSEngine {
     this.cameraShake = Math.max(this.cameraShake, 0.038 * shakeFactor);
     mobileHardware.vibrateExplosion(shakeFactor);
     triggerShellshockTinnitus(blastCenter, this.playerPos);
+
+    if (isRemote) {
+      this.emitHud();
+      return;
+    }
 
     let targetsHitCount = 0;
     let killsCount = 0;
@@ -1828,6 +1905,11 @@ export class TacticalFPSEngine {
       t.health -= blastDmg;
       t.hitTiltVelocity = -16.0;
 
+      const remoteUid = t.root.userData?.remotePlayerUid as string | undefined;
+      if (remoteUid && isOnlineMatchActive()) {
+        publishCombatHit(remoteUid, blastDmg, false, this.state.activeWeapon);
+      }
+
       if (t.health <= 0) {
         killsCount++;
         t.isDown = true;
@@ -1838,11 +1920,14 @@ export class TacticalFPSEngine {
         this.state.score += 150;
         this.state.lastHitZone = 'KILL';
         const bot = t as YardBotEntity;
+        const localOp = getLocalOnlinePlayerState();
+        const myTeam = localOp?.team || 'VANGUARD';
+        const enemyTeam = myTeam === 'VANGUARD' ? 'BLACKTHORN' : 'VANGUARD';
         this.registerKill(
-          'VOCÊ',
-          'VANGUARD',
+          localOp?.callsign || 'VOCÊ',
+          myTeam,
           bot.callsign || 'INIMIGO-BT',
-          'BLACKTHORN',
+          enemyTeam,
           'GRENADE',
           false
         );
@@ -1871,7 +1956,8 @@ export class TacticalFPSEngine {
         this.state.drillMode === 'INDUSTRIA_BOMB_5V5' ||
         this.state.drillMode === 'HANGAR_BOMB_5V5' ||
       this.state.drillMode === 'EASTERN_CITY_BOMB_5V5' ||
-      this.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5'
+      this.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
+      this.state.drillMode === 'STATION_CAPTURE_5V5'
       ) {
         const remaining = this.targets.filter(
           (t) =>
@@ -2284,6 +2370,7 @@ export class TacticalFPSEngine {
     const isHangar = assetMode === 'HANGAR_BOMB_5V5';
     const isEasternCity = assetMode === 'EASTERN_CITY_BOMB_5V5';
     const isMirageAnubis = assetMode === 'MIRAGE_ANUBIS_BOMB_5V5';
+    const isStationArena = assetMode === 'STATION_CAPTURE_5V5';
     const isFreeRange = assetMode === 'FREE_RANGE';
     const isBombMode =
       !harness &&
@@ -2293,7 +2380,8 @@ export class TacticalFPSEngine {
         isIndustria ||
         isHangar ||
         isEasternCity ||
-        isMirageAnubis);
+        isMirageAnubis ||
+        isStationArena);
 
     // Prefer prepareMatchArena (Loading 2) to have already loaded the GLB.
     // Fallback await-path only if somehow starting without prepare.
@@ -2318,6 +2406,7 @@ export class TacticalFPSEngine {
     this.hangarLevelData.levelGroup.visible = isHangar;
     this.easternCityLevelData.levelGroup.visible = isEasternCity;
     this.mirageAnubisLevelData.levelGroup.visible = isMirageAnubis;
+    this.stationArenaLevelData.levelGroup.visible = isStationArena;
 
     const activeLevel = isDust2
       ? this.dust2LevelData
@@ -2331,6 +2420,8 @@ export class TacticalFPSEngine {
               ? this.easternCityLevelData
             : isMirageAnubis
               ? this.mirageAnubisLevelData
+            : isStationArena
+              ? this.stationArenaLevelData
             : isYard
               ? this.yardLevelData
               : isFreeRange
@@ -2493,6 +2584,25 @@ export class TacticalFPSEngine {
       this.scheduleFloorResnap(MIRAGE_ANUBIS_ATTACKER_SPAWN.y);
       if (!harness) {
         this.yardBombSystem.resetRound('MIRAGE_ANUBIS_BOMB_5V5', keepMatchScore);
+        this.state.yardBomb = { ...this.yardBombSystem.info };
+      }
+    } else if (isStationArena) {
+      this.ensureGlbMapThenPlace(
+        this.stationArenaLevelData,
+        () =>
+          loadStationArenaMapGeometry(
+            this.stationArenaLevelData,
+            this.isSoftwareGl,
+            new THREE.LoadingManager()
+          ),
+        'STATION_CAPTURE_5V5',
+        STATION_ARENA_ATTACKER_SPAWN
+      );
+      this.yaw = STATION_ARENA_SPAWN_YAW;
+      this.pitch = 0;
+      this.scheduleFloorResnap(STATION_ARENA_ATTACKER_SPAWN.y);
+      if (!harness) {
+        this.yardBombSystem.resetRound('STATION_CAPTURE_5V5', keepMatchScore);
         this.state.yardBomb = { ...this.yardBombSystem.info };
       }
     } else if (isYard) {
@@ -3373,7 +3483,8 @@ export class TacticalFPSEngine {
       this.state.drillMode === 'INDUSTRIA_BOMB_5V5' ||
       this.state.drillMode === 'HANGAR_BOMB_5V5' ||
       this.state.drillMode === 'EASTERN_CITY_BOMB_5V5' ||
-      this.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5'
+      this.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
+      this.state.drillMode === 'STATION_CAPTURE_5V5'
     ) {
       this.state.courseTimerSec += dt;
     }
@@ -3385,7 +3496,8 @@ export class TacticalFPSEngine {
       this.state.drillMode === 'INDUSTRIA_BOMB_5V5' ||
       this.state.drillMode === 'HANGAR_BOMB_5V5' ||
       this.state.drillMode === 'EASTERN_CITY_BOMB_5V5' ||
-      this.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5'
+      this.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
+      this.state.drillMode === 'STATION_CAPTURE_5V5'
     ) {
       const playerAlive =
         this.state.health > 0 &&
@@ -3765,6 +3877,8 @@ export class TacticalFPSEngine {
     this.unsubOnlineBomb = null;
     this.unsubOnlineRounds?.();
     this.unsubOnlineRounds = null;
+    this.unsubInventory?.();
+    this.unsubInventory = null;
     cancelAnimationFrame(this.frameId);
     if (this.rankUpTimeoutId !== null) {
       window.clearTimeout(this.rankUpTimeoutId);

@@ -7,6 +7,7 @@ import {
   loadSavedPlayerXp,
   spendPlayerCash,
 } from './ranks';
+import { getSkinDefinition } from './weaponSkins';
 
 export type EquipmentSlotId =
   | 'primaryWeapon'
@@ -56,6 +57,8 @@ export interface PlayerInventoryState {
   selectedClass: WarfaceClassId;
   purchasedGearIds: string[];
   purchasedWeaponIds: WeaponId[];
+  purchasedSkinIds: string[];
+  equippedWeaponSkins: Partial<Record<WeaponId, string>>;
   classLoadouts: Record<WarfaceClassId, ClassLoadoutConfig>;
 }
 
@@ -683,6 +686,17 @@ function createDefaultInventory(): PlayerInventoryState {
       'P50_PISTOL',
       'KNIFE_TACTICAL',
     ],
+    purchasedSkinIds: [
+      'default',
+      'auto_shotgun_02',
+      'auto_shotgun_03',
+      'auto_shotgun_04',
+      'auto_shotgun_05',
+      'camo_desert',
+      'camo_woodland',
+      'camo_urban_digital',
+    ],
+    equippedWeaponSkins: {},
     classLoadouts: {
       FUZILEIRO: {
         primaryWeapon: 'M4_CARBINE',
@@ -766,6 +780,10 @@ function loadInventoryState(): PlayerInventoryState {
       purchasedWeaponIds: Array.from(
         new Set([...def.purchasedWeaponIds, ...(parsed.purchasedWeaponIds || [])])
       ) as WeaponId[],
+      purchasedSkinIds: Array.from(
+        new Set([...def.purchasedSkinIds, ...(parsed.purchasedSkinIds || [])])
+      ),
+      equippedWeaponSkins: { ...(parsed.equippedWeaponSkins || {}) },
       classLoadouts,
     };
   } catch {
@@ -791,6 +809,8 @@ export function getPlayerInventoryState(): PlayerInventoryState {
     selectedClass: currentInventory.selectedClass,
     purchasedGearIds: [...currentInventory.purchasedGearIds],
     purchasedWeaponIds: [...currentInventory.purchasedWeaponIds],
+    purchasedSkinIds: [...currentInventory.purchasedSkinIds],
+    equippedWeaponSkins: { ...currentInventory.equippedWeaponSkins },
     classLoadouts: {
       FUZILEIRO: { ...currentInventory.classLoadouts.FUZILEIRO },
       MEDICO: { ...currentInventory.classLoadouts.MEDICO },
@@ -857,6 +877,44 @@ export function purchaseGearWithCash(gearId: string): boolean {
   currentInventory.purchasedGearIds = Array.from(
     new Set([...currentInventory.purchasedGearIds, gearId])
   );
+  saveAndEmit();
+  return true;
+}
+
+export function isWeaponSkinOwned(skinId: string): boolean {
+  const skin = getSkinDefinition(skinId);
+  if (skin.cashPrice <= 0 || skin.id === 'default') return true;
+  return currentInventory.purchasedSkinIds.includes(skin.id);
+}
+
+export function getEquippedWeaponSkinId(weaponId: WeaponId): string {
+  const raw = currentInventory.equippedWeaponSkins[weaponId];
+  if (!raw) return 'default';
+  const skin = getSkinDefinition(raw);
+  if (skin.weaponIds && !skin.weaponIds.includes(weaponId)) return 'default';
+  return skin.id;
+}
+
+export function purchaseWeaponSkinWithCash(skinId: string): boolean {
+  const skin = getSkinDefinition(skinId);
+  if (isWeaponSkinOwned(skin.id)) return true;
+  if (loadSavedPlayerCash() < skin.cashPrice) return false;
+  if (!spendPlayerCash(skin.cashPrice)) return false;
+  currentInventory.purchasedSkinIds = Array.from(
+    new Set([...currentInventory.purchasedSkinIds, skin.id])
+  );
+  saveAndEmit();
+  return true;
+}
+
+export function equipWeaponSkin(weaponId: WeaponId, skinId: string): boolean {
+  const skin = getSkinDefinition(skinId);
+  if (skin.weaponIds && !skin.weaponIds.includes(weaponId)) return false;
+  if (!isWeaponSkinOwned(skin.id)) return false;
+  currentInventory.equippedWeaponSkins = {
+    ...currentInventory.equippedWeaponSkins,
+    [weaponId]: skin.id,
+  };
   saveAndEmit();
   return true;
 }

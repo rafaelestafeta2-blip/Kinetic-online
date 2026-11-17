@@ -337,7 +337,7 @@ export class Dust2TriangleCollider {
     if (
       closestWalkableAboveY < 900 &&
       bestY > -900 &&
-      bestY < yBottom - 0.15 &&
+      bestY < yBottom - 0.65 &&
       closestWalkableAboveY - yBottom < 12
     ) {
       return closestWalkableAboveY;

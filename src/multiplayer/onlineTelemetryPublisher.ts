@@ -7,7 +7,7 @@
 
 import { doc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase/firebaseClient';
-import { WeaponId } from '../types/game';
+import { WarfaceClassId, WeaponId } from '../types/game';
 import {
   applyCombatHitToRoomState,
   buildCombatHitEvent,
@@ -76,7 +76,8 @@ export function publishRoomLoadProgress(
   emitRoomState: () => void,
   progressPct: number,
   isLoaded: boolean,
-  localUid?: string | null
+  localUid?: string | null,
+  forceBroadcast = false
 ): void {
   if (!activeRoom) return;
   const uid = resolveLocalUid(activeRoom, localUid);
@@ -84,15 +85,19 @@ export function publishRoomLoadProgress(
   const me = activeRoom.players[uid];
   if (!me) return;
   const clamped = Math.min(100, Math.max(0, Math.round(progressPct)));
-  if (me.loadProgress === clamped && me.isLoaded === isLoaded) return;
+  const changed = me.loadProgress !== clamped || me.isLoaded !== isLoaded;
+  if (!changed && !forceBroadcast) return;
+  const nowMs = Date.now();
   const updated: OnlinePlayerState = {
     ...me,
     loadProgress: clamped,
     isLoaded,
-    updatedAtMs: Date.now(),
+    updatedAtMs: nowMs,
   };
   activeRoom.players[uid] = updated;
-  emitRoomState();
+  if (changed) {
+    emitRoomState();
+  }
   if (wsClient && wsClient.readyState === WebSocket.OPEN) {
     wsClient.send(
       JSON.stringify({
@@ -103,11 +108,13 @@ export function publishRoomLoadProgress(
       })
     );
   }
-  // Lobby-only Firestore: useful when peers join mid-load without WS yet.
-  if (auth.currentUser) {
+  // Only update loadProgress / isLoaded fields in Firestore so we never clobber live coordinates
+  if (auth.currentUser && changed) {
     void updateDoc(doc(db, 'rooms', activeRoom.roomId), {
-      [`players.${uid}`]: updated,
-      updatedAtMs: Date.now(),
+      [`players.${uid}.loadProgress`]: clamped,
+      [`players.${uid}.isLoaded`]: isLoaded,
+      [`players.${uid}.classId`]: updated.classId || 'FUZILEIRO',
+      updatedAtMs: nowMs,
     }).catch(() => {});
   }
 }
@@ -122,6 +129,8 @@ export function publishRoomPlayerTransform(
     yaw: number;
     pitch: number;
     weaponId: WeaponId;
+    weaponSkinId?: string;
+    classId?: WarfaceClassId;
     health: number;
     isDown: boolean;
     isCrouching: boolean;

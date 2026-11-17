@@ -1,4 +1,4 @@
-import { DrillMode, WeaponId } from '../types/game';
+import { DrillMode, WarfaceClassId, WeaponId } from '../types/game';
 
 export type OnlineTeam = 'VANGUARD' | 'BLACKTHORN';
 export type MatchQueueType = 'CASUAL' | 'RANKED';
@@ -11,6 +11,8 @@ export interface OnlinePlayerState {
   mmr?: number;
   avatarDataUrl: string;
   weaponId: WeaponId;
+  weaponSkinId?: string;
+  classId?: WarfaceClassId;
   x: number;
   y: number;
   z: number;
@@ -42,7 +44,18 @@ export interface OnlineHitEvent {
   weaponId: WeaponId;
   damage: number;
   isHeadshot: boolean;
-   lethal: boolean;
+  lethal: boolean;
+  ts: number;
+}
+
+export interface OnlineGrenadeEvent {
+  eventId: string;
+  senderUid: string;
+  senderCallsign: string;
+  senderTeam: OnlineTeam;
+  grenadeType: 'FRAG' | 'SMOKE';
+  origin: [number, number, number];
+  velocity: [number, number, number];
   ts: number;
 }
 
@@ -131,6 +144,13 @@ export function getTeamSpawnForArena(
       return { x: -33.0 + offsetX, y: 5.16, z: -40.0 + offsetZ, yaw: 0 };
     }
     return { x: -20.0 + offsetX, y: 7.59, z: 0.0 - offsetZ, yaw: Math.PI };
+  }
+
+  if (mode === 'STATION_CAPTURE_5V5') {
+    if (team === 'VANGUARD') {
+      return { x: -14.0 + offsetX, y: 0.15, z: -18.0 + offsetZ, yaw: Math.PI };
+    }
+    return { x: 14.0 + offsetX, y: 0.15, z: 18.0 - offsetZ, yaw: 0 };
   }
 
   // YARD_BOMB_5V5 default

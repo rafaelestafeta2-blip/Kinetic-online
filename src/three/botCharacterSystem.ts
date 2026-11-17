@@ -3,8 +3,9 @@ import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { createGameGltfLoader, disposeGameGltfLoader, ensureMeshoptDecoder } from './gltfLoaderFactory';
 import { WarfaceClassId } from '../components/WarfaceClassIcons';
 import { WeaponId } from '../types/game';
-import { BotAnimController, BotAnimState, BotClipMap, buildProRiflePackClips, retargetClipsRotationOnly, selectDirectionalDeathState, syncBotWeaponWithMixamoHands, transitionBotAnim } from './botCharacterClips';
+import { BotAnimController, BotAnimState, BotClipMap, buildProRiflePackClips, retargetClipsRotationOnly, retargetFbxClipToTargetRig, selectDirectionalDeathState, syncBotWeaponWithMixamoHands, transitionBotAnim } from './botCharacterClips';
 import { createBotThirdPersonWeaponMesh } from './botWeaponProps';
+import { applyWeaponSkinToObject3D } from './weaponSkinMaterial';
 import { TacticalTargetEntity } from './levelBuilder';
 import { YardBotEntity } from './yardPropsBuilder';
 import {
@@ -57,7 +58,9 @@ let vanguardMedicEnemyMatMap: Map<string, THREE.MeshStandardMaterial> | null = n
 
 let loadPromise: Promise<void> | null = null;
 let medicLoadAttempts = 0;
+let medicHasNativeClips = false;
 let sharedInvisibleHitMat: THREE.MeshBasicMaterial | null = null;
+const pistolClipVariantCache = new Map<string, BotClipMap>();
 
 export function isSniperWeaponId(weaponId?: WeaponId | null): boolean {
   return weaponId === 'SNIPER_BOLT' || weaponId === 'SNIPER_TACTICAL';
@@ -179,16 +182,54 @@ export function preloadProRifleBotCharacter(loadingManager?: THREE.LoadingManage
     };
 
     const applyPackOverlays = () => {
-      if (sharedClips) sharedClips = applyAnimPackOverlayToBotClips(sharedClips);
-      if (sniperClips) sniperClips = applyAnimPackOverlayToBotClips(sniperClips);
-      if (vanguardRiflemanClips) {
-        vanguardRiflemanClips = applyAnimPackOverlayToBotClips(vanguardRiflemanClips);
+      pistolClipVariantCache.clear();
+      if (sharedClips) {
+        sharedClips = applyAnimPackOverlayToBotClips(sharedClips);
       }
-      if (vanguardEngineerClips) {
-        vanguardEngineerClips = applyAnimPackOverlayToBotClips(vanguardEngineerClips);
+      if (sniperClips && sniperTemplateScene && templateScene) {
+        sniperClips = applyAnimPackOverlayToBotClips(sniperClips, {
+          preserveNativeLocomotion: true,
+          adaptClip: (c, name) =>
+            retargetFbxClipToTargetRig(c, sniperTemplateScene!, templateScene!, name),
+        });
       }
-      if (vanguardMedicClips) {
-        vanguardMedicClips = applyAnimPackOverlayToBotClips(vanguardMedicClips);
+      if (vanguardRiflemanClips && vanguardRiflemanTemplateScene && templateScene) {
+        vanguardRiflemanClips = applyAnimPackOverlayToBotClips(vanguardRiflemanClips, {
+          preserveNativeLocomotion: true,
+          adaptClip: (c, name) =>
+            retargetFbxClipToTargetRig(c, vanguardRiflemanTemplateScene!, templateScene!, name),
+        });
+      }
+      if (vanguardEngineerClips && vanguardEngineerTemplateScene && templateScene) {
+        vanguardEngineerClips = applyAnimPackOverlayToBotClips(vanguardEngineerClips, {
+          preserveNativeLocomotion: true,
+          adaptClip: (c, name) =>
+            retargetFbxClipToTargetRig(c, vanguardEngineerTemplateScene!, templateScene!, name),
+        });
+      }
+      if (vanguardMedicTemplateScene) {
+        if (medicHasNativeClips && vanguardMedicClips && templateScene) {
+          vanguardMedicClips = applyAnimPackOverlayToBotClips(vanguardMedicClips, {
+            preserveNativeLocomotion: true,
+            adaptClip: (c, name) =>
+              retargetFbxClipToTargetRig(c, vanguardMedicTemplateScene!, templateScene!, name),
+          });
+        } else if (vanguardRiflemanClips) {
+          // Vanguard Rifleman shares the exact meter-scale Blender Mixamo rig & already has
+          // retargeted jump/reload clips; strip XY hip translation for Tripo's IBM.
+          vanguardMedicClips = retargetClipsRotationOnly(vanguardRiflemanClips);
+        } else if (sharedClips && templateScene) {
+          const retargeted = { ...sharedClips } as BotClipMap;
+          (Object.keys(retargeted) as BotAnimState[]).forEach((k) => {
+            retargeted[k] = retargetFbxClipToTargetRig(
+              retargeted[k],
+              vanguardMedicTemplateScene!,
+              templateScene!,
+              k
+            );
+          });
+          vanguardMedicClips = retargetClipsRotationOnly(retargeted);
+        }
       }
     };
 
@@ -323,22 +364,13 @@ export function preloadProRifleBotCharacter(loadingManager?: THREE.LoadingManage
       }
       if (medicRes) {
         vanguardMedicTemplateScene = medicRes.root;
-        // Mesh-only Tripo medic → reuse rifleman/DEFAULT Mixamo clips, then
-        // strip foreign position tracks (IBM mismatch was exploding menu mesh).
-        const medicBase =
-          medicRes.clips || vanguardRiflemanClips || sharedClips;
-        vanguardMedicClips = medicBase
-          ? retargetClipsRotationOnly(medicBase)
-          : null;
+        medicHasNativeClips = Boolean(medicRes.clips);
+        vanguardMedicClips = medicRes.clips ? retargetClipsRotationOnly(medicRes.clips) : null;
         vanguardMedicShowcaseMatMap = medicRes.showcaseMap;
         vanguardMedicAllyMatMap = medicRes.aMap;
         vanguardMedicEnemyMatMap = medicRes.eMap;
       }
       applyPackOverlays();
-      // Overlay may reintroduce pack position tracks — re-strip for medic.
-      if (vanguardMedicClips) {
-        vanguardMedicClips = retargetClipsRotationOnly(vanguardMedicClips);
-      }
     } finally {
       disposeGameGltfLoader(loader);
     }
@@ -558,42 +590,16 @@ export function attachProRifleCharacterToBot(bot: YardBotEntity, isSoftwareGl: b
     bot.weaponId || weaponChoices[Math.abs(Math.round((bot.patrolOffset || 1) * 10)) % weaponChoices.length];
   bot.weaponId = chosenWeapon;
 
-  const isMedicAlly = bot.isAlly && bot.callsign === 'LIFELINE-04';
-  const useSniper =
-    isSniperWeaponId(chosenWeapon) &&
-    !!sniperTemplateScene &&
-    !!sniperClips &&
-    !!sniperAllyMatMap &&
-    !!sniperEnemyMatMap;
-  const useVanguardMedic =
-    !useSniper &&
-    Boolean(bot.isAlly) &&
-    isMedicAlly &&
-    !!vanguardMedicTemplateScene &&
-    !!vanguardMedicClips &&
-    !!vanguardMedicAllyMatMap &&
-    !!vanguardMedicEnemyMatMap;
-  const useVanguardEngineer =
-    !useSniper &&
-    !useVanguardMedic &&
-    Boolean(bot.isAlly) &&
-    !isMedicAlly &&
-    isEngineerWeaponId(chosenWeapon) &&
-    !!vanguardEngineerTemplateScene &&
-    !!vanguardEngineerClips &&
-    !!vanguardEngineerAllyMatMap &&
-    !!vanguardEngineerEnemyMatMap;
-  const useVanguardFuzileiro =
-    !useSniper &&
-    !useVanguardMedic &&
-    !useVanguardEngineer &&
-    Boolean(bot.isAlly) &&
-    !isMedicAlly &&
-    isRiflemanWeaponId(chosenWeapon) &&
-    !!vanguardRiflemanTemplateScene &&
-    !!vanguardRiflemanClips &&
-    !!vanguardRiflemanAllyMatMap &&
-    !!vanguardRiflemanEnemyMatMap;
+  const modelKey = resolveDesiredModelKey(
+    chosenWeapon,
+    Boolean(bot.isAlly),
+    bot.callsign,
+    bot.classId
+  );
+  const useSniper = modelKey === 'SNIPER';
+  const useVanguardMedic = modelKey === 'VANGUARD_MEDICO';
+  const useVanguardEngineer = modelKey === 'VANGUARD_ENGENHEIRO';
+  const useVanguardFuzileiro = modelKey === 'VANGUARD_FUZILEIRO';
 
   const activeTemplate = useSniper
     ? sniperTemplateScene!
@@ -614,7 +620,22 @@ export function attachProRifleCharacterToBot(bot: YardBotEntity, isSoftwareGl: b
           ? vanguardRiflemanClips!
           : sharedClips!;
   if (chosenWeapon === 'P50_PISTOL') {
-    activeClips = applyPistolLocoToBotClips(activeClips);
+    const cachedPistol = pistolClipVariantCache.get(modelKey);
+    if (cachedPistol) {
+      activeClips = cachedPistol;
+    } else {
+      let adapted = applyPistolLocoToBotClips(
+        activeClips,
+        modelKey !== 'DEFAULT' && templateScene
+          ? (c, name) => retargetFbxClipToTargetRig(c, activeTemplate, templateScene!, name)
+          : undefined
+      );
+      if (useVanguardMedic) {
+        adapted = retargetClipsRotationOnly(adapted);
+      }
+      pistolClipVariantCache.set(modelKey, adapted);
+      activeClips = adapted;
+    }
   }
   const matPalette = useSniper
     ? (bot.isAlly ? sniperAllyMatMap! : sniperEnemyMatMap!)
@@ -630,6 +651,7 @@ export function attachProRifleCharacterToBot(bot: YardBotEntity, isSoftwareGl: b
   cloned.scale.setScalar(1.0);
   cloned.position.set(0, 0, 0);
   cloned.rotation.set(0, 0, 0);
+  cloned.frustumCulled = false;
 
   let rHandBone: THREE.Object3D | null = null;
   let lHandBone: THREE.Object3D | null = null;
@@ -639,6 +661,7 @@ export function attachProRifleCharacterToBot(bot: YardBotEntity, isSoftwareGl: b
     if (child.name === 'mixamorigRightHand') rHandBone = child;
     else if (child.name === 'mixamorigLeftHand') lHandBone = child;
 
+    child.frustumCulled = false;
     if ((child as THREE.Mesh).isMesh) {
       const m = child as THREE.Mesh;
       m.castShadow = !isSoftwareGl;
@@ -651,8 +674,15 @@ export function attachProRifleCharacterToBot(bot: YardBotEntity, isSoftwareGl: b
 
   bot.pivotGroup.add(cloned);
 
-  const weaponProp = createBotThirdPersonWeaponMesh(chosenWeapon, isSoftwareGl);
+  const weaponProp = createBotThirdPersonWeaponMesh(
+    chosenWeapon,
+    isSoftwareGl,
+    bot.weaponSkinId
+  );
   weaponProp.position.set(-0.08, 1.26, 0.18);
+  weaponProp.traverse((c) => {
+    c.frustumCulled = false;
+  });
   bot.pivotGroup.add(weaponProp);
 
   const mixer = new THREE.AnimationMixer(cloned);
@@ -702,20 +732,11 @@ export function attachProRifleCharacterToBot(bot: YardBotEntity, isSoftwareGl: b
     crouchStance,
   };
 
-  const modelKey = useSniper
-    ? 'SNIPER'
-    : useVanguardMedic
-      ? 'VANGUARD_MEDICO'
-      : useVanguardEngineer
-        ? 'VANGUARD_ENGENHEIRO'
-        : useVanguardFuzileiro
-          ? 'VANGUARD_FUZILEIRO'
-          : 'DEFAULT';
-
   bot.root.userData = bot.root.userData || {};
   bot.root.userData.botAnimCtrl = ctrl;
   bot.root.userData.hasSkeletalCharacter = true;
   bot.root.userData.mountedWeaponId = chosenWeapon;
+  bot.root.userData.mountedWeaponSkinId = bot.weaponSkinId || 'default';
   bot.root.userData.mountedIsAlly = Boolean(bot.isAlly);
   bot.root.userData.mountedModelKey = modelKey;
   bot.root.userData.mountedIsPistol = chosenWeapon === 'P50_PISTOL';
@@ -723,60 +744,78 @@ export function attachProRifleCharacterToBot(bot: YardBotEntity, isSoftwareGl: b
     bot.root.userData.magRounds = magCapacityForBotWeapon(chosenWeapon);
   }
 
-  // Ensure Mixamo skeleton is never left with matrixAutoUpdate=false (T-pose lock).
+  // Ensure Mixamo skeleton and parent groups are never frozen or frustum-culled.
   cloned.traverse((child) => {
     child.userData.keepMatrixAutoUpdate = true;
     child.userData.isStaticEnvironment = false;
     child.matrixAutoUpdate = true;
   });
+  bot.pivotGroup.userData.keepMatrixAutoUpdate = true;
+  bot.pivotGroup.userData.isStaticEnvironment = false;
+  bot.pivotGroup.matrixAutoUpdate = true;
+  bot.pivotGroup.frustumCulled = false;
+  bot.headMesh.userData.keepMatrixAutoUpdate = true;
+  bot.headMesh.matrixAutoUpdate = true;
+  bot.torsoMesh.userData.keepMatrixAutoUpdate = true;
+  bot.torsoMesh.matrixAutoUpdate = true;
+  if (bot.armorMesh) {
+    bot.armorMesh.userData.keepMatrixAutoUpdate = true;
+    bot.armorMesh.matrixAutoUpdate = true;
+  }
+  bot.root.userData.keepMatrixAutoUpdate = true;
+  bot.root.userData.isStaticEnvironment = false;
   bot.root.matrixAutoUpdate = true;
+  bot.root.frustumCulled = false;
 }
 
 function resolveDesiredModelKey(
   weaponId: WeaponId,
-  isAlly: boolean,
-  callsign?: string
+  _isAlly: boolean,
+  callsign?: string,
+  classId?: string
 ): string {
-  const isMedicAlly = isAlly && callsign === 'LIFELINE-04';
-  if (
-    isSniperWeaponId(weaponId) &&
-    sniperTemplateScene &&
-    sniperClips &&
-    sniperAllyMatMap &&
-    sniperEnemyMatMap
-  ) {
+  const sniperReady =
+    !!sniperTemplateScene &&
+    !!sniperClips &&
+    !!sniperAllyMatMap &&
+    !!sniperEnemyMatMap;
+  const medicReady =
+    !!vanguardMedicTemplateScene &&
+    !!vanguardMedicClips &&
+    !!vanguardMedicAllyMatMap &&
+    !!vanguardMedicEnemyMatMap;
+  const engineerReady =
+    !!vanguardEngineerTemplateScene &&
+    !!vanguardEngineerClips &&
+    !!vanguardEngineerAllyMatMap &&
+    !!vanguardEngineerEnemyMatMap;
+  const fuzileiroReady =
+    !!vanguardRiflemanTemplateScene &&
+    !!vanguardRiflemanClips &&
+    !!vanguardRiflemanAllyMatMap &&
+    !!vanguardRiflemanEnemyMatMap;
+
+  // 1. Explicit operator class selected by human player (or assigned to bot)
+  if (classId === 'FRANCO_ATIRADOR' && sniperReady) return 'SNIPER';
+  if (classId === 'MEDICO' && medicReady) return 'VANGUARD_MEDICO';
+  if (classId === 'ENGENHEIRO' && engineerReady) return 'VANGUARD_ENGENHEIRO';
+  if (classId === 'FUZILEIRO' && fuzileiroReady) return 'VANGUARD_FUZILEIRO';
+
+  // 2. Fallback by callsign / weapon archetype (works for both allies and enemies)
+  const isMedicCallsign = callsign === 'LIFELINE-04' || callsign === 'DOC-04';
+  if (isSniperWeaponId(weaponId) && sniperReady) {
     return 'SNIPER';
   }
-  if (
-    isAlly &&
-    isMedicAlly &&
-    vanguardMedicTemplateScene &&
-    vanguardMedicClips &&
-    vanguardMedicAllyMatMap &&
-    vanguardMedicEnemyMatMap
-  ) {
+  if (isMedicCallsign && medicReady) {
     return 'VANGUARD_MEDICO';
   }
-  if (
-    isAlly &&
-    !isMedicAlly &&
-    isEngineerWeaponId(weaponId) &&
-    vanguardEngineerTemplateScene &&
-    vanguardEngineerClips &&
-    vanguardEngineerAllyMatMap &&
-    vanguardEngineerEnemyMatMap
-  ) {
+  if (isEngineerWeaponId(weaponId) && engineerReady) {
     return 'VANGUARD_ENGENHEIRO';
   }
-  if (
-    isAlly &&
-    !isMedicAlly &&
-    isRiflemanWeaponId(weaponId) &&
-    vanguardRiflemanTemplateScene &&
-    vanguardRiflemanClips &&
-    vanguardRiflemanAllyMatMap &&
-    vanguardRiflemanEnemyMatMap
-  ) {
+  if (isRiflemanWeaponId(weaponId) && fuzileiroReady) {
+    return 'VANGUARD_FUZILEIRO';
+  }
+  if (fuzileiroReady) {
     return 'VANGUARD_FUZILEIRO';
   }
   return 'DEFAULT';
@@ -796,7 +835,8 @@ export function syncBotCharacterAppearance(
   const desiredModelKey = resolveDesiredModelKey(
     desiredWeapon,
     desiredIsAlly,
-    bot.callsign
+    bot.callsign,
+    bot.classId
   );
   const desiredIsPistol = desiredWeapon === 'P50_PISTOL';
 
@@ -810,6 +850,8 @@ export function syncBotCharacterAppearance(
   const prevModelKey = String(bot.root.userData.mountedModelKey || '');
   const prevIsPistol = Boolean(bot.root.userData.mountedIsPistol);
   const prevWeaponId = bot.root.userData.mountedWeaponId as WeaponId | undefined;
+  const prevSkinId = String(bot.root.userData.mountedWeaponSkinId || 'default');
+  const desiredSkinId = bot.weaponSkinId || 'default';
 
   if (
     prevIsAlly !== desiredIsAlly ||
@@ -835,14 +877,24 @@ export function syncBotCharacterAppearance(
     }
     const nextWeaponProp = createBotThirdPersonWeaponMesh(
       desiredWeapon,
-      desiredIsAlly
+      isSoftwareGl,
+      desiredSkinId
     );
     nextWeaponProp.position.set(-0.08, 1.26, 0.18);
+    nextWeaponProp.traverse((c) => {
+      c.frustumCulled = false;
+    });
     bot.pivotGroup.add(nextWeaponProp);
     ctrl.weaponProp = nextWeaponProp;
     bot.root.userData.mountedWeaponId = desiredWeapon;
+    bot.root.userData.mountedWeaponSkinId = desiredSkinId;
     bot.root.userData.magRounds = magCapacityForBotWeapon(desiredWeapon);
     syncBotWeaponWithMixamoHands(bot, ctrl, ctrl.crouchStance);
+  } else if (prevSkinId !== desiredSkinId) {
+    bot.root.userData.mountedWeaponSkinId = desiredSkinId;
+    ctrl.weaponProp.userData = ctrl.weaponProp.userData || {};
+    ctrl.weaponProp.userData.desiredSkinId = desiredSkinId;
+    applyWeaponSkinToObject3D(ctrl.weaponProp, desiredWeapon, desiredSkinId);
   }
 }
 
@@ -864,11 +916,16 @@ export function triggerBotReloadAnimation(bot: TacticalTargetEntity): void {
   if (!ctrl || bot.isDown) return;
   if (ctrl.reloadAnimTimer > 0) return;
   const clip = ctrl.actions.RIFLE_RELOAD_3P?.getClip();
-  const dur = Math.max(1.15, Math.min(2.8, clip?.duration || 1.85));
+  const clipDur = clip?.duration || 1.85;
+  const dur = Math.max(1.15, Math.min(2.8, clipDur));
   ctrl.reloadAnimTimer = dur;
   ctrl.fireAnimTimer = 0;
   if (!ctrl.currentState.startsWith('RIFLE_DEATH')) {
     transitionBotAnim(ctrl, 'RIFLE_RELOAD_3P', 0.08);
+    const reloadAction = ctrl.actions.RIFLE_RELOAD_3P;
+    if (reloadAction && clipDur > dur) {
+      reloadAction.setEffectiveTimeScale(clipDur / dur);
+    }
   }
 }
 
@@ -893,21 +950,24 @@ export function triggerBotFireAnimation(bot: TacticalTargetEntity): void {
   if (!ctrl || bot.isDown) return;
   if (ctrl.reloadAnimTimer > 0) return;
 
+  const isRemotePlayer = Boolean(bot.root.userData?.remotePlayerUid);
   const yard = bot as YardBotEntity;
   const cap = magCapacityForBotWeapon(yard.weaponId);
   let mag =
     typeof bot.root.userData.magRounds === 'number'
       ? bot.root.userData.magRounds
       : cap;
-  if (mag <= 0) {
-    triggerBotReloadAnimation(bot);
-    return;
+  if (!isRemotePlayer) {
+    if (mag <= 0) {
+      triggerBotReloadAnimation(bot);
+      return;
+    }
+    mag -= 1;
+    bot.root.userData.magRounds = mag;
   }
-  mag -= 1;
-  bot.root.userData.magRounds = mag;
 
   // Soft ammo pool for Fuzileiro ally-need indicators.
-  if (yard.isAlly) {
+  if (yard.isAlly && !isRemotePlayer) {
     const cur =
       typeof bot.root.userData.ammoReserve === 'number'
         ? bot.root.userData.ammoReserve
@@ -915,19 +975,25 @@ export function triggerBotFireAnimation(bot: TacticalTargetEntity): void {
     bot.root.userData.ammoReserve = Math.max(0, cur - 1);
   }
   ctrl.fireAnimTimer = 0.18;
-  // Allow fire interrupt while locomoting / peeking — not only idle/aim.
+  // Allow fire interrupt while locomoting / peeking — and re-pulse across burst shots.
   if (
-    ctrl.currentState !== 'RIFLE_DEATH' &&
+    !ctrl.currentState.startsWith('RIFLE_DEATH') &&
     ctrl.currentState !== 'RIFLE_THROW' &&
     ctrl.currentState !== 'RIFLE_JUMP' &&
-    ctrl.currentState !== 'RIFLE_RELOAD_3P' &&
-    ctrl.currentState !== 'RIFLE_FIRE'
+    ctrl.currentState !== 'RIFLE_RELOAD_3P'
   ) {
-    transitionBotAnim(ctrl, 'RIFLE_FIRE', 0.04);
+    if (ctrl.currentState === 'RIFLE_FIRE') {
+      const fireAction = ctrl.actions.RIFLE_FIRE;
+      if (fireAction) {
+        fireAction.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).play();
+      }
+    } else {
+      transitionBotAnim(ctrl, 'RIFLE_FIRE', 0.04);
+    }
   }
 
-  // Empty after this shot → start reload so RIFLE_RELOAD_3P can play.
-  if (mag <= 0) {
+  // Empty after this shot → start reload so RIFLE_RELOAD_3P can play (AI bots only).
+  if (!isRemotePlayer && mag <= 0) {
     triggerBotReloadAnimation(bot);
   }
 }
@@ -943,7 +1009,7 @@ export function triggerBotHitAnimation(bot: TacticalTargetEntity): void {
   const ctrl = bot.root.userData?.botAnimCtrl as BotAnimController | undefined;
   if (!ctrl || bot.isDown) return;
   ctrl.hitReactTimer = 0.22;
-  if (ctrl.currentState !== 'RIFLE_DEATH' && ctrl.currentState !== 'RIFLE_HIT') {
+  if (!ctrl.currentState.startsWith('RIFLE_DEATH') && ctrl.currentState !== 'RIFLE_HIT') {
     transitionBotAnim(ctrl, 'RIFLE_HIT', 0.04);
   }
 }
@@ -962,6 +1028,8 @@ export function updateAllBotCharacters(
   for (let i = 0; i < targets.length; i++) {
     const t = targets[i] as YardBotEntity;
     if (t.type !== 'COMBAT_BOT') continue;
+    // Skip hidden/unused online bot slots parked at y = -999
+    if (t.root.position.y < -100 && !t.root.visible) continue;
 
     let ctrl = t.root.userData?.botAnimCtrl as BotAnimController | undefined;
     if (!ctrl) {
@@ -1007,12 +1075,14 @@ export function updateAllBotCharacters(
       ctrl.weaponProp.rotation.set(0, THREE.MathUtils.lerp(0.04, 0.42, dropEase), THREE.MathUtils.lerp(0, Math.PI / 2, dropEase));
 
       if (ctrl.deathElapsed > 2.4) {
-        t.pivotGroup.position.y = -Math.min(1, (ctrl.deathElapsed - 2.4) / 0.5) * 0.45;
-        // Allies in bomb modes stay visible for medic revive window (~40s).
+        // Allies in bomb modes stay visible & grounded above floor for medic revive window (~40s).
         const reviveOpen =
           Boolean(t.isAlly) &&
           !t.reviveExpired &&
           (t.reviveUntilSec || 0) > performance.now() / 1000;
+        t.pivotGroup.position.y = reviveOpen
+          ? 0
+          : -Math.min(1, (ctrl.deathElapsed - 2.4) / 0.5) * 0.45;
         if (ctrl.deathElapsed >= 2.9 && !reviveOpen) t.root.visible = false;
       }
       continue;
@@ -1039,18 +1109,22 @@ export function updateAllBotCharacters(
     ctrl.prevY = t.root.position.y;
     ctrl.prevZ = t.root.position.z;
     const rawSpeed = dt > 0.0001 ? Math.hypot(dx, dz) / dt : 0;
-    ctrl.smoothedSpeed = THREE.MathUtils.damp(ctrl.smoothedSpeed, rawSpeed, 11, dt);
+    ctrl.smoothedSpeed = THREE.MathUtils.damp(ctrl.smoothedSpeed, rawSpeed, 14, dt);
     const speed = ctrl.smoothedSpeed;
 
-    if (!t.isTelegraphing && rawSpeed > 0.12) {
+    // Only apply raw displacement facing fallback when navData is not driving yaw.
+    if (!t.isTelegraphing && !t.root.userData?.navData && rawSpeed > 0.12) {
       let diff = Math.atan2(dx, dz) - t.root.rotation.y;
       while (diff > Math.PI) diff -= Math.PI * 2;
       while (diff < -Math.PI) diff += Math.PI * 2;
       t.root.rotation.y += diff * Math.min(1, dt * 10);
     }
 
+    const isRemotePlayer = Boolean(t.root.userData?.remotePlayerUid);
     const wantTacticalCrouch =
-      speed <= 0.18 && (ctrl.crouchStance || (t.isTelegraphing && Math.sin(ctrl.tacticalTimer * 1.4) > 0.45));
+      speed <= 0.18 &&
+      (ctrl.crouchStance ||
+        (!isRemotePlayer && t.isTelegraphing && Math.sin(ctrl.tacticalTimer * 1.4) > 0.45));
 
     const nav = t.root.userData?.navData as { verticalVel?: number } | undefined;
     const airborne =
@@ -1141,9 +1215,14 @@ export function updateAllBotCharacters(
     }
 
     const isCrouchedNow = ctrl.currentState === 'RIFLE_CROUCH' || ctrl.currentState === 'RIFLE_CROUCH_WALK';
+    t.headMesh.matrixAutoUpdate = true;
+    t.torsoMesh.matrixAutoUpdate = true;
     t.headMesh.position.y = isCrouchedNow ? 1.05 : 1.56;
     t.torsoMesh.position.y = isCrouchedNow ? 0.72 : 1.1;
-    if (t.armorMesh) t.armorMesh.position.y = isCrouchedNow ? 0.72 : 1.08;
+    if (t.armorMesh) {
+      t.armorMesh.matrixAutoUpdate = true;
+      t.armorMesh.position.y = isCrouchedNow ? 0.72 : 1.08;
+    }
 
     const distSq = t.root.position.distanceToSquared(playerPos);
     // LOD: near = every frame, far = ~30Hz. Always update at least occasionally so

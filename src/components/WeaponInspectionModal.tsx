@@ -6,7 +6,21 @@ import {
   getRankForXp,
   getRequiredXpForWeapon,
   isWeaponUnlockedAtXp,
+  loadSavedPlayerCash,
 } from '../progression/ranks';
+import {
+  equipWeaponSkin,
+  getEquippedWeaponSkinId,
+  isWeaponSkinOwned,
+  purchaseWeaponSkinWithCash,
+  subscribePlayerInventory,
+} from '../progression/loadoutSystem';
+import {
+  getAvailableSkinsForWeapon,
+  getSkinDefinition,
+  WeaponSkinDefinition,
+} from '../progression/weaponSkins';
+import { applyWeaponSkinToObject3D } from '../three/weaponSkinMaterial';
 import {
   AK47_RIFLE_GITHUB_RAW_URL,
   AK47_RIFLE_LOCAL_URL,
@@ -22,6 +36,10 @@ import {
   MARK_23_LOCAL_URL,
   SMG_45_GITHUB_RAW_URL,
   SMG_45_LOCAL_URL,
+  SHOTGUN_12_GITHUB_RAW_URL,
+  SHOTGUN_12_LOCAL_URL,
+  SHOTGUN_SPAS_GITHUB_RAW_URL,
+  SHOTGUN_SPAS_LOCAL_URL,
   SNIPER_BOLT_GITHUB_RAW_URL,
   SNIPER_BOLT_LOCAL_URL,
   SNIPER_TACTICAL_GITHUB_RAW_URL,
@@ -209,29 +227,31 @@ const WEAPON_SPECS: Record<WeaponId, WeaponSpec> = {
     fireRate: 'Pump 88 RPM',
     magSize: 6,
     reserve: 24,
-    localUrl: '',
-    githubUrl: '',
+    localUrl: SHOTGUN_12_LOCAL_URL,
+    githubUrl: SHOTGUN_12_GITHUB_RAW_URL,
+    readyClipName: 'allanims',
     readyPoseTime: 0,
     targetSpan: 0.78,
   },
   SHOTGUN_SPAS: {
     id: 'SHOTGUN_SPAS',
-    name: 'SPAS-12 TÁTICA 12GA',
+    name: 'SPAS-12 / AUTO-12 TÁTICA',
     caliber: 'Calibre 12 Magnum',
-    categoryTag: 'Escopeta Semiautomática',
+    categoryTag: 'Escopeta Automática',
     category: 'ESCOPETA',
     description:
-      'Escopeta de combate semiautomática com tubo de 8 cartuchos e altíssima cadência em corredores CQB.',
+      'Escopeta tática automática com tambor de alta capacidade, mira holográfica integrada e cadência devastadora em CQB.',
     firepower: 96,
-    accuracy: 64,
+    accuracy: 68,
     mobility: 78,
-    range: '15m',
-    fireRate: 'Semi 188 RPM',
+    range: '16m',
+    fireRate: 'Auto 210 RPM',
     magSize: 8,
     reserve: 32,
-    localUrl: '',
-    githubUrl: '',
-    readyPoseTime: 0,
+    localUrl: SHOTGUN_SPAS_LOCAL_URL,
+    githubUrl: SHOTGUN_SPAS_GITHUB_RAW_URL,
+    readyClipName: 'Idle',
+    readyPoseTime: 0.05,
     targetSpan: 0.8,
   },
   SNIPER_TACTICAL: {
@@ -345,6 +365,7 @@ const WEAPON_SPECS: Record<WeaponId, WeaponSpec> = {
 const HIDDEN_ARM_MATERIAL_NAMES = new Set([
   'arms',
   'arms_0',
+  'mat',
   'hand_d',
   'glove_d',
   'm_gloves_black',
@@ -356,9 +377,12 @@ const HIDDEN_ARM_MATERIAL_NAMES = new Set([
   'dmc5_soldier_gear_mat',
   'dmc5_soldier_hands_mat',
   'dmc5_soldier_shirt_mat',
+  'hands_04',
 ]);
 
 const HIDDEN_ARM_NODE_NAMES = new Set([
+  'object_7',
+  'object_8',
   'object_25',
   'object_26',
   'object_51',
@@ -384,11 +408,13 @@ const HIDDEN_ARM_NODE_NAMES = new Set([
   'ch22_body',
   'ch22_body_textura_0',
   'armmesh_arms_0',
+  'armmesh_mat_0',
   'arms_arms_0',
   'hand_mesh_hand_d_0',
   'hand_mesh_glove_d_0',
   'skm_comando_m_gloves_black_0',
   'skm_comando_m_shirt_blackcamo2_0',
+  'hands_04_mesh',
 ]);
 
 function isArmOrExtraMesh(obj: THREE.Object3D): boolean {
@@ -538,6 +564,12 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
   const [selectedId, setSelectedId] = useState<WeaponId>(activeWeapon);
   const [activeCategory, setActiveCategory] = useState<WeaponCategory>('ALL');
   const [isLoadingModel, setIsLoadingModel] = useState<boolean>(true);
+  const [equippedSkinId, setEquippedSkinId] = useState<string>(() =>
+    getEquippedWeaponSkinId(activeWeapon)
+  );
+  const [playerCash, setPlayerCash] = useState<number>(() =>
+    loadSavedPlayerCash()
+  );
 
   const stageContainerRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -545,6 +577,8 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const turntablePivotRef = useRef<THREE.Group | null>(null);
   const loaderRef = useRef<GLTFLoader | null>(null);
+  const loadedWeaponModelRef = useRef<THREE.Object3D | null>(null);
+  const loadedWeaponIdRef = useRef<WeaponId>(activeWeapon);
 
   const isDraggingRef = useRef(false);
   const lastXRef = useRef(0);
@@ -561,6 +595,30 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
   const isUnlocked = isWeaponUnlockedAtXp(selectedId, playerXp);
   const reqRank = getRequiredXpForWeapon(selectedId);
   const isEquipped = activeWeapon === selectedId;
+  const availableSkins = getAvailableSkinsForWeapon(selectedId);
+  const currentSkinSpec = getSkinDefinition(equippedSkinId);
+
+  useEffect(() => {
+    setEquippedSkinId(getEquippedWeaponSkinId(selectedId));
+    const unsub = subscribePlayerInventory(() => {
+      setEquippedSkinId(getEquippedWeaponSkinId(selectedId));
+      setPlayerCash(loadSavedPlayerCash());
+    });
+    return unsub;
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (
+      loadedWeaponModelRef.current &&
+      loadedWeaponIdRef.current === selectedId
+    ) {
+      applyWeaponSkinToObject3D(
+        loadedWeaponModelRef.current,
+        selectedId,
+        equippedSkinId
+      );
+    }
+  }, [selectedId, equippedSkinId]);
 
   // Filter weapon list by category
   const weaponList = (Object.keys(WEAPON_SPECS) as WeaponId[]).filter((id) => {
@@ -710,6 +768,8 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
 
     let cancelled = false;
     setIsLoadingModel(true);
+    loadedWeaponModelRef.current = null;
+    loadedWeaponIdRef.current = selectedId;
 
     // Clear previous weapon from turntable
     while (turntablePivot.children.length > 0) {
@@ -837,11 +897,23 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
       zoomScaleRef.current = 1.0;
 
       turntablePivot.add(centeringGroup);
+      loadedWeaponModelRef.current = modelScene;
+      loadedWeaponIdRef.current = selectedId;
+      applyWeaponSkinToObject3D(
+        modelScene,
+        selectedId,
+        getEquippedWeaponSkinId(selectedId)
+      );
       setIsLoadingModel(false);
     };
 
     if (!wSpec.localUrl) {
-      const procModel = createBotThirdPersonWeaponMesh(selectedId, true);
+      const initialSkin = getEquippedWeaponSkinId(selectedId);
+      const procModel = createBotThirdPersonWeaponMesh(
+        selectedId,
+        true,
+        initialSkin
+      );
       procModel.rotation.x = -0.16;
       const centeringGroup = new THREE.Group();
       centeringGroup.add(procModel);
@@ -867,6 +939,9 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
       currentRotXRef.current = 0.05;
       zoomScaleRef.current = 1.0;
       turntablePivot.add(centeringGroup);
+      loadedWeaponModelRef.current = procModel;
+      loadedWeaponIdRef.current = selectedId;
+      applyWeaponSkinToObject3D(procModel, selectedId, initialSkin);
       setIsLoadingModel(false);
       return () => {
         cancelled = true;
@@ -916,6 +991,21 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
       0.75,
       1.65
     );
+  };
+
+  const handleSelectOrBuySkin = (skin: WeaponSkinDefinition) => {
+    const owned = isWeaponSkinOwned(skin.id);
+    if (!owned) {
+      const bought = purchaseWeaponSkinWithCash(skin.id);
+      if (!bought) {
+        soundEngine.playMenuHover();
+        return;
+      }
+      setPlayerCash(loadSavedPlayerCash());
+    }
+    soundEngine.playMenuSelect();
+    equipWeaponSkin(selectedId, skin.id);
+    setEquippedSkinId(skin.id);
   };
 
   return (
@@ -1033,6 +1123,72 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
                   PENTE: <b className="text-amber-300">{spec.magSize}R</b>
                 </span>
               </div>
+            </div>
+          </div>
+
+          {/* Skin & Camouflage Selector Box */}
+          <div className="bg-black/60 border border-white/15 rounded-xl p-2.5 my-1">
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <span className="text-[9px] font-mono font-bold text-amber-400 tracking-wider uppercase">
+                SKINS & CAMUFLAGEM
+              </span>
+              <span className="text-[9px] font-mono font-bold text-white truncate max-w-[140px]">
+                {currentSkinSpec.shortName}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {availableSkins.map((skin) => {
+                const active = equippedSkinId === skin.id;
+                const owned = isWeaponSkinOwned(skin.id);
+                const canAfford = playerCash >= skin.cashPrice;
+                return (
+                  <button
+                    key={skin.id}
+                    type="button"
+                    title={skin.description}
+                    disabled={!owned && !canAfford}
+                    onClick={() => handleSelectOrBuySkin(skin)}
+                    className={`rounded-lg border p-1.5 text-left transition-all flex items-center gap-2 ${
+                      active
+                        ? 'bg-amber-500/20 border-amber-400 cursor-pointer'
+                        : owned || canAfford
+                          ? 'bg-black/50 border-white/12 hover:border-white/35 cursor-pointer'
+                          : 'bg-black/60 border-white/5 opacity-50 cursor-not-allowed'
+                    }`}
+                  >
+                    <span
+                      className="w-5 h-5 rounded border border-white/25 shrink-0"
+                      style={{
+                        background: `linear-gradient(135deg, ${skin.swatchColors[0]} 0% 34%, ${skin.swatchColors[1]} 34% 68%, ${skin.swatchColors[2]} 68% 100%)`,
+                      }}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[9px] font-mono font-bold text-white truncate">
+                        {skin.shortName}
+                      </div>
+                      <div className="text-[8px] font-mono leading-tight">
+                        {!owned ? (
+                          <span className="text-amber-300 font-bold">
+                            $ {skin.cashPrice}
+                          </span>
+                        ) : active ? (
+                          <span className="text-emerald-400 font-bold">
+                            EQUIPADA ✓
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">
+                            {skin.category === 'SKIN_EXCLUSIVA'
+                              ? 'EXCLUSIVA'
+                              : skin.category === 'PADRAO'
+                                ? 'PADRÃO'
+                                : 'CAMO'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
 

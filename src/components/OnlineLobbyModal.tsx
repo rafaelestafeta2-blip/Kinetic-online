@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { soundEngine } from '../audio/soundEngine';
 import { DrillMode } from '../types/game';
 import { OnlineRoomState } from '../multiplayer/onlineTypes';
 import {
@@ -19,13 +20,28 @@ interface OnlineLobbyModalProps {
   onLaunchOnlineArena: (mode: DrillMode) => void;
 }
 
+const PRIVATE_ROOM_MAPS: DrillMode[] = [
+  'STATION_CAPTURE_5V5',
+  'DUST2_BOMB_5V5',
+  'ASSAULT_BOMB_5V5',
+  'INDUSTRIA_BOMB_5V5',
+  'HANGAR_BOMB_5V5',
+  'EASTERN_CITY_BOMB_5V5',
+  'MIRAGE_ANUBIS_BOMB_5V5',
+  'YARD_BOMB_5V5',
+];
+
 const MAP_LABELS: Record<string, { title: string; subtitle: string }> = {
+  STATION_CAPTURE_5V5: {
+    title: 'STATION ARENA',
+    subtitle: 'Estação Urbana • Captura de Bandeira 5v5 (6 Rodadas)',
+  },
   DUST2_BOMB_5V5: { title: 'DE_DUST2', subtitle: 'Deserto Clássico • Bomb A / B' },
   ASSAULT_BOMB_5V5: { title: 'CS_ASSAULT', subtitle: 'Galpão Industrial • Bomb A / B' },
   INDUSTRIA_BOMB_5V5: { title: 'INDUSTRIA', subtitle: 'Pátio Industrial • Bomb A / B' },
-  HANGAR_BOMB_5V5: { title: 'HANGAR', subtitle: 'Hangar Industrial • Bomb A / B' },
+  HANGAR_BOMB_5V5: { title: 'HANGAR', subtitle: 'Hangar Militar • Bomb A / B' },
   EASTERN_CITY_BOMB_5V5: { title: 'EASTERN CITY', subtitle: 'Cidade Leste • Bomb A / B' },
-  MIRAGE_ANUBIS_BOMB_5V5: { title: 'MIRAGE ANUBIS', subtitle: 'Cidade Deserto • Bomb A / B' },
+  MIRAGE_ANUBIS_BOMB_5V5: { title: 'MIRAGE ANUBIS', subtitle: 'Fortaleza Deserto • Bomb A / B' },
   YARD_BOMB_5V5: { title: 'YARD TÁTICO', subtitle: 'Pátio de Contêineres • Bomb A / B' },
 };
 
@@ -41,17 +57,11 @@ export const OnlineLobbyModal: React.FC<OnlineLobbyModalProps> = ({
   const [isBusy, setIsBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState(false);
+  const [showMapPickerModal, setShowMapPickerModal] = useState(false);
 
-  const arenaMode: DrillMode =
-    selectedMapMode === 'DUST2_BOMB_5V5' ||
-    selectedMapMode === 'ASSAULT_BOMB_5V5' ||
-    selectedMapMode === 'INDUSTRIA_BOMB_5V5' ||
-    selectedMapMode === 'HANGAR_BOMB_5V5' ||
-    selectedMapMode === 'EASTERN_CITY_BOMB_5V5' ||
-    selectedMapMode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
-    selectedMapMode === 'YARD_BOMB_5V5'
-      ? selectedMapMode
-      : 'DUST2_BOMB_5V5';
+  const arenaMode: DrillMode = PRIVATE_ROOM_MAPS.includes(selectedMapMode)
+    ? selectedMapMode
+    : 'DUST2_BOMB_5V5';
 
   useEffect(() => {
     const unsub = subscribeOnlineRoom((room) => {
@@ -64,6 +74,19 @@ export const OnlineLobbyModal: React.FC<OnlineLobbyModalProps> = ({
   }, [isOpen, onLaunchOnlineArena]);
 
   if (!isOpen) return null;
+
+  const currentMapMode = activeRoom?.arenaMode || arenaMode;
+  const currentMapMeta = MAP_LABELS[currentMapMode] || MAP_LABELS.DUST2_BOMB_5V5;
+
+  const handleSelectMapInRoom = async (mode: DrillMode) => {
+    soundEngine.playMenuSelect();
+    onSelectMapMode(mode);
+    setShowMapPickerModal(false);
+    if (activeRoom) {
+      activeRoom.arenaMode = mode;
+      setActiveRoom({ ...activeRoom });
+    }
+  };
 
   const handleCreatePrivateRoom = async () => {
     setIsBusy(true);
@@ -112,8 +135,9 @@ export const OnlineLobbyModal: React.FC<OnlineLobbyModalProps> = ({
     if (!activeRoom) return;
     setIsBusy(true);
     try {
+      activeRoom.arenaMode = currentMapMode;
       await startMatchInActiveRoom();
-      onLaunchOnlineArena(activeRoom.arenaMode);
+      onLaunchOnlineArena(currentMapMode);
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Falha ao iniciar partida.');
     } finally {
@@ -131,7 +155,7 @@ export const OnlineLobbyModal: React.FC<OnlineLobbyModalProps> = ({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-3 pointer-events-auto"
     >
       <div
-        className="w-full max-w-[740px] rounded border border-[#c89b3c]/50 bg-[#0d1118] text-slate-100 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
+        className="w-full max-w-[740px] rounded-xl border border-[#c89b3c]/50 bg-[#0d1118] text-slate-100 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
         style={{ fontFamily: "'Rajdhani', sans-serif" }}
       >
         <div className="flex items-center justify-between px-4 py-2.5 bg-gradient-to-r from-[#1a2230] via-[#131924] to-[#1a2230] border-b border-white/10">
@@ -168,107 +192,100 @@ export const OnlineLobbyModal: React.FC<OnlineLobbyModalProps> = ({
             </div>
           )}
 
+          {/* BARRA DO MAPA DA SALA + BOTÃO PARA ABRIR O MENU FOCADO DE ESCOLHA DE MAPA */}
+          <div className="flex items-center justify-between gap-3 p-3 rounded-lg bg-[#121824] border border-amber-500/40 shadow-inner">
+            <div className="flex items-center gap-3 min-w-0">
+              <img
+                src={thumbForDrillMode(currentMapMode)}
+                alt={currentMapMeta.title}
+                className="w-20 h-12 rounded border border-amber-400/50 object-cover shrink-0"
+                draggable={false}
+              />
+              <div className="min-w-0">
+                <div className="text-[10px] font-bold uppercase tracking-widest text-amber-400">
+                  MAPA SELECIONADO PARA A SALA
+                </div>
+                <div className="text-base font-extrabold uppercase tracking-wider text-white truncate">
+                  {currentMapMeta.title}
+                </div>
+                <div className="text-[11px] text-slate-400 truncate">
+                  {currentMapMeta.subtitle}
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                soundEngine.playMenuSelect();
+                setShowMapPickerModal(true);
+              }}
+              className="px-3.5 py-2 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-extrabold text-xs uppercase tracking-wider shadow-[0_0_16px_rgba(245,158,11,0.35)] shrink-0 cursor-pointer transition-all"
+            >
+              ESCOLHER MAPA 🗺️
+            </button>
+          </div>
+
           {!activeRoom ? (
-            <>
-              <div>
-                <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#c89b3c] mb-1.5">
-                  1. SELECIONE O MAPA PARA A SALA PRIVADA (X1 / TREINO / CLÃ)
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div className="p-3.5 rounded-lg border border-emerald-500/35 bg-gradient-to-b from-emerald-950/30 to-black/60 flex flex-col justify-between">
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-400">
+                    ANFITRIÃO (HOST DA SALA)
+                  </div>
+                  <h3 className="text-sm font-extrabold uppercase tracking-wider text-white mt-0.5">
+                    CRIAR SALA PRIVADA
+                  </h3>
+                  <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
+                    Gera um código exclusivo de 6 dígitos para convidar amigos, escolher o mapa na sala e tirar X1.
+                  </p>
                 </div>
-                <div className="grid grid-cols-3 gap-2">
-                  {(['DUST2_BOMB_5V5', 'ASSAULT_BOMB_5V5', 'INDUSTRIA_BOMB_5V5', 'HANGAR_BOMB_5V5', 'EASTERN_CITY_BOMB_5V5', 'MIRAGE_ANUBIS_BOMB_5V5', 'YARD_BOMB_5V5'] as DrillMode[]).map((mode) => {
-                    const active = arenaMode === mode;
-                    const info = MAP_LABELS[mode];
-                    return (
-                      <button
-                        key={mode}
-                        type="button"
-                        onClick={() => onSelectMapMode(mode)}
-                        className={`rounded border text-left transition-all cursor-pointer overflow-hidden ${
-                          active
-                            ? 'bg-[#c89b3c]/20 border-[#f59e0b] text-white shadow-[0_0_15px_rgba(245,158,11,0.2)]'
-                            : 'bg-black/40 border-white/10 text-slate-300 hover:border-white/25'
-                        }`}
-                      >
-                        <img
-                          src={thumbForDrillMode(mode)}
-                          alt={info.title}
-                          referrerPolicy="no-referrer"
-                          className="w-full h-12 object-cover object-center"
-                          draggable={false}
-                        />
-                        <div className="p-2.5">
-                          <div className="text-xs font-extrabold uppercase tracking-wider text-[#f0e6d2]">{info.title}</div>
-                          <div className="text-[10px] text-slate-400 truncate">{info.subtitle}</div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => void handleCreatePrivateRoom()}
+                  className="mt-3 w-full py-2.5 rounded bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-xs font-extrabold uppercase tracking-[0.16em] text-black shadow-lg cursor-pointer disabled:opacity-50"
+                >
+                  {isBusy ? 'CRIANDO SALA...' : '+ CRIAR SALA PRIVADA'}
+                </button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                <div className="p-3.5 rounded border border-emerald-500/35 bg-gradient-to-b from-emerald-950/30 to-black/60 flex flex-col justify-between">
-                  <div>
-                    <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-400">
-                      ANFITRIÃO (HOST DA SALA)
-                    </div>
-                    <h3 className="text-sm font-extrabold uppercase tracking-wider text-white mt-0.5">
-                      CRIAR SALA PRIVADA
-                    </h3>
-                    <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
-                      Gera um código exclusivo de 6 dígitos para convidar amigos, treinar táticas ou tirar X1.
-                    </p>
+              <div className="p-3.5 rounded-lg border border-[#c89b3c]/40 bg-gradient-to-b from-[#231c10]/60 to-black/60 flex flex-col justify-between">
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#f59e0b]">
+                    ENTRAR EM SALA EXISTENTE
                   </div>
+                  <h3 className="text-sm font-extrabold uppercase tracking-wider text-white mt-0.5">
+                    DIGITAR CÓDIGO DE 6 DÍGITOS
+                  </h3>
+                  <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
+                    Recebeu o código de um amigo? Digite abaixo para entrar direto no lobby dele.
+                  </p>
+                </div>
+                <form onSubmit={handleJoinByCode} className="mt-3 flex gap-1.5">
+                  <input
+                    type="text"
+                    maxLength={6}
+                    value={joinCodeInput}
+                    onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+                    placeholder="EX: K9X4P2"
+                    className="flex-1 px-2.5 py-2 rounded bg-black/70 border border-white/20 text-xs font-mono uppercase tracking-[0.25em] text-amber-300 focus:outline-none focus:border-amber-400"
+                  />
                   <button
-                    type="button"
+                    type="submit"
                     disabled={isBusy}
-                    onClick={() => void handleCreatePrivateRoom()}
-                    className="mt-3 w-full py-2.5 rounded bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-xs font-extrabold uppercase tracking-[0.16em] text-black shadow-lg cursor-pointer disabled:opacity-50"
+                    className="px-4 py-2 rounded bg-amber-500 hover:bg-amber-400 text-black text-xs font-extrabold uppercase tracking-wider cursor-pointer disabled:opacity-50"
                   >
-                    {isBusy ? 'CRIANDO SALA...' : '+ CRIAR SALA PRIVADA'}
+                    ENTRAR
                   </button>
-                </div>
-
-                <div className="p-3.5 rounded border border-[#c89b3c]/40 bg-gradient-to-b from-[#231c10]/60 to-black/60 flex flex-col justify-between">
-                  <div>
-                    <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#f59e0b]">
-                      ENTRAR EM SALA EXISTENTE
-                    </div>
-                    <h3 className="text-sm font-extrabold uppercase tracking-wider text-white mt-0.5">
-                      DIGITAR CÓDIGO DE 6 DÍGITOS
-                    </h3>
-                    <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
-                      Recebeu o código de um amigo? Digite abaixo para entrar direto no lobby dele.
-                    </p>
-                  </div>
-                  <form onSubmit={handleJoinByCode} className="mt-3 flex gap-1.5">
-                    <input
-                      type="text"
-                      maxLength={6}
-                      value={joinCodeInput}
-                      onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
-                      placeholder="EX: K9X4P2"
-                      className="flex-1 px-2.5 py-2 rounded bg-black/70 border border-white/20 text-xs font-mono uppercase tracking-[0.25em] text-amber-300 focus:outline-none focus:border-amber-400"
-                    />
-                    <button
-                      type="submit"
-                      disabled={isBusy}
-                      className="px-4 py-2 rounded bg-amber-500 hover:bg-amber-400 text-black text-xs font-extrabold uppercase tracking-wider cursor-pointer disabled:opacity-50"
-                    >
-                      ENTRAR
-                    </button>
-                  </form>
-                </div>
+                </form>
               </div>
-            </>
+            </div>
           ) : (
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded bg-black/60 border border-[#c89b3c]/40">
                 <div>
-                  <div className="text-[10px] text-slate-400 uppercase tracking-widest">
-                    MAPA: <span className="text-white font-bold">{MAP_LABELS[activeRoom.arenaMode]?.title || activeRoom.arenaMode}</span> • SALA PRIVADA CUSTOM
-                  </div>
-                  <div className="flex items-center gap-2 mt-0.5">
+                  <div className="flex items-center gap-2">
                     <span className="text-xs uppercase tracking-wider text-slate-300">CÓDIGO DA SALA:</span>
                     <span className="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-400/60 font-mono text-sm font-extrabold tracking-[0.25em] text-amber-300">
                       {activeRoom.roomId}
@@ -366,6 +383,78 @@ export const OnlineLobbyModal: React.FC<OnlineLobbyModalProps> = ({
           )}
         </div>
       </div>
+
+      {/* MENU FOCADO DE ESCOLHA DE MAPA DA SALA PRIVADA */}
+      {showMapPickerModal && (
+        <div
+          onClick={() => setShowMapPickerModal(false)}
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-[680px] rounded-2xl border-2 border-amber-400/60 bg-[#0b1018] p-4 sm:p-5 shadow-2xl flex flex-col max-h-[88vh]"
+          >
+            <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-3">
+              <div>
+                <h3 className="font-display font-black text-base sm:text-lg uppercase tracking-wider text-amber-300">
+                  SELECIONAR MAPA DA SALA PRIVADA
+                </h3>
+                <p className="text-xs font-mono text-slate-400">
+                  Escolha o cenário oficial 5v5 para a partida customizada
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMapPickerModal(false)}
+                className="px-3 py-1 rounded bg-white/10 hover:bg-white/20 text-xs font-mono font-bold text-slate-200 cursor-pointer"
+              >
+                VOLTAR ✕
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 overflow-y-auto pr-1">
+              {PRIVATE_ROOM_MAPS.map((mode) => {
+                const active = currentMapMode === mode;
+                const info = MAP_LABELS[mode];
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => void handleSelectMapInRoom(mode)}
+                    className={`group rounded-xl border text-left transition-all cursor-pointer overflow-hidden flex flex-col ${
+                      active
+                        ? 'bg-amber-500/20 border-2 border-amber-400 text-white shadow-[0_0_20px_rgba(245,158,11,0.3)]'
+                        : 'bg-black/50 border-white/15 text-slate-300 hover:border-amber-400/50 hover:text-white'
+                    }`}
+                  >
+                    <div className="relative h-24 w-full overflow-hidden">
+                      <img
+                        src={thumbForDrillMode(mode)}
+                        alt={info.title}
+                        className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
+                        draggable={false}
+                      />
+                      {active && (
+                        <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 font-mono font-black text-[9px] uppercase">
+                          ATIVO ✓
+                        </span>
+                      )}
+                    </div>
+                    <div className="p-2.5">
+                      <div className="font-display font-black text-xs sm:text-sm uppercase tracking-wider text-white">
+                        {info.title}
+                      </div>
+                      <div className="text-[10px] font-mono text-slate-400 truncate mt-0.5">
+                        {info.subtitle}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

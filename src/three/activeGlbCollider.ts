@@ -16,6 +16,7 @@ export interface GlbColliderHost {
   hangarLevelData: LevelWithCollider;
   easternCityLevelData: LevelWithCollider;
   mirageAnubisLevelData: LevelWithCollider;
+  stationArenaLevelData: LevelWithCollider;
 }
 
 export function getActiveGlbCollider(
@@ -34,6 +35,8 @@ export function getActiveGlbCollider(
       return engine.easternCityLevelData.collider;
     case 'MIRAGE_ANUBIS_BOMB_5V5':
       return engine.mirageAnubisLevelData.collider;
+    case 'STATION_CAPTURE_5V5':
+      return engine.stationArenaLevelData.collider;
     default:
       return null;
   }
@@ -47,6 +50,7 @@ export function isGlbNavMeshMode(mode: DrillMode): boolean {
     mode === 'INDUSTRIA_BOMB_5V5' ||
     mode === 'HANGAR_BOMB_5V5' ||
     mode === 'EASTERN_CITY_BOMB_5V5' ||
-    mode === 'MIRAGE_ANUBIS_BOMB_5V5'
+    mode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
+    mode === 'STATION_CAPTURE_5V5'
   );
 }

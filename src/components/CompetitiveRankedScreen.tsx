@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { soundEngine } from '../audio/soundEngine';
 import {
   getActiveOnlineRoom,
   leaveActiveRoom,
   quickMatchOrCreateRoom,
+  startMatchInActiveRoom,
   subscribeOnlineRoom,
 } from '../multiplayer/onlineRoomService';
 import { OnlineRoomState } from '../multiplayer/onlineTypes';
@@ -34,19 +35,66 @@ interface CompetitiveRankedScreenProps {
 
 const REQUIRED_RANKED_PLAYERS = 10;
 
+const OFFICIAL_RANKED_MAP_POOL: Array<{
+  id: DrillMode;
+  title: string;
+  subtitle: string;
+}> = [
+  {
+    id: 'DUST2_BOMB_5V5',
+    title: 'DE_DUST2',
+    subtitle: 'Deserto Clássico · Plant the Bomb 5v5 (Pontos A e B)',
+  },
+  {
+    id: 'ASSAULT_BOMB_5V5',
+    title: 'CS_ASSAULT',
+    subtitle: 'Complexo Industrial Urbano · Plant the Bomb 5v5',
+  },
+  {
+    id: 'INDUSTRIA_BOMB_5V5',
+    title: 'INDUSTRIA',
+    subtitle: 'Refinaria e Pátio Ferroviário · Plant the Bomb 5v5',
+  },
+  {
+    id: 'HANGAR_BOMB_5V5',
+    title: 'HANGAR',
+    subtitle: 'Base Aérea Militar · Plant the Bomb 5v5',
+  },
+  {
+    id: 'EASTERN_CITY_BOMB_5V5',
+    title: 'EASTERN CITY',
+    subtitle: 'Centro Urbano Leste · Plant the Bomb 5v5',
+  },
+  {
+    id: 'MIRAGE_ANUBIS_BOMB_5V5',
+    title: 'MIRAGE ANUBIS',
+    subtitle: 'Fortaleza de Arenito · Plant the Bomb 5v5',
+  },
+  {
+    id: 'STATION_CAPTURE_5V5',
+    title: 'STATION ARENA',
+    subtitle: 'Estação Ferroviária · Captura de Bandeira 5v5 (6 Rodadas)',
+  },
+];
+
+function drawRandomRankedArena(): DrillMode {
+  const idx = Math.floor(Math.random() * OFFICIAL_RANKED_MAP_POOL.length);
+  return OFFICIAL_RANKED_MAP_POOL[idx].id;
+}
+
 export const CompetitiveRankedScreen: React.FC<CompetitiveRankedScreenProps> = ({
   playerMmr,
   activeWeapon,
-  initialArena,
   onBackToMainMenu,
   onRankedMatchReady,
 }) => {
-  const [selectedArena, setSelectedArena] = useState<DrillMode>(initialArena);
   const [isSearching, setIsSearching] = useState(false);
   const [elapsedSec, setElapsedSec] = useState(0);
   const [roomState, setRoomState] = useState<OnlineRoomState | null>(() => getActiveOnlineRoom());
   const [rankPage, setRankPage] = useState<0 | 1>(0);
   const [showAllRanksModal, setShowAllRanksModal] = useState(false);
+  const [drawnArena, setDrawnArena] = useState<DrillMode | null>(null);
+  const [rouletteIndex, setRouletteIndex] = useState(0);
   const backdropRef = useRef<HTMLCanvasElement | null>(null);
   const sparksRef = useRef<HTMLCanvasElement | null>(null);
   const launchedRef = useRef(false);
@@ -54,6 +102,30 @@ export const CompetitiveRankedScreen: React.FC<CompetitiveRankedScreenProps> = (
   const displayMmr = playerMmr > 0 ? playerMmr : 2450;
   const { current, next, targetMmr, mmrRemaining, progressPct } =
     getCompetitiveRankProgression(displayMmr);
+
+  const triggerDrawnMapRevealAndLaunch = useCallback(
+    (finalArena: DrillMode) => {
+      if (launchedRef.current) return;
+      launchedRef.current = true;
+      setIsSearching(false);
+      soundEngine.playMenuSelect();
+      setDrawnArena(finalArena);
+
+      window.setTimeout(() => {
+        onRankedMatchReady(finalArena);
+      }, 2400);
+    },
+    [onRankedMatchReady]
+  );
+
+  // Animação visual de roleta enquanto está procurando na fila
+  useEffect(() => {
+    if (!isSearching || drawnArena) return;
+    const id = window.setInterval(() => {
+      setRouletteIndex((prev) => (prev + 1) % OFFICIAL_RANKED_MAP_POOL.length);
+    }, 350);
+    return () => window.clearInterval(id);
+  }, [isSearching, drawnArena]);
 
   // Cenário Warzone azul (VANGUARD) + Helicópteros voando + Faíscas azuis/âmbar
   useEffect(() => {
@@ -133,15 +205,14 @@ export const CompetitiveRankedScreen: React.FC<CompetitiveRankedScreenProps> = (
         room.queueType === 'RANKED' &&
         (room.status === 'PLAYING' || realCount >= REQUIRED_RANKED_PLAYERS)
       ) {
-        launchedRef.current = true;
-        soundEngine.playMenuSelect();
-        onRankedMatchReady(room.arenaMode || selectedArena);
+        const finalArena = room.arenaMode || drawRandomRankedArena();
+        triggerDrawnMapRevealAndLaunch(finalArena);
       }
     });
     return () => unsub();
-  }, [onRankedMatchReady, selectedArena]);
+  }, [triggerDrawnMapRevealAndLaunch]);
 
-  // Cronômetro real de busca Ranked (expande tolerância MMR gradualmente; NUNCA simula jogadores falsos)
+  // Cronômetro real de busca Ranked
   useEffect(() => {
     if (!isSearching) {
       setElapsedSec(0);
@@ -161,8 +232,23 @@ export const CompetitiveRankedScreen: React.FC<CompetitiveRankedScreenProps> = (
       return;
     }
     launchedRef.current = false;
+    setDrawnArena(null);
     setIsSearching(true);
-    await quickMatchOrCreateRoom(selectedArena, 'RANKED');
+    const randomArena = drawRandomRankedArena();
+    await quickMatchOrCreateRoom(randomArena, 'RANKED');
+  };
+
+  const handleConfirmPairAndDrawNow = async () => {
+    soundEngine.playMenuSelect();
+    const room = getActiveOnlineRoom();
+    const chosen = room?.arenaMode || drawRandomRankedArena();
+    const realCount = room ? Object.keys(room.players || {}).length : 0;
+    if (room && realCount >= 2 && room.status !== 'PLAYING') {
+      await startMatchInActiveRoom();
+    } else if (room && realCount < 2) {
+      await leaveActiveRoom();
+    }
+    triggerDrawnMapRevealAndLaunch(chosen);
   };
 
   const handleBackClick = async () => {
@@ -177,10 +263,14 @@ export const CompetitiveRankedScreen: React.FC<CompetitiveRankedScreenProps> = (
   const connectedPlayersCount = roomState ? Object.keys(roomState.players || {}).length : 0;
   const shownPlayersCount = isSearching ? Math.max(1, connectedPlayersCount) : 0;
   const mmrTolerance = Math.min(400, 150 + Math.floor(elapsedSec / 4) * 25);
+  const drawnMeta = drawnArena
+    ? OFFICIAL_RANKED_MAP_POOL.find((m) => m.id === drawnArena) || OFFICIAL_RANKED_MAP_POOL[0]
+    : null;
+  const cyclingMeta = OFFICIAL_RANKED_MAP_POOL[rouletteIndex % OFFICIAL_RANKED_MAP_POOL.length];
 
   return (
     <div className="fixed inset-0 z-50 h-[100dvh] max-h-[100dvh] w-full bg-[#040914] text-white select-none overflow-hidden font-sans flex flex-col justify-between">
-      {/* 1. FUNDO ISOLADO (z-0 isolate): Cenário Warzone Azul + Bandeira 3D VANGUARD + Faíscas */}
+      {/* 1. FUNDO ISOLADO: Cenário Warzone Azul + Bandeira 3D VANGUARD + Faíscas */}
       <div className="absolute inset-0 z-0 isolate pointer-events-none overflow-hidden">
         <canvas ref={backdropRef} className="absolute inset-0 z-0 w-full h-full" />
         <FactionFlagCanvas team="VANGUARD" layoutMode="RANKED_CENTER" />
@@ -194,8 +284,8 @@ export const CompetitiveRankedScreen: React.FC<CompetitiveRankedScreenProps> = (
         />
       </div>
 
-      {/* 2. TOPO COMPACTO: VOLTAR AO MENU + VER TODAS AS PATENTES + MAPA */}
-      <header className="relative z-30 flex items-center justify-between px-3 sm:px-6 pt-1.5 sm:pt-2.5 pb-1 shrink-0">
+      {/* 2. TOPO COMPACTO: VOLTAR AO MENU + VER TODAS AS PATENTES + SORTEIO AUTOMÁTICO OFICIAL */}
+      <header className="relative z-30 flex items-center justify-between px-3 sm:px-6 pt-1.5 sm:pt-2.5 pb-1 shrink-0 gap-2">
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -225,47 +315,30 @@ export const CompetitiveRankedScreen: React.FC<CompetitiveRankedScreenProps> = (
           </button>
         </div>
 
-        <div className="flex items-center gap-1.5 bg-[#091326]/92 border border-sky-400/35 rounded-md px-2 py-0.5 sm:py-1">
-          <span className="text-[8px] sm:text-[9px] font-mono uppercase tracking-wider text-sky-300">
-            MAPA RANKED:
+        {/* Badge Oficial de Mapa Sorteado Aleatoriamente (Jogadores não escolhem mapa na Ranked) */}
+        <div className="flex items-center gap-2 bg-[#091326]/95 border border-sky-400/45 rounded-md px-3 py-1 shadow-[0_0_16px_rgba(56,189,248,0.2)]">
+          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+          <span className="text-[9px] sm:text-[10px] font-mono font-bold uppercase tracking-wider text-sky-200">
+            MAPA RANKED:{' '}
+            <strong className="text-amber-300">
+              {isSearching
+                ? `SORTEANDO... [${cyclingMeta.title}]`
+                : 'SORTEIO ALEATÓRIO NO PAREAMENTO'}
+            </strong>
           </span>
-          {(
-            [
-              { id: 'DUST2_BOMB_5V5', label: 'DE_DUST2' },
-              { id: 'ASSAULT_BOMB_5V5', label: 'CS_ASSAULT' },
-              { id: 'INDUSTRIA_BOMB_5V5', label: 'INDUSTRIA' },
-              { id: 'HANGAR_BOMB_5V5', label: 'HANGAR' },
-              { id: 'EASTERN_CITY_BOMB_5V5', label: 'EASTERN CITY' },
-              { id: 'MIRAGE_ANUBIS_BOMB_5V5', label: 'MIRAGE ANUBIS' },
-            ] as const
-          ).map((m) => (
+          {isSearching && (
             <button
-              key={m.id}
               type="button"
-              disabled={isSearching}
-              onClick={() => {
-                soundEngine.playMenuSelect();
-                setSelectedArena(m.id);
-              }}
-              className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] sm:text-[9px] font-mono font-bold uppercase transition-all cursor-pointer ${
-                selectedArena === m.id
-                  ? 'bg-sky-500 text-slate-950 shadow-[0_0_10px_rgba(56,189,248,0.65)]'
-                  : 'bg-white/5 text-slate-300 hover:bg-white/15'
-              } ${isSearching ? 'opacity-60 cursor-not-allowed' : ''}`}
+              onClick={() => void handleConfirmPairAndDrawNow()}
+              className="ml-1 px-2 py-0.5 rounded bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-display font-black text-[9px] sm:text-[10px] uppercase tracking-wider cursor-pointer shadow-[0_0_12px_rgba(16,185,129,0.6)]"
             >
-              <img
-                src={thumbForDrillMode(m.id)}
-                alt=""
-                className="w-5 h-3.5 rounded-sm object-cover hidden sm:block"
-                draggable={false}
-              />
-              {m.label}
+              PAREAR AGORA »
             </button>
-          ))}
+          )}
         </div>
       </header>
 
-      {/* 3. CORPO PRINCIPAL: ESQUERDA (PATENTE + FILA), CENTRO (OPERADOR 3D + BANDEIRA VANGUARD), DIREITA (TEMPORADA + CTA) */}
+      {/* 3. CORPO PRINCIPAL */}
       <div className="relative z-20 flex-1 min-h-0 grid grid-cols-12 items-end px-3 sm:px-6 pb-2 sm:pb-3 gap-2 sm:gap-3 overflow-hidden">
         <RankedLeftWidgets
           currentRank={current}
@@ -307,6 +380,57 @@ export const CompetitiveRankedScreen: React.FC<CompetitiveRankedScreenProps> = (
           onToggleSearch={() => void handleToggleSearchRanked()}
         />
       </div>
+
+      {/* 4. OVERLAY DE REVELAÇÃO DO MAPA SORTEADO ASSIM QUE OS JOGADORES SÃO PAREADOS */}
+      {drawnMeta && (
+        <div className="fixed inset-0 z-50 bg-black/92 backdrop-blur-lg flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-xl rounded-2xl border-2 border-amber-400 bg-[#080f1d] overflow-hidden shadow-[0_0_60px_rgba(251,191,36,0.45)] flex flex-col">
+            <div className="px-5 py-3 bg-gradient-to-r from-amber-500/25 via-sky-500/20 to-amber-500/25 border-b border-amber-400/40 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                <span className="font-display font-black text-xs sm:text-sm tracking-[0.2em] uppercase text-emerald-300">
+                  JOGADORES PAREADOS · PARTIDA CONFIRMADA
+                </span>
+              </div>
+              <span className="font-mono text-[10px] font-bold text-amber-300 uppercase">
+                SORTEIO OFICIAL RANKED 5V5
+              </span>
+            </div>
+
+            <div className="relative h-48 sm:h-56 w-full overflow-hidden">
+              <img
+                src={thumbForDrillMode(drawnMeta.id)}
+                alt={drawnMeta.title}
+                className="w-full h-full object-cover object-center scale-105 transition-transform duration-1000"
+                draggable={false}
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#080f1d] via-[#080f1d]/30 to-transparent" />
+              <div className="absolute bottom-3 left-5 right-5 flex items-end justify-between gap-3">
+                <div>
+                  <span className="inline-block px-2 py-0.5 rounded bg-amber-500 text-slate-950 font-mono font-black text-[10px] uppercase tracking-widest mb-1">
+                    MAPA SORTEADO
+                  </span>
+                  <h2 className="font-display font-black text-2xl sm:text-4xl text-white uppercase tracking-wider drop-shadow-lg">
+                    {drawnMeta.title}
+                  </h2>
+                  <p className="font-mono text-xs text-slate-200">
+                    {drawnMeta.subtitle}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-5 py-3 bg-[#050912] border-t border-white/10 flex items-center justify-between">
+              <span className="font-mono text-xs text-sky-300">
+                Iniciando carregamento do mapa para todos os operadores...
+              </span>
+              <span className="font-mono text-xs font-bold text-amber-400 animate-pulse">
+                CARREGANDO »
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showAllRanksModal && (
         <CompetitiveRanksModal

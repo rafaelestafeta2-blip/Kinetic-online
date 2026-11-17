@@ -2,7 +2,8 @@ import { collection, deleteField, doc, getDoc, getDocs, limit, onSnapshot, query
 import { auth, db, handleFirestoreError, OperationType } from '../firebase/firebaseClient';
 import { getCloudSyncState } from '../firebase/playerCloudSync';
 import { registerMatchProgressionGate } from '../progression/matchProgressionGate';
-import { DrillMode, WeaponId } from '../types/game';
+import { getEquippedWeaponSkinId, getPlayerInventoryState } from '../progression/loadoutSystem';
+import { DrillMode, WarfaceClassId, WeaponId } from '../types/game';
 import { applyIncomingPlayerState } from './combatNetcode';
 import {
   buildClassSupportEvent,
@@ -20,12 +21,14 @@ import {
 import {
   getTeamSpawnForArena,
   MatchQueueType,
+  OnlineGrenadeEvent,
   OnlineHitEvent,
   OnlinePlayerState,
   OnlineRoomState,
   OnlineRoundEvent,
   OnlineTeam,
 } from './onlineTypes';
+import { pushPeerPose, resetPeerSnapshotBuffers } from './peerSnapshotBuffer';
 
 export interface OnlineBombEvent {
   bombStatus: OnlineRoomState['bombStatus'];
@@ -35,16 +38,19 @@ export interface OnlineBombEvent {
 
 type RoomSubscriber = (room: OnlineRoomState | null) => void;
 type HitSubscriber = (hit: OnlineHitEvent) => void;
+type GrenadeSubscriber = (evt: OnlineGrenadeEvent) => void;
 type ClassSupportSubscriber = (evt: ClassSupportPacket) => void;
 type BombSubscriber = (evt: OnlineBombEvent) => void;
 type RoundSubscriber = (evt: OnlineRoundEvent) => void;
 
 const roomSubscribers = new Set<RoomSubscriber>();
 const hitSubscribers = new Set<HitSubscriber>();
+const grenadeSubscribers = new Set<GrenadeSubscriber>();
 const classSupportSubscribers = new Set<ClassSupportSubscriber>();
 const bombSubscribers = new Set<BombSubscriber>();
 const roundSubscribers = new Set<RoundSubscriber>();
 const processedHitIds = new Set<string>();
+const processedGrenadeIds = new Set<string>();
 const processedClassSupportIds = new Set<string>();
 const processedRoundEventIds = new Set<string>();
 
@@ -62,6 +68,15 @@ function rememberRoundEventId(eventId: string): void {
   if (processedRoundEventIds.size > 150) {
     const first = processedRoundEventIds.values().next().value;
     if (first) processedRoundEventIds.delete(first);
+  }
+}
+
+function rememberGrenadeEventId(eventId: string): void {
+  if (!eventId) return;
+  processedGrenadeIds.add(eventId);
+  if (processedGrenadeIds.size > 150) {
+    const first = processedGrenadeIds.values().next().value;
+    if (first) processedGrenadeIds.delete(first);
   }
 }
 
@@ -117,14 +132,20 @@ function getEffectiveLocalUid(): string {
 
 function createInitialLocalPlayerState(arenaMode: DrillMode, team: OnlineTeam, slotIndex = 0): OnlinePlayerState {
   const sync = getCloudSyncState();
+  const inv = getPlayerInventoryState();
   const uid = getEffectiveLocalUid();
   const spawn = getTeamSpawnForArena(arenaMode, team, slotIndex);
   const mmr = Number(sync.profile.mmr) > 0 ? Number(sync.profile.mmr) : 2450;
   return {
     uid, callsign: sync.profile.callsign || 'OPERADOR', team,
     rankLevel: sync.profile.rankLevel || 1, mmr,
-    avatarDataUrl: (sync.profile.avatarDataUrl || '').slice(0, 8000),
+    avatarDataUrl:
+      sync.profile.avatarDataUrl && sync.profile.avatarDataUrl.length <= 65000
+        ? sync.profile.avatarDataUrl
+        : '',
     weaponId: sync.profile.activeWeapon || 'M4_CARBINE',
+    weaponSkinId: getEquippedWeaponSkinId(sync.profile.activeWeapon || 'M4_CARBINE'),
+    classId: inv.selectedClass || 'FUZILEIRO',
     x: spawn.x, y: spawn.y, z: spawn.z, yaw: spawn.yaw, pitch: 0,
     health: 100, armor: 100, isDown: false, isCrouching: false, isFiring: false,
     kills: 0, deaths: 0, assists: 0, headshots: 0, loadProgress: 0, isLoaded: false,
@@ -148,15 +169,20 @@ function mergePreservingFresherPlayers(
     const existingTs = existing.updatedAtMs || 0;
     const remoteTs = remote.updatedAtMs || 0;
     if (isPlaying || existingTs >= remoteTs) {
-      // Preserve live WebSocket transform/vitals; accept newer lobby/load metadata if any.
+      // Preserve live WebSocket transform/vitals; accept newer lobby/load/classId metadata if any.
       merged[uid] = {
         ...remote,
         ...existing,
+        classId: existing.classId || remote.classId || 'FUZILEIRO',
         loadProgress: Math.max(existing.loadProgress || 0, remote.loadProgress || 0),
         isLoaded: Boolean(existing.isLoaded || remote.isLoaded),
       };
     } else {
-      merged[uid] = remote;
+      merged[uid] = {
+        ...existing,
+        ...remote,
+        classId: remote.classId || existing.classId || 'FUZILEIRO',
+      };
     }
   }
   return merged;
@@ -275,16 +301,34 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
           };
           const uid = wire.player?.uid || wire.uid;
           if (!uid) return;
-          const expanded = applyIncomingPlayerState(activeRoom.players[uid], {
+          const prevPlayer = activeRoom.players[uid];
+          const prevLoaded = prevPlayer?.isLoaded;
+          const prevProgress = prevPlayer?.loadProgress;
+          const expanded = applyIncomingPlayerState(prevPlayer, {
             player: wire.player,
             t: wire.t,
             uid,
           });
           if (!expanded) return;
           activeRoom.players[uid] = expanded;
-          // Transform packets are high-frequency — skip React lobby subscribers
-          // during PLAYING; combat loop reads activeRoom directly.
-          if (activeRoom.status !== 'PLAYING') emitRoomState();
+          if (uid !== localUid) {
+            pushPeerPose(uid, {
+              x: expanded.x,
+              y: expanded.y,
+              z: expanded.z,
+              yaw: expanded.yaw,
+              pitch: expanded.pitch,
+              isCrouching: expanded.isCrouching,
+              ts: Date.now(),
+            });
+          }
+          const loadStateChanged =
+            Boolean(wire.player) ||
+            prevLoaded !== expanded.isLoaded ||
+            prevProgress !== expanded.loadProgress;
+          if (activeRoom.status !== 'PLAYING' || loadStateChanged) {
+            emitRoomState();
+          }
         } else if (msg.type === 'PLAYER_JOINED' && msg.player?.uid) {
           const joined = msg.player;
           if (!activeRoom.players[joined.uid]) {
@@ -340,6 +384,21 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
             activeRoom.lastHitEvent = hit;
           }
           dispatchHitOnce(hit);
+        } else if (msg.type === 'GRENADE_THROW') {
+          const grenadeMsg = msg as unknown as {
+            grenade?: OnlineGrenadeEvent;
+            senderUid?: string;
+          };
+          const evt = grenadeMsg.grenade;
+          if (
+            evt &&
+            evt.eventId &&
+            evt.senderUid !== localUid &&
+            !processedGrenadeIds.has(evt.eventId)
+          ) {
+            rememberGrenadeEventId(evt.eventId);
+            grenadeSubscribers.forEach((fn) => fn(evt));
+          }
         } else if (msg.type === 'BOMB_EVENT') {
           if (msg.bombStatus) activeRoom.bombStatus = msg.bombStatus;
           if (msg.plantedSite) activeRoom.plantedSite = msg.plantedSite;
@@ -366,6 +425,7 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
             activeRoom.currentRound = Math.max(activeRoom.currentRound, evt.roundNumber);
             activeRoom.bombStatus = 'CARRIED';
             activeRoom.plantedSite = 'NONE';
+            resetPeerSnapshotBuffers();
             Object.values(activeRoom.players).forEach((p) => {
               const slotIdx = Math.max(0, Object.keys(activeRoom!.players).indexOf(p.uid));
               const sp = getTeamSpawnForArena(activeRoom!.arenaMode, p.team, slotIdx);
@@ -473,9 +533,13 @@ function attachRoomSnapshotListener(roomId: string): void {
         return;
       }
       const data = snap.data() as OnlineRoomState;
+      let shouldNotifySubscribers = false;
       if (!activeRoom || activeRoom.roomId !== data.roomId) {
         activeRoom = data;
+        shouldNotifySubscribers = true;
       } else {
+        const prevStatus = activeRoom.status;
+        const prevPlayers = activeRoom.players || {};
         const isPlaying = activeRoom.status === 'PLAYING' || data.status === 'PLAYING';
         const mergedStatus: OnlineRoomState['status'] =
           activeRoom.status === 'FINISHED' || data.status === 'FINISHED'
@@ -494,6 +558,33 @@ function attachRoomSnapshotListener(roomId: string): void {
           ? Math.max(activeRoom.blackthornScore || 0, data.blackthornScore || 0)
           : data.blackthornScore || 0;
 
+        const mergedPlayers = mergePreservingFresherPlayers(
+          prevPlayers,
+          data.players || {},
+          isPlaying
+        );
+
+        // Notify subscribers if status, player roster, or any player's loadProgress/isLoaded changed
+        if (
+          prevStatus !== mergedStatus ||
+          Object.keys(prevPlayers).length !== Object.keys(mergedPlayers).length
+        ) {
+          shouldNotifySubscribers = true;
+        } else {
+          for (const [uid, p] of Object.entries(mergedPlayers)) {
+            const oldP = prevPlayers[uid];
+            if (
+              !oldP ||
+              oldP.isLoaded !== p.isLoaded ||
+              oldP.loadProgress !== p.loadProgress ||
+              oldP.team !== p.team
+            ) {
+              shouldNotifySubscribers = true;
+              break;
+            }
+          }
+        }
+
         activeRoom = {
           ...activeRoom,
           hostUid: data.hostUid,
@@ -510,16 +601,12 @@ function attachRoomSnapshotListener(roomId: string): void {
             isPlaying && activeRoom.bombStatus === 'PLANTED' && data.bombStatus === 'CARRIED' && nextRound <= prevRound
               ? activeRoom.plantedSite
               : data.plantedSite || activeRoom.plantedSite,
-          players: mergePreservingFresherPlayers(
-            activeRoom.players || {},
-            data.players || {},
-            isPlaying
-          ),
+          players: mergedPlayers,
           updatedAtMs: Math.max(activeRoom.updatedAtMs || 0, data.updatedAtMs || 0),
         };
       }
       if (data.lastHitEvent) dispatchHitOnce(data.lastHitEvent);
-      if (activeRoom.status !== 'PLAYING') {
+      if (activeRoom.status !== 'PLAYING' || shouldNotifySubscribers) {
         emitRoomState();
       }
     },
@@ -554,6 +641,7 @@ export async function createMultiplayerRoom(
 
   activeRoom = newRoom;
   resetCombatNetcodeThrottle();
+  resetPeerSnapshotBuffers();
   connectWebSocketForRoom(newRoom, localPlayer);
   emitRoomState();
 
@@ -600,6 +688,7 @@ export async function joinRoomByCode(rawCode: string): Promise<{ ok: boolean; er
 
     await updateDoc(roomRef, { [`players.${user.uid}`]: localPlayer, averageMmr: avgMmr, updatedAtMs: Date.now() });
     activeRoom = { ...data, averageMmr: avgMmr, players: allPlayers };
+    resetPeerSnapshotBuffers();
     attachRoomSnapshotListener(code);
     connectWebSocketForRoom(activeRoom, localPlayer);
     emitRoomState();
@@ -677,13 +766,22 @@ export async function startMatchInActiveRoom(serverConfirmed = false): Promise<b
       queueType: activeRoom.queueType || 'CASUAL',
     }));
   }
+  const inv = getPlayerInventoryState();
+  const localUid = getEffectiveLocalUid();
   const resetPlayers: Record<string, OnlinePlayerState> = {};
   Object.values(activeRoom.players).forEach((p) => {
-    resetPlayers[p.uid] = { ...p, loadProgress: 0, isLoaded: false, updatedAtMs: Date.now() };
+    resetPlayers[p.uid] = {
+      ...p,
+      classId: p.uid === localUid ? inv.selectedClass || p.classId || 'FUZILEIRO' : p.classId || 'FUZILEIRO',
+      loadProgress: 0,
+      isLoaded: false,
+      updatedAtMs: Date.now(),
+    };
   });
   activeRoom.players = resetPlayers;
   activeRoom.status = 'PLAYING';
   resetCombatNetcodeThrottle();
+  resetPeerSnapshotBuffers();
   emitRoomState();
   if (auth.currentUser) {
     try {
@@ -695,22 +793,78 @@ export async function startMatchInActiveRoom(serverConfirmed = false): Promise<b
   return true;
 }
 
-export function publishLocalLoadProgress(progressPct: number, isLoaded: boolean): void {
+export function publishLocalLoadProgress(
+  progressPct: number,
+  isLoaded: boolean,
+  forceBroadcast = false
+): void {
   publishRoomLoadProgress(
     activeRoom,
     wsClient,
     emitRoomState,
     progressPct,
     isLoaded,
-    getEffectiveLocalUid()
+    getEffectiveLocalUid(),
+    forceBroadcast
   );
 }
 
 export function publishLocalPlayerTransform(params: {
-  x: number; y: number; z: number; yaw: number; pitch: number;
-  weaponId: WeaponId; health: number; isDown: boolean; isCrouching: boolean; isFiring: boolean;
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  pitch: number;
+  weaponId: WeaponId;
+  weaponSkinId?: string;
+  classId?: WarfaceClassId;
+  health: number;
+  isDown: boolean;
+  isCrouching: boolean;
+  isFiring: boolean;
 }): void {
   publishRoomPlayerTransform(activeRoom, wsClient, params, getEffectiveLocalUid());
+}
+
+export function publishGrenadeThrow(
+  grenadeType: 'FRAG' | 'SMOKE',
+  origin: [number, number, number],
+  velocity: [number, number, number]
+): void {
+  if (!activeRoom) return;
+  const uid = getEffectiveLocalUid();
+  const me = activeRoom.players[uid];
+  if (!me) return;
+  const nowMs = Date.now();
+  const grenade: OnlineGrenadeEvent = {
+    eventId: `grn_${uid}_${nowMs}_${Math.random().toString(36).slice(2, 6)}`,
+    senderUid: uid,
+    senderCallsign: me.callsign || 'OPERADOR',
+    senderTeam: me.team,
+    grenadeType,
+    origin: [
+      Number(origin[0].toFixed(2)),
+      Number(origin[1].toFixed(2)),
+      Number(origin[2].toFixed(2)),
+    ],
+    velocity: [
+      Number(velocity[0].toFixed(2)),
+      Number(velocity[1].toFixed(2)),
+      Number(velocity[2].toFixed(2)),
+    ],
+    ts: nowMs,
+  };
+  rememberGrenadeEventId(grenade.eventId);
+  if (wsClient && wsClient.readyState === WebSocket.OPEN) {
+    wsClient.send(
+      JSON.stringify({
+        type: 'GRENADE_THROW',
+        roomId: activeRoom.roomId,
+        grenade,
+        ts: nowMs,
+      })
+    );
+  }
 }
 
 export function publishCombatHit(targetUid: string, damage: number, isHeadshot: boolean, weaponId: WeaponId): void {
@@ -769,6 +923,7 @@ export function publishRoundEvent(
     activeRoom.currentRound = Math.max(activeRoom.currentRound, event.roundNumber);
     activeRoom.bombStatus = 'CARRIED';
     activeRoom.plantedSite = 'NONE';
+    resetPeerSnapshotBuffers();
   }
   activeRoom.lastRoundEvent = event;
   activeRoom.updatedAtMs = nowMs;
@@ -791,6 +946,7 @@ export function resetLocalOnlinePlayerForNextRound(arenaMode?: DrillMode): void 
   const uid = getEffectiveLocalUid();
   const me = activeRoom.players[uid];
   if (!me) return;
+  const inv = getPlayerInventoryState();
   const mode = arenaMode || activeRoom.arenaMode;
   const teamMembers = Object.values(activeRoom.players)
     .filter((p) => p.team === me.team)
@@ -799,6 +955,7 @@ export function resetLocalOnlinePlayerForNextRound(arenaMode?: DrillMode): void 
   const spawn = getTeamSpawnForArena(mode, me.team, slotIdx);
   const updated: OnlinePlayerState = {
     ...me,
+    classId: inv.selectedClass || me.classId || 'FUZILEIRO',
     health: 100,
     armor: 100,
     isDown: false,
@@ -812,6 +969,7 @@ export function resetLocalOnlinePlayerForNextRound(arenaMode?: DrillMode): void 
     updatedAtMs: Date.now(),
   };
   activeRoom.players[uid] = updated;
+  resetPeerSnapshotBuffers();
   if (wsClient && wsClient.readyState === WebSocket.OPEN) {
     wsClient.send(
       JSON.stringify({
@@ -883,6 +1041,7 @@ export async function leaveActiveRoom(): Promise<void> {
   const prevRoom = activeRoom;
   activeRoom = null;
   resetCombatNetcodeThrottle();
+  resetPeerSnapshotBuffers();
   emitRoomState();
 
   if (user && prevRoom) {
@@ -904,6 +1063,14 @@ export function getLocalOnlinePlayerState(): OnlinePlayerState | null {
 
 export function isOnlineMatchActive(): boolean {
   return activeRoom !== null;
+}
+
+/** True when all players currently registered in the active online room have finished loading. */
+export function areAllOnlinePlayersLoaded(): boolean {
+  if (!activeRoom) return true;
+  const players = Object.values(activeRoom.players || {});
+  if (players.length === 0) return true;
+  return players.every((p) => Boolean(p.isLoaded));
 }
 
 /** Other human players currently in the active online room (excludes local). */
@@ -946,6 +1113,11 @@ export function subscribeOnlineHitEvents(fn: HitSubscriber): () => void {
   return () => hitSubscribers.delete(fn);
 }
 
+export function subscribeOnlineGrenadeEvents(fn: GrenadeSubscriber): () => void {
+  grenadeSubscribers.add(fn);
+  return () => grenadeSubscribers.delete(fn);
+}
+
 export function subscribeOnlineBombEvents(fn: BombSubscriber): () => void {
   bombSubscribers.add(fn);
   return () => bombSubscribers.delete(fn);
@@ -955,3 +1127,4 @@ export function subscribeOnlineRoundEvents(fn: RoundSubscriber): () => void {
   roundSubscribers.add(fn);
   return () => roundSubscribers.delete(fn);
 }
+

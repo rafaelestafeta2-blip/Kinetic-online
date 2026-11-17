@@ -3,13 +3,15 @@ import { ColliderBox, TacticalTargetEntity } from './levelBuilder';
 import { YardTextureSet } from './yardMapData';
 import { buildInstancedFromTransforms } from './scenePerfOptimizer';
 
-import { WeaponId } from '../types/game';
+import { WarfaceClassId, WeaponId } from '../types/game';
 
 export interface YardBotEntity extends TacticalTargetEntity {
   isAlly?: boolean;
   callsign?: string;
   team?: 'VANGUARD' | 'BLACKTHORN';
   weaponId?: WeaponId;
+  weaponSkinId?: string;
+  classId?: WarfaceClassId;
 }
 
 export function addYardPowerLinesAndPoles(

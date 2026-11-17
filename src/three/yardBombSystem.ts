@@ -10,6 +10,7 @@ import {
 import { soundEngine } from '../audio/soundEngine';
 import { playSpatialBotGunshot } from '../audio/spatialCombatAudio';
 import { getCloudSyncState, getPlayerCallsign, recordCombatTelemetryDelta } from '../firebase/playerCloudSync';
+import { areAllOnlinePlayersLoaded } from '../multiplayer/onlineRoomService';
 import { OnlineRoundEvent } from '../multiplayer/onlineTypes';
 import { canGrantMatchProgressionRewards } from '../progression/matchProgressionGate';
 import { mobileHardware } from '../mobile/nativeHardware';
@@ -38,10 +39,111 @@ import {
   MIRAGE_ANUBIS_BOMB_SITE_B,
   getMirageAnubisCalloutForPos,
 } from './mirageAnubisLevelBuilder';
+import {
+  STATION_ARENA_BLACKTHORN_FLAG_BASE,
+  STATION_ARENA_VANGUARD_FLAG_BASE,
+  getStationArenaCalloutForPos,
+} from './stationArenaLevelBuilder';
 import { TacticalTargetEntity } from './levelBuilder';
 import { getYardCalloutForPos, YARD_BOMB_SITE_A, YARD_BOMB_SITE_B } from './yardMapData';
 import { YardBotEntity } from './yardPropsBuilder';
 import { createPlantedC4Visual } from './c4BombProp';
+
+function createTacticalFlagProp(colorHex: number, teamLabel: 'VANGUARD' | 'BLACKTHORN'): {
+  group: THREE.Group;
+  bannerMesh: THREE.Mesh;
+  ringMesh: THREE.Mesh;
+} {
+  const group = new THREE.Group();
+  group.name = `TacticalFlag_${teamLabel}`;
+
+  const ringMesh = new THREE.Mesh(
+    new THREE.RingGeometry(0.65, 0.92, 24),
+    new THREE.MeshBasicMaterial({
+      color: colorHex,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.85,
+    })
+  );
+  ringMesh.rotation.x = -Math.PI / 2;
+  ringMesh.position.y = 0.04;
+  ringMesh.userData.ignoreCollider = true;
+  group.add(ringMesh);
+
+  const pedestal = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.32, 0.42, 0.16, 16),
+    new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      metalness: 0.75,
+      roughness: 0.3,
+    })
+  );
+  pedestal.position.y = 0.08;
+  pedestal.userData.ignoreCollider = true;
+  group.add(pedestal);
+
+  const pole = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.035, 0.04, 2.55, 12),
+    new THREE.MeshStandardMaterial({
+      color: 0xe2e8f0,
+      metalness: 0.85,
+      roughness: 0.22,
+    })
+  );
+  pole.position.y = 1.35;
+  pole.userData.ignoreCollider = true;
+  group.add(pole);
+
+  const finial = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.11, 0),
+    new THREE.MeshBasicMaterial({ color: colorHex })
+  );
+  finial.position.y = 2.68;
+  finial.userData.ignoreCollider = true;
+  group.add(finial);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d')!;
+  const grad = ctx.createLinearGradient(0, 0, 256, 128);
+  if (teamLabel === 'VANGUARD') {
+    grad.addColorStop(0, '#0284c7');
+    grad.addColorStop(1, '#38bdf8');
+  } else {
+    grad.addColorStop(0, '#dc2626');
+    grad.addColorStop(1, '#f97316');
+  }
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 256, 128);
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = '#ffffff';
+  ctx.strokeRect(4, 4, 248, 120);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '900 30px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(teamLabel === 'VANGUARD' ? '★ VANGUARD' : '★ BLACKTHORN', 128, 64);
+
+  const flagTex = new THREE.CanvasTexture(canvas);
+  flagTex.colorSpace = THREE.SRGBColorSpace;
+  const bannerGeo = new THREE.PlaneGeometry(1.15, 0.62, 8, 2);
+  const bannerMesh = new THREE.Mesh(
+    bannerGeo,
+    new THREE.MeshBasicMaterial({
+      map: flagTex,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.96,
+    })
+  );
+  bannerMesh.position.set(0.58, 2.22, 0);
+  bannerMesh.userData.ignoreCollider = true;
+  group.add(bannerMesh);
+
+  return { group, bannerMesh, ringMesh };
+}
 
 const _allyOrigin = new THREE.Vector3();
 const _enemyPos = new THREE.Vector3();
@@ -60,6 +162,14 @@ export class YardBombSystem {
   private c4MeshGroup: THREE.Group;
   private c4LedMesh: THREE.Mesh;
   private c4EnsureLoaded: () => Promise<void>;
+  private vanguardFlagGroup: THREE.Group;
+  private vanguardFlagBanner: THREE.Mesh;
+  private vanguardFlagRing: THREE.Mesh;
+  private blackthornFlagGroup: THREE.Group;
+  private blackthornFlagBanner: THREE.Mesh;
+  private blackthornFlagRing: THREE.Mesh;
+  private vanguardFlagWorldPos = new THREE.Vector3().copy(STATION_ARENA_VANGUARD_FLAG_BASE);
+  private blackthornFlagWorldPos = new THREE.Vector3().copy(STATION_ARENA_BLACKTHORN_FLAG_BASE);
   private beepAccum = 0;
   private allyFireTimer = 0;
   private isPlantingHeld = false;
@@ -76,6 +186,7 @@ export class YardBombSystem {
       ) => void)
     | null = null;
   private lastAppliedRoundEventKey = '';
+  private onlineBarrierWaitSec = 0;
 
   public info: YardBombHudInfo = {
     bombStatus: 'CARRIED', plantedSite: null, nearSite: null, plantProgress: 0,
@@ -117,6 +228,7 @@ export class YardBombSystem {
     const isHangar = this.activeMode === 'HANGAR_BOMB_5V5';
     const isEasternCity = this.activeMode === 'EASTERN_CITY_BOMB_5V5';
     const isMirageAnubis = this.activeMode === 'MIRAGE_ANUBIS_BOMB_5V5';
+    const isStationCapture = this.activeMode === 'STATION_CAPTURE_5V5';
     const siteA = isDust2
       ? DUST2_BOMB_SITE_A
       : isAssault
@@ -129,7 +241,9 @@ export class YardBombSystem {
               ? EASTERN_CITY_BOMB_SITE_A
               : isMirageAnubis
                 ? MIRAGE_ANUBIS_BOMB_SITE_A
-                : YARD_BOMB_SITE_A;
+                : isStationCapture
+                  ? STATION_ARENA_VANGUARD_FLAG_BASE
+                  : YARD_BOMB_SITE_A;
     const siteB = isDust2
       ? DUST2_BOMB_SITE_B
       : isAssault
@@ -142,7 +256,9 @@ export class YardBombSystem {
               ? EASTERN_CITY_BOMB_SITE_B
               : isMirageAnubis
                 ? MIRAGE_ANUBIS_BOMB_SITE_B
-                : YARD_BOMB_SITE_B;
+                : isStationCapture
+                  ? STATION_ARENA_BLACKTHORN_FLAG_BASE
+                  : YARD_BOMB_SITE_B;
     return { siteA, siteB };
   }
 
@@ -154,6 +270,16 @@ export class YardBombSystem {
     this.info.matchStartUnlockedWeapons = [...(profile.unlockedWeapons || [])];
   }
 
+  private triggerCaptureAlert(
+    text: string,
+    team: 'VANGUARD' | 'BLACKTHORN' | 'NEUTRAL',
+    durationMs = 5200
+  ): void {
+    this.info.captureAlertText = text;
+    this.info.captureAlertTeam = team;
+    this.info.captureAlertUntilMs = Date.now() + durationMs;
+  }
+
   constructor(sceneGroup: THREE.Object3D) {
     const planted = createPlantedC4Visual();
     this.c4MeshGroup = planted.group;
@@ -162,18 +288,40 @@ export class YardBombSystem {
     this.c4MeshGroup.visible = false;
     sceneGroup.add(this.c4MeshGroup);
     void this.c4EnsureLoaded();
+
+    const vgFlag = createTacticalFlagProp(0x0ea5e9, 'VANGUARD');
+    this.vanguardFlagGroup = vgFlag.group;
+    this.vanguardFlagBanner = vgFlag.bannerMesh;
+    this.vanguardFlagRing = vgFlag.ringMesh;
+    this.vanguardFlagGroup.visible = false;
+    sceneGroup.add(this.vanguardFlagGroup);
+
+    const btFlag = createTacticalFlagProp(0xef4444, 'BLACKTHORN');
+    this.blackthornFlagGroup = btFlag.group;
+    this.blackthornFlagBanner = btFlag.bannerMesh;
+    this.blackthornFlagRing = btFlag.ringMesh;
+    this.blackthornFlagGroup.visible = false;
+    sceneGroup.add(this.blackthornFlagGroup);
   }
 
   public resetRound(mode: DrillMode = 'YARD_BOMB_5V5', keepMatchScore = false): void {
     this.activeMode = mode;
+    const isCapture = mode === 'STATION_CAPTURE_5V5';
     this.isPlantingHeld = false;
     this.lastKeypadDigitIdx = -1;
     this.beepAccum = 0;
     this.allyFireTimer = 0;
     this.c4MeshGroup.visible = false;
+    this.vanguardFlagWorldPos.copy(STATION_ARENA_VANGUARD_FLAG_BASE);
+    this.blackthornFlagWorldPos.copy(STATION_ARENA_BLACKTHORN_FLAG_BASE);
+    this.vanguardFlagGroup.position.copy(this.vanguardFlagWorldPos);
+    this.blackthornFlagGroup.position.copy(this.blackthornFlagWorldPos);
+    this.vanguardFlagGroup.visible = isCapture;
+    this.blackthornFlagGroup.visible = isCapture;
     if (!keepMatchScore) {
       stopMatchEndFanfare();
       this.lastAppliedRoundEventKey = '';
+      this.onlineBarrierWaitSec = 0;
     }
 
     const prevRound = keepMatchScore ? this.info.currentRound : 1;
@@ -205,6 +353,8 @@ export class YardBombSystem {
                   ? 'BASE VANGUARD (ENTRADA SUL · CIDADE LESTE)'
                 : mode === 'MIRAGE_ANUBIS_BOMB_5V5'
                   ? 'BASE VANGUARD (ENTRADA SUL · MIRAGE ANUBIS)'
+                : mode === 'STATION_CAPTURE_5V5'
+                  ? 'BASE VANGUARD (TERMINAL SUL · BANDEIRA ALIADA)'
                 : 'BASE VANGUARD (SUL · RUA DO HOTEL)',
       currentRound: prevRound, maxRounds: 6, vanguardScore: prevVg, blackthornScore: prevBt,
       // Warface-style equip window before every round (including first).
@@ -217,6 +367,26 @@ export class YardBombSystem {
       matchStartUnlockedWeapons: snapUnlocks,
       isSpectating: false, spectatedCallsign: undefined, spectatedWeapon: undefined, spectatedHealth: undefined,
       squadStats: prevStats,
+      isCaptureMode: isCapture,
+      vanguardFlagStatus: 'AT_BASE',
+      blackthornFlagStatus: 'AT_BASE',
+      vanguardFlagCarrier: null,
+      blackthornFlagCarrier: null,
+      vanguardFlagPos: {
+        x: STATION_ARENA_VANGUARD_FLAG_BASE.x,
+        y: STATION_ARENA_VANGUARD_FLAG_BASE.y,
+        z: STATION_ARENA_VANGUARD_FLAG_BASE.z,
+      },
+      blackthornFlagPos: {
+        x: STATION_ARENA_BLACKTHORN_FLAG_BASE.x,
+        y: STATION_ARENA_BLACKTHORN_FLAG_BASE.y,
+        z: STATION_ARENA_BLACKTHORN_FLAG_BASE.z,
+      },
+      captureAlertText: isCapture
+        ? '⚑ MODO CAPTURA: ROUBE A BANDEIRA INIMIGA E TRAGA PARA A SUA BASE!'
+        : null,
+      captureAlertTeam: isCapture ? 'NEUTRAL' : null,
+      captureAlertUntilMs: isCapture ? Date.now() + 6000 : 0,
     };
 
     if (!keepMatchScore) {
@@ -484,6 +654,16 @@ export class YardBombSystem {
     }
 
     if (this.info.roundState === 'EQUIP') {
+      if (
+        this.isOnlineMatch &&
+        this.info.currentRound <= 1 &&
+        !areAllOnlinePlayersLoaded() &&
+        this.onlineBarrierWaitSec < 15
+      ) {
+        this.onlineBarrierWaitSec += dt;
+        this.info.equipTimerSec = 7;
+        return;
+      }
       this.info.equipTimerSec = Math.max(0, (this.info.equipTimerSec || 0) - dt);
       if (this.info.equipTimerSec <= 0) {
         this.info.roundState = 'PLAYING';
@@ -505,6 +685,7 @@ export class YardBombSystem {
     const isHangar = this.activeMode === 'HANGAR_BOMB_5V5';
     const isEasternCity = this.activeMode === 'EASTERN_CITY_BOMB_5V5';
     const isMirageAnubis = this.activeMode === 'MIRAGE_ANUBIS_BOMB_5V5';
+    const isStationCapture = this.activeMode === 'STATION_CAPTURE_5V5';
     const { siteA, siteB } = this.getActiveBombSites();
 
     this.info.calloutLabel = isDust2
@@ -519,6 +700,8 @@ export class YardBombSystem {
               ? getEasternCityCalloutForPos(playerPos.x, playerPos.y, playerPos.z)
             : isMirageAnubis
               ? getMirageAnubisCalloutForPos(playerPos.x, playerPos.y, playerPos.z)
+            : isStationCapture
+              ? getStationArenaCalloutForPos(playerPos.x, playerPos.y, playerPos.z)
             : getYardCalloutForPos(playerPos.x, playerPos.y, playerPos.z);
 
     let enemies = 0;
@@ -588,130 +771,476 @@ export class YardBombSystem {
       }
     }
 
-    const distA = Math.hypot(playerPos.x - siteA.x, playerPos.z - siteA.z);
-    const distB = Math.hypot(playerPos.x - siteB.x, playerPos.z - siteB.z);
+    if (isStationCapture) {
+      this.vanguardFlagGroup.visible = true;
+      this.blackthornFlagGroup.visible = true;
 
-    if (playerAlive && distA <= 4.2) {
-      this.info.nearSite = 'A';
-    } else if (playerAlive && distB <= 4.2) {
-      this.info.nearSite = 'B';
-    } else {
-      this.info.nearSite = null;
-      this.isPlantingHeld = false;
-      this.lastKeypadDigitIdx = -1;
-      if (this.info.bombStatus === 'PLANTING') {
-        this.info.bombStatus = 'CARRIED';
-        this.info.plantProgress = 0;
-      } else if (this.info.bombStatus === 'PLANTED') {
-        this.info.plantProgress = 0;
-      }
-    }
+      // Animate waving banners and base rings
+      const waveT = performance.now() * 0.005;
+      this.vanguardFlagBanner.rotation.y = Math.sin(waveT) * 0.22;
+      this.blackthornFlagBanner.rotation.y = Math.cos(waveT * 1.05) * 0.22;
+      this.vanguardFlagRing.rotation.z = waveT * 0.35;
+      this.blackthornFlagRing.rotation.z = -waveT * 0.35;
 
-    const isOnlineDefender = this.isOnlineMatch && this.onlineLocalTeam === 'BLACKTHORN';
-
-    if (
-      playerAlive &&
-      this.isPlantingHeld &&
-      this.info.nearSite &&
-      !isOnlineDefender &&
-      (this.info.bombStatus === 'CARRIED' || this.info.bombStatus === 'PLANTING')
-    ) {
-      this.info.bombStatus = 'PLANTING';
-      this.info.plantProgress = Math.min(1, this.info.plantProgress + dt / 2.4);
-      const digitIdx = Math.min(7, Math.floor(this.info.plantProgress * 8));
-      if (digitIdx !== this.lastKeypadDigitIdx) {
-        this.lastKeypadDigitIdx = digitIdx;
-        playC4KeypadDigitSound(digitIdx);
-      }
-      if (this.info.plantProgress >= 1) {
-        this.isPlantingHeld = false;
-        this.lastKeypadDigitIdx = -1;
-        this.info.bombStatus = 'PLANTED';
-        this.info.plantedSite = this.info.nearSite;
-        this.info.c4TimerSec = 40;
-        if (this.info.squadStats && this.info.squadStats[0]) {
-          this.info.squadStats[0].score += 100;
+      // 1) Update Vanguard Flag (Blue — defended by Vanguard, stolen by Blackthorn)
+      if (this.info.vanguardFlagStatus === 'CARRIED') {
+        const carrierBot = enemyList.find((e) => e.callsign === this.info.vanguardFlagCarrier);
+        if (!carrierBot || carrierBot.isDown) {
+          // Carrier was killed! Flag drops on the exact spot where carrier died
+          const killedBot = targets.find(
+            (t) => (t as YardBotEntity).callsign === this.info.vanguardFlagCarrier
+          ) as YardBotEntity | undefined;
+          if (killedBot) {
+            this.vanguardFlagWorldPos.set(
+              killedBot.root.position.x,
+              Math.max(0.05, killedBot.root.position.y),
+              killedBot.root.position.z
+            );
+          }
+          this.info.vanguardFlagStatus = 'DROPPED';
+          this.info.vanguardFlagCarrier = null;
+          soundEngine.playMechanicalSwitch(1.35);
+          mobileHardware.vibrateHitConfirm(false);
+          this.triggerCaptureAlert(
+            '⚑ PORTADOR INIMIGO ABATIDO! PASSE POR CIMA DA SUA BANDEIRA PARA DEVOLVER À BASE!',
+            'VANGUARD',
+            5600
+          );
+        } else {
+          // Follow enemy carrier
+          this.vanguardFlagWorldPos.set(
+            carrierBot.root.position.x,
+            carrierBot.root.position.y + 0.35,
+            carrierBot.root.position.z
+          );
+          const distToEnemyBase = Math.hypot(
+            carrierBot.root.position.x - STATION_ARENA_BLACKTHORN_FLAG_BASE.x,
+            carrierBot.root.position.z - STATION_ARENA_BLACKTHORN_FLAG_BASE.z
+          );
+          if (distToEnemyBase <= 3.1) {
+            soundEngine.playMechanicalSwitch(0.85);
+            mobileHardware.vibrateExplosion(0.9);
+            this.finishCurrentRound(
+              'BLACKTHORN',
+              `O TIME INIMIGO (${carrierBot.callsign || 'BLACKTHORN'}) CAPTUROU E ENTREGOU A SUA BANDEIRA!`,
+              onReward
+            );
+            return;
+          }
         }
-        recordCombatTelemetryDelta({ bombsPlanted: 1 });
-        const sitePos = this.info.plantedSite === 'A' ? siteA : siteB;
-        this.c4MeshGroup.position.set(sitePos.x, sitePos.y + 0.12, sitePos.z);
-        this.c4MeshGroup.visible = true;
-        void this.c4EnsureLoaded();
-        soundEngine.playMechanicalSwitch(1.45);
-        playRealBombPlantedVoice();
-        mobileHardware.vibrateHitConfirm(true);
-        if (this.isOnlineMatch && this.info.plantedSite) {
-          this.onBombStateChangedCb?.('PLANTED', this.info.plantedSite);
+      } else if (this.info.vanguardFlagStatus === 'DROPPED') {
+        // Check if Player or any living Vanguard ally walks over the dropped Vanguard flag to return it to base
+        let recoveredBy: string | null = null;
+        if (
+          playerAlive &&
+          Math.hypot(
+            playerPos.x - this.vanguardFlagWorldPos.x,
+            playerPos.z - this.vanguardFlagWorldPos.z
+          ) <= 2.5
+        ) {
+          recoveredBy = 'VOCÊ';
+        } else {
+          for (let i = 0; i < allyList.length; i++) {
+            const ally = allyList[i];
+            if (
+              Math.hypot(
+                ally.root.position.x - this.vanguardFlagWorldPos.x,
+                ally.root.position.z - this.vanguardFlagWorldPos.z
+              ) <= 2.4
+            ) {
+              recoveredBy = ally.callsign || 'ALIADO';
+              break;
+            }
+          }
+        }
+
+        if (recoveredBy) {
+          this.vanguardFlagWorldPos.copy(STATION_ARENA_VANGUARD_FLAG_BASE);
+          this.info.vanguardFlagStatus = 'AT_BASE';
+          this.info.vanguardFlagCarrier = null;
+          if (recoveredBy === 'VOCÊ' && this.info.squadStats?.[0]) {
+            this.info.squadStats[0].score += 75;
+          }
+          soundEngine.playMechanicalSwitch(1.65);
+          mobileHardware.vibrateHitConfirm(true);
+          this.triggerCaptureAlert(
+            `✓ BANDEIRA ALIADA RECUPERADA POR ${recoveredBy} E DEVOLVIDA À BASE!`,
+            'VANGUARD',
+            4800
+          );
+        } else {
+          // Check if another living Blackthorn enemy picks up the dropped Vanguard flag
+          for (let i = 0; i < enemyList.length; i++) {
+            const enemy = enemyList[i];
+            if (
+              Math.hypot(
+                enemy.root.position.x - this.vanguardFlagWorldPos.x,
+                enemy.root.position.z - this.vanguardFlagWorldPos.z
+              ) <= 2.35
+            ) {
+              this.info.vanguardFlagStatus = 'CARRIED';
+              this.info.vanguardFlagCarrier = enemy.callsign || 'BLACKTHORN';
+              soundEngine.playMechanicalSwitch(0.95);
+              mobileHardware.vibrateHitConfirm(false);
+              this.triggerCaptureAlert(
+                `⚠ ALERTA: O TIME INIMIGO (${this.info.vanguardFlagCarrier}) CAPTUROU A SUA BANDEIRA!`,
+                'BLACKTHORN',
+                5600
+              );
+              break;
+            }
+          }
+        }
+      } else {
+        // vanguardFlagStatus === 'AT_BASE': check if any living Blackthorn enemy steals it from Vanguard base
+        this.vanguardFlagWorldPos.copy(STATION_ARENA_VANGUARD_FLAG_BASE);
+        for (let i = 0; i < enemyList.length; i++) {
+          const enemy = enemyList[i];
+          if (
+            Math.hypot(
+              enemy.root.position.x - STATION_ARENA_VANGUARD_FLAG_BASE.x,
+              enemy.root.position.z - STATION_ARENA_VANGUARD_FLAG_BASE.z
+            ) <= 2.45
+          ) {
+            this.info.vanguardFlagStatus = 'CARRIED';
+            this.info.vanguardFlagCarrier = enemy.callsign || 'BLACKTHORN';
+            soundEngine.playMechanicalSwitch(0.9);
+            mobileHardware.vibrateHitConfirm(false);
+            this.triggerCaptureAlert(
+              `⚠ ALERTA: O TIME INIMIGO CAPTUROU A BANDEIRA NA SUA BASE! ELIMINE ${this.info.vanguardFlagCarrier}!`,
+              'BLACKTHORN',
+              6000
+            );
+            break;
+          }
         }
       }
-    }
 
-    // BLACKTHORN online defuse when standing near planted C4
-    if (
-      playerAlive &&
-      isOnlineDefender &&
-      this.isPlantingHeld &&
-      this.info.bombStatus === 'PLANTED' &&
-      this.info.nearSite &&
-      this.info.nearSite === this.info.plantedSite
-    ) {
-      this.info.plantProgress = Math.min(1, this.info.plantProgress + dt / 3.2);
-      const digitIdx = Math.min(7, Math.floor(this.info.plantProgress * 8));
-      if (digitIdx !== this.lastKeypadDigitIdx) {
-        this.lastKeypadDigitIdx = digitIdx;
-        playC4KeypadDigitSound(digitIdx);
+      // 2) Update Blackthorn Flag (Red — defended by Blackthorn, captured by Player or Vanguard ally)
+      if (this.info.blackthornFlagStatus === 'CARRIED') {
+        const isPlayerCarrier = this.info.blackthornFlagCarrier === 'VOCÊ';
+        const carrierAlly = !isPlayerCarrier
+          ? allyList.find((a) => a.callsign === this.info.blackthornFlagCarrier)
+          : null;
+
+        if ((isPlayerCarrier && !playerAlive) || (!isPlayerCarrier && (!carrierAlly || carrierAlly.isDown))) {
+          // Carrier died -> drop Blackthorn flag at carrier's death spot
+          if (isPlayerCarrier) {
+            this.blackthornFlagWorldPos.set(playerPos.x, Math.max(0.05, playerPos.y), playerPos.z);
+          } else {
+            const downedAlly = targets.find(
+              (t) => (t as YardBotEntity).callsign === this.info.blackthornFlagCarrier
+            ) as YardBotEntity | undefined;
+            if (downedAlly) {
+              this.blackthornFlagWorldPos.set(
+                downedAlly.root.position.x,
+                Math.max(0.05, downedAlly.root.position.y),
+                downedAlly.root.position.z
+              );
+            }
+          }
+          this.info.blackthornFlagStatus = 'DROPPED';
+          this.info.blackthornFlagCarrier = null;
+          soundEngine.playMechanicalSwitch(1.1);
+          this.triggerCaptureAlert(
+            '⚠ A BANDEIRA INIMIGA FOI DROPADA NO CHÃO! RECUPERE-A ANTES DO INIMIGO!',
+            'NEUTRAL',
+            5000
+          );
+        } else {
+          const cx = isPlayerCarrier ? playerPos.x : carrierAlly!.root.position.x;
+          const cy = isPlayerCarrier ? playerPos.y : carrierAlly!.root.position.y;
+          const cz = isPlayerCarrier ? playerPos.z : carrierAlly!.root.position.z;
+          this.blackthornFlagWorldPos.set(cx, cy + 0.35, cz);
+
+          const distToVanguardBase = Math.hypot(
+            cx - STATION_ARENA_VANGUARD_FLAG_BASE.x,
+            cz - STATION_ARENA_VANGUARD_FLAG_BASE.z
+          );
+          if (distToVanguardBase <= 3.2) {
+            if (isPlayerCarrier && this.info.squadStats?.[0]) {
+              this.info.squadStats[0].score += 200;
+            }
+            recordCombatTelemetryDelta({ bombsPlanted: 1 });
+            soundEngine.playMechanicalSwitch(1.75);
+            mobileHardware.vibrateHitConfirm(true);
+            this.finishCurrentRound(
+              'VANGUARD',
+              `${this.info.blackthornFlagCarrier || 'VANGUARD'} CAPTUROU E ENTREGOU A BANDEIRA INIMIGA NA BASE!`,
+              onReward
+            );
+            return;
+          }
+        }
+      } else if (this.info.blackthornFlagStatus === 'DROPPED') {
+        // Check if Player or Vanguard ally picks up the dropped enemy flag
+        if (
+          playerAlive &&
+          Math.hypot(
+            playerPos.x - this.blackthornFlagWorldPos.x,
+            playerPos.z - this.blackthornFlagWorldPos.z
+          ) <= 2.5
+        ) {
+          this.info.blackthornFlagStatus = 'CARRIED';
+          this.info.blackthornFlagCarrier = 'VOCÊ';
+          soundEngine.playMechanicalSwitch(1.55);
+          mobileHardware.vibrateHitConfirm(true);
+          this.triggerCaptureAlert(
+            '★ VOCÊ PEGOU A BANDEIRA INIMIGA! LEVE-A PARA A SUA BASE VANGUARD!',
+            'VANGUARD',
+            5500
+          );
+        } else {
+          let pickedByAlly = false;
+          for (let i = 0; i < allyList.length; i++) {
+            const ally = allyList[i];
+            if (
+              Math.hypot(
+                ally.root.position.x - this.blackthornFlagWorldPos.x,
+                ally.root.position.z - this.blackthornFlagWorldPos.z
+              ) <= 2.35
+            ) {
+              this.info.blackthornFlagStatus = 'CARRIED';
+              this.info.blackthornFlagCarrier = ally.callsign || 'ALIADO';
+              pickedByAlly = true;
+              soundEngine.playMechanicalSwitch(1.45);
+              this.triggerCaptureAlert(
+                `★ ${this.info.blackthornFlagCarrier} PEGOU A BANDEIRA INIMIGA! ESCOLTE-O ATÉ A BASE!`,
+                'VANGUARD',
+                5200
+              );
+              break;
+            }
+          }
+          // Check if a Blackthorn enemy walks over their dropped flag to return it to Blackthorn base
+          if (!pickedByAlly) {
+            for (let i = 0; i < enemyList.length; i++) {
+              const enemy = enemyList[i];
+              if (
+                Math.hypot(
+                  enemy.root.position.x - this.blackthornFlagWorldPos.x,
+                  enemy.root.position.z - this.blackthornFlagWorldPos.z
+                ) <= 2.4
+              ) {
+                this.blackthornFlagWorldPos.copy(STATION_ARENA_BLACKTHORN_FLAG_BASE);
+                this.info.blackthornFlagStatus = 'AT_BASE';
+                this.info.blackthornFlagCarrier = null;
+                soundEngine.playMechanicalSwitch(1.0);
+                this.triggerCaptureAlert(
+                  '⚠ O TIME INIMIGO RECUPEROU A BANDEIRA DELES DE VOLTA PARA A BASE BLACKTHORN!',
+                  'BLACKTHORN',
+                  4800
+                );
+                break;
+              }
+            }
+          }
+        }
+      } else {
+        // blackthornFlagStatus === 'AT_BASE': check if Player or Vanguard ally grabs it from Blackthorn base
+        this.blackthornFlagWorldPos.copy(STATION_ARENA_BLACKTHORN_FLAG_BASE);
+        if (
+          playerAlive &&
+          Math.hypot(
+            playerPos.x - STATION_ARENA_BLACKTHORN_FLAG_BASE.x,
+            playerPos.z - STATION_ARENA_BLACKTHORN_FLAG_BASE.z
+          ) <= 2.55
+        ) {
+          this.info.blackthornFlagStatus = 'CARRIED';
+          this.info.blackthornFlagCarrier = 'VOCÊ';
+          if (this.info.squadStats?.[0]) {
+            this.info.squadStats[0].score += 100;
+          }
+          soundEngine.playMechanicalSwitch(1.6);
+          mobileHardware.vibrateHitConfirm(true);
+          this.triggerCaptureAlert(
+            '★ VOCÊ CAPTUROU A BANDEIRA INIMIGA! CORRA PARA A SUA BASE VANGUARD!',
+            'VANGUARD',
+            6000
+          );
+        } else {
+          for (let i = 0; i < allyList.length; i++) {
+            const ally = allyList[i];
+            if (
+              Math.hypot(
+                ally.root.position.x - STATION_ARENA_BLACKTHORN_FLAG_BASE.x,
+                ally.root.position.z - STATION_ARENA_BLACKTHORN_FLAG_BASE.z
+              ) <= 2.45
+            ) {
+              this.info.blackthornFlagStatus = 'CARRIED';
+              this.info.blackthornFlagCarrier = ally.callsign || 'ALIADO';
+              soundEngine.playMechanicalSwitch(1.45);
+              this.triggerCaptureAlert(
+                `★ ${this.info.blackthornFlagCarrier} CAPTUROU A BANDEIRA INIMIGA! PROTEJA O PORTADOR!`,
+                'VANGUARD',
+                5600
+              );
+              break;
+            }
+          }
+        }
       }
-      if (this.info.plantProgress >= 1) {
-        const defusedSite = this.info.plantedSite || 'A';
-        this.isPlantingHeld = false;
-        this.lastKeypadDigitIdx = -1;
-        this.info.plantProgress = 0;
-        this.info.bombStatus = 'DEFUSED';
-        this.c4MeshGroup.visible = false;
-        soundEngine.playMechanicalSwitch(1.6);
-        mobileHardware.vibrateHitConfirm(true);
-        this.onBombStateChangedCb?.('DEFUSED', defusedSite);
+
+      // Update 3D flag positions & HUD coordinates
+      this.vanguardFlagGroup.position.copy(this.vanguardFlagWorldPos);
+      this.blackthornFlagGroup.position.copy(this.blackthornFlagWorldPos);
+      // Hide 3D flag in first-person view when local player is carrying it so it doesn't block camera
+      this.blackthornFlagGroup.visible = this.info.blackthornFlagCarrier !== 'VOCÊ';
+
+      this.info.vanguardFlagPos = {
+        x: this.vanguardFlagWorldPos.x,
+        y: this.vanguardFlagWorldPos.y,
+        z: this.vanguardFlagWorldPos.z,
+      };
+      this.info.blackthornFlagPos = {
+        x: this.blackthornFlagWorldPos.x,
+        y: this.blackthornFlagWorldPos.y,
+        z: this.blackthornFlagWorldPos.z,
+      };
+
+      // Round timer countdown in Capture mode
+      this.info.roundTimerSec = Math.max(0, this.info.roundTimerSec - dt);
+      if (this.info.roundTimerSec <= 0) {
+        const winner: 'VANGUARD' | 'BLACKTHORN' =
+          allies >= enemies ? 'VANGUARD' : 'BLACKTHORN';
         this.finishCurrentRound(
-          'BLACKTHORN',
-          `BOMBA C4 DESARMADA NO PONTO ${defusedSite}!`,
+          winner,
+          winner === 'VANGUARD'
+            ? 'TEMPO ESGOTADO — VANGUARD VENCE POR SUPERIORIDADE TÁTICA!'
+            : 'TEMPO ESGOTADO — BLACKTHORN VENCE POR DEFESA DE BASE!',
           onReward
         );
         return;
       }
-    }
+    } else {
+      this.vanguardFlagGroup.visible = false;
+      this.blackthornFlagGroup.visible = false;
 
-    if (this.info.bombStatus === 'PLANTED' && !this.c4MeshGroup.visible && this.info.plantedSite) {
-      const sitePos = this.info.plantedSite === 'A' ? siteA : siteB;
-      this.c4MeshGroup.position.set(sitePos.x, sitePos.y + 0.12, sitePos.z);
-      this.c4MeshGroup.visible = true;
-      void this.c4EnsureLoaded();
-    }
+      const distA = Math.hypot(playerPos.x - siteA.x, playerPos.z - siteA.z);
+      const distB = Math.hypot(playerPos.x - siteB.x, playerPos.z - siteB.z);
 
-    if (this.info.bombStatus === 'PLANTED') {
-      this.info.c4TimerSec = Math.max(0, this.info.c4TimerSec - dt);
-      const beepInterval = this.info.c4TimerSec < 5 ? 0.18 : this.info.c4TimerSec < 12 ? 0.35 : 0.75;
-      this.beepAccum += dt;
-      if (this.beepAccum >= beepInterval) {
-        this.beepAccum = 0;
-        this.c4LedMesh.visible = !this.c4LedMesh.visible;
-        playRealC4Beep(this.c4MeshGroup.position, playerPos, this.info.c4TimerSec);
-      }
-
-      if (this.info.c4TimerSec <= 0) {
-        const detSite = this.info.plantedSite || 'A';
-        this.info.bombStatus = 'DETONATED';
-        this.c4MeshGroup.visible = false;
-        playC4DetonationExplosion(this.c4MeshGroup.position, playerPos);
-        mobileHardware.vibrateExplosion(1.0);
-        if (this.isOnlineMatch) {
-          this.onBombStateChangedCb?.('DETONATED', detSite);
+      if (playerAlive && distA <= 4.2) {
+        this.info.nearSite = 'A';
+      } else if (playerAlive && distB <= 4.2) {
+        this.info.nearSite = 'B';
+      } else {
+        this.info.nearSite = null;
+        this.isPlantingHeld = false;
+        this.lastKeypadDigitIdx = -1;
+        if (this.info.bombStatus === 'PLANTING') {
+          this.info.bombStatus = 'CARRIED';
+          this.info.plantProgress = 0;
+        } else if (this.info.bombStatus === 'PLANTED') {
+          this.info.plantProgress = 0;
         }
-        this.finishCurrentRound('VANGUARD', `BOMBA C4 DETONADA NO PONTO ${detSite}!`, onReward);
       }
-    } else if (this.info.bombStatus === 'CARRIED' || this.info.bombStatus === 'PLANTING') {
-      this.info.roundTimerSec = Math.max(0, this.info.roundTimerSec - dt);
-      if (this.info.roundTimerSec <= 0) {
-        this.finishCurrentRound('BLACKTHORN', 'TEMPO ESGOTADO — ALVOS A E B DEFENDIDOS PELA BLACKTHORN!', onReward);
+
+      const isOnlineDefender = this.isOnlineMatch && this.onlineLocalTeam === 'BLACKTHORN';
+
+      if (
+        playerAlive &&
+        this.isPlantingHeld &&
+        this.info.nearSite &&
+        !isOnlineDefender &&
+        (this.info.bombStatus === 'CARRIED' || this.info.bombStatus === 'PLANTING')
+      ) {
+        this.info.bombStatus = 'PLANTING';
+        this.info.plantProgress = Math.min(1, this.info.plantProgress + dt / 2.4);
+        const digitIdx = Math.min(7, Math.floor(this.info.plantProgress * 8));
+        if (digitIdx !== this.lastKeypadDigitIdx) {
+          this.lastKeypadDigitIdx = digitIdx;
+          playC4KeypadDigitSound(digitIdx);
+        }
+        if (this.info.plantProgress >= 1) {
+          this.isPlantingHeld = false;
+          this.lastKeypadDigitIdx = -1;
+          this.info.bombStatus = 'PLANTED';
+          this.info.plantedSite = this.info.nearSite;
+          this.info.c4TimerSec = 40;
+          if (this.info.squadStats && this.info.squadStats[0]) {
+            this.info.squadStats[0].score += 100;
+          }
+          recordCombatTelemetryDelta({ bombsPlanted: 1 });
+          const sitePos = this.info.plantedSite === 'A' ? siteA : siteB;
+          this.c4MeshGroup.position.set(sitePos.x, sitePos.y + 0.12, sitePos.z);
+          this.c4MeshGroup.visible = true;
+          void this.c4EnsureLoaded();
+          soundEngine.playMechanicalSwitch(1.45);
+          playRealBombPlantedVoice();
+          mobileHardware.vibrateHitConfirm(true);
+          if (this.isOnlineMatch && this.info.plantedSite) {
+            this.onBombStateChangedCb?.('PLANTED', this.info.plantedSite);
+          }
+        }
+      }
+
+      // BLACKTHORN online defuse when standing near planted C4
+      if (
+        playerAlive &&
+        isOnlineDefender &&
+        this.isPlantingHeld &&
+        this.info.bombStatus === 'PLANTED' &&
+        this.info.nearSite &&
+        this.info.nearSite === this.info.plantedSite
+      ) {
+        this.info.plantProgress = Math.min(1, this.info.plantProgress + dt / 3.2);
+        const digitIdx = Math.min(7, Math.floor(this.info.plantProgress * 8));
+        if (digitIdx !== this.lastKeypadDigitIdx) {
+          this.lastKeypadDigitIdx = digitIdx;
+          playC4KeypadDigitSound(digitIdx);
+        }
+        if (this.info.plantProgress >= 1) {
+          const defusedSite = this.info.plantedSite || 'A';
+          this.isPlantingHeld = false;
+          this.lastKeypadDigitIdx = -1;
+          this.info.plantProgress = 0;
+          this.info.bombStatus = 'DEFUSED';
+          this.c4MeshGroup.visible = false;
+          soundEngine.playMechanicalSwitch(1.6);
+          mobileHardware.vibrateHitConfirm(true);
+          this.onBombStateChangedCb?.('DEFUSED', defusedSite);
+          this.finishCurrentRound(
+            'BLACKTHORN',
+            `BOMBA C4 DESARMADA NO PONTO ${defusedSite}!`,
+            onReward
+          );
+          return;
+        }
+      }
+
+      if (this.info.bombStatus === 'PLANTED' && !this.c4MeshGroup.visible && this.info.plantedSite) {
+        const sitePos = this.info.plantedSite === 'A' ? siteA : siteB;
+        this.c4MeshGroup.position.set(sitePos.x, sitePos.y + 0.12, sitePos.z);
+        this.c4MeshGroup.visible = true;
+        void this.c4EnsureLoaded();
+      }
+
+      if (this.info.bombStatus === 'PLANTED') {
+        this.info.c4TimerSec = Math.max(0, this.info.c4TimerSec - dt);
+        const beepInterval = this.info.c4TimerSec < 5 ? 0.18 : this.info.c4TimerSec < 12 ? 0.35 : 0.75;
+        this.beepAccum += dt;
+        if (this.beepAccum >= beepInterval) {
+          this.beepAccum = 0;
+          this.c4LedMesh.visible = !this.c4LedMesh.visible;
+          playRealC4Beep(this.c4MeshGroup.position, playerPos, this.info.c4TimerSec);
+        }
+
+        if (this.info.c4TimerSec <= 0) {
+          const detSite = this.info.plantedSite || 'A';
+          this.info.bombStatus = 'DETONATED';
+          this.c4MeshGroup.visible = false;
+          playC4DetonationExplosion(this.c4MeshGroup.position, playerPos);
+          mobileHardware.vibrateExplosion(1.0);
+          if (this.isOnlineMatch) {
+            this.onBombStateChangedCb?.('DETONATED', detSite);
+          }
+          this.finishCurrentRound('VANGUARD', `BOMBA C4 DETONADA NO PONTO ${detSite}!`, onReward);
+        }
+      } else if (this.info.bombStatus === 'CARRIED' || this.info.bombStatus === 'PLANTING') {
+        this.info.roundTimerSec = Math.max(0, this.info.roundTimerSec - dt);
+        if (this.info.roundTimerSec <= 0) {
+          this.finishCurrentRound('BLACKTHORN', 'TEMPO ESGOTADO — ALVOS A E B DEFENDIDOS PELA BLACKTHORN!', onReward);
+        }
       }
     }
 

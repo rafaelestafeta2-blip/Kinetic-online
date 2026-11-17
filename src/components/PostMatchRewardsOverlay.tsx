@@ -69,23 +69,23 @@ export const PostMatchRewardsOverlay: React.FC<PostMatchRewardsOverlayProps> = (
   return (
     <div
       onPointerDown={(e) => e.stopPropagation()}
-      className="fixed inset-0 z-70 bg-[#04070e]/92 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 select-none"
+      className="fixed inset-0 z-70 bg-[#04070e]/92 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 select-none overflow-y-auto"
     >
-      <div className="w-full max-w-lg rounded-2xl border border-amber-400/35 bg-gradient-to-b from-[#101827] to-[#070b14] shadow-2xl overflow-hidden">
-        <div className="px-4 pt-4 pb-3 border-b border-white/10 flex items-center justify-between gap-3">
+      <div className="w-full max-w-lg max-h-[94dvh] flex flex-col rounded-2xl border border-amber-400/35 bg-gradient-to-b from-[#101827] to-[#070b14] shadow-2xl overflow-hidden">
+        <div className="px-3.5 py-2.5 sm:px-4 sm:py-3 border-b border-white/10 flex items-center justify-between gap-3 shrink-0">
           <div>
-            <div className="text-[10px] font-mono tracking-[0.28em] text-amber-300/80 uppercase">
+            <div className="text-[9px] sm:text-[10px] font-mono tracking-[0.26em] text-amber-300/80 uppercase">
               Recompensas da Partida
             </div>
-            <h2 className="font-display font-black text-xl text-white tracking-wider uppercase">
+            <h2 className="font-display font-black text-base sm:text-xl text-white tracking-wider uppercase leading-tight">
               {isVictory ? 'Vitória · Progressão' : 'Derrota · Progressão'}
             </h2>
           </div>
-          <WarfaceRankIcon level={endRank.level} className="w-12 h-12" />
+          <WarfaceRankIcon level={endRank.level} className="w-9 h-9 sm:w-11 sm:h-11 shrink-0" />
         </div>
 
-        <div className="p-4 space-y-4">
-          <div className="rounded-xl border border-white/10 bg-black/30 p-3 space-y-2">
+        <div className="p-3 sm:p-4 space-y-2.5 sm:space-y-3 overflow-y-auto flex-1 min-h-0">
+          <div className="rounded-xl border border-white/10 bg-black/30 p-2.5 sm:p-3 space-y-1.5">
             <div className="flex items-center justify-between text-xs font-mono">
               <span className="text-slate-300">
                 Patente {startRank} → {endRank.level}
@@ -95,7 +95,7 @@ export const PostMatchRewardsOverlay: React.FC<PostMatchRewardsOverlayProps> = (
               </span>
               <span className="text-amber-300 font-bold">+{xpGained} XP</span>
             </div>
-            <div className="h-2.5 rounded-full bg-slate-800 overflow-hidden border border-white/10">
+            <div className="h-2 rounded-full bg-slate-800 overflow-hidden border border-white/10">
               <div
                 className="h-full bg-gradient-to-r from-amber-500 to-sky-400"
                 style={{ width: `${xpPct}%` }}
@@ -110,40 +110,40 @@ export const PostMatchRewardsOverlay: React.FC<PostMatchRewardsOverlayProps> = (
           </div>
 
           <div className="grid grid-cols-2 gap-2">
-            <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-3">
-              <div className="text-[10px] font-mono text-emerald-300/80 uppercase">
+            <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-2.5 sm:p-3">
+              <div className="text-[9px] sm:text-[10px] font-mono text-emerald-300/80 uppercase">
                 Créditos
               </div>
-              <div className="text-2xl font-display font-black text-emerald-300 tabular-nums">
+              <div className="text-lg sm:text-2xl font-display font-black text-emerald-300 tabular-nums leading-tight">
                 +${cashGained.toLocaleString('pt-BR')}
               </div>
-              <div className="text-[10px] font-mono text-slate-400">
+              <div className="text-[9px] sm:text-[10px] font-mono text-slate-400">
                 Saldo ${profile.playerCash.toLocaleString('pt-BR')}
               </div>
             </div>
-            <div className="rounded-xl border border-sky-400/30 bg-sky-500/10 p-3">
-              <div className="text-[10px] font-mono text-sky-300/80 uppercase">
+            <div className="rounded-xl border border-sky-400/30 bg-sky-500/10 p-2.5 sm:p-3">
+              <div className="text-[9px] sm:text-[10px] font-mono text-sky-300/80 uppercase">
                 Experiência
               </div>
-              <div className="text-2xl font-display font-black text-sky-300 tabular-nums">
+              <div className="text-lg sm:text-2xl font-display font-black text-sky-300 tabular-nums leading-tight">
                 +{xpGained}
               </div>
-              <div className="text-[10px] font-mono text-slate-400">
+              <div className="text-[9px] sm:text-[10px] font-mono text-slate-400">
                 Total {endXp.toLocaleString('pt-BR')} XP
               </div>
             </div>
           </div>
 
-          <div className="rounded-xl border border-white/10 bg-black/25 p-3">
-            <div className="text-[10px] font-mono tracking-wider text-amber-200 uppercase mb-2">
+          <div className="rounded-xl border border-white/10 bg-black/25 p-2.5 sm:p-3">
+            <div className="text-[9px] sm:text-[10px] font-mono tracking-wider text-amber-200 uppercase mb-1">
               Desbloqueios
             </div>
             {newUnlocks.length === 0 ? (
-              <p className="text-xs font-mono text-slate-400">
+              <p className="text-[11px] font-mono text-slate-400 leading-snug">
                 Nenhum item novo nesta partida. Continue jogando para liberar armas e acessórios.
               </p>
             ) : (
-              <ul className="space-y-1.5">
+              <ul className="space-y-1">
                 {newUnlocks.map((label) => (
                   <li
                     key={label}
@@ -158,11 +158,11 @@ export const PostMatchRewardsOverlay: React.FC<PostMatchRewardsOverlayProps> = (
           </div>
         </div>
 
-        <div className="px-4 pb-4">
+        <div className="px-3.5 pb-3 pt-2 sm:px-4 sm:pb-4 border-t border-white/10 shrink-0 bg-[#070b14]/90">
           <button
             type="button"
             {...bindTap(onContinue)}
-            className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 font-display font-black tracking-wider uppercase text-sm shadow-[0_0_24px_rgba(245,158,11,0.35)] active:scale-[0.98] cursor-pointer"
+            className="w-full py-2 sm:py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 font-display font-black tracking-wider uppercase text-xs sm:text-sm shadow-[0_0_20px_rgba(245,158,11,0.35)] active:scale-[0.98] cursor-pointer"
           >
             Continuar para o Lobby
           </button>

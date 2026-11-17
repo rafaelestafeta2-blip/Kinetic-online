@@ -24,12 +24,12 @@ export interface IncomingHitLike {
   weaponId?: string;
 }
 
-const MAX_DAMAGE = 120;
-const MIN_HIT_INTERVAL_MS = 45;
-const POSE_HISTORY = 20;
+const MAX_DAMAGE = 200;
+const MIN_HIT_INTERVAL_MS = 18;
+const POSE_HISTORY = 24;
 
 const poseByRoom = new Map<string, Map<string, ServerPoseSample[]>>();
-const lastHitByAttacker = new Map<string, number>();
+const lastHitByAttackerTarget = new Map<string, number>();
 const seenEventIds = new Set<string>();
 
 export function recordServerPlayerPose(
@@ -74,7 +74,8 @@ export function validateCombatHit(
     return { ok: false, reason: 'duplicate' };
   }
   const now = Date.now();
-  const last = lastHitByAttacker.get(hit.attackerUid) || 0;
+  const pairKey = `${hit.attackerUid}:${hit.targetUid}`;
+  const last = lastHitByAttackerTarget.get(pairKey) || 0;
   if (now - last < MIN_HIT_INTERVAL_MS) {
     return { ok: false, reason: 'rate_limit' };
   }
@@ -93,7 +94,7 @@ export function validateCombatHit(
     const a = atkRing[atkRing.length - 1];
     const v = vicRing[vicRing.length - 1];
     const dist = Math.hypot(a.x - v.x, a.y - v.y, a.z - v.z);
-    if (dist > 220) {
+    if (dist > 250) {
       return { ok: false, reason: 'range' };
     }
   }
@@ -103,7 +104,7 @@ export function validateCombatHit(
     const first = seenEventIds.values().next().value;
     if (first) seenEventIds.delete(first);
   }
-  lastHitByAttacker.set(hit.attackerUid, now);
+  lastHitByAttackerTarget.set(pairKey, now);
 
   return {
     ok: true,

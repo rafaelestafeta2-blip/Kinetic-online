@@ -1,3 +1,5 @@
+export type WarfaceClassId = 'FUZILEIRO' | 'MEDICO' | 'ENGENHEIRO' | 'FRANCO_ATIRADOR';
+
 export type GameScreenState =
   | 'INTRO'
   | 'VIDEO_INTRO'
@@ -46,6 +48,7 @@ export type DrillMode =
   | 'HANGAR_BOMB_5V5'
   | 'EASTERN_CITY_BOMB_5V5'
   | 'MIRAGE_ANUBIS_BOMB_5V5'
+  | 'STATION_CAPTURE_5V5'
   /** Isolated GLB+floor harness (no online / bomb / bots). */
   | 'MAP_TEST_INDUSTRIA'
   | 'MAP_TEST_HANGAR'
@@ -112,6 +115,17 @@ export interface YardBombHudInfo {
   spectatedWeapon?: WeaponId;
   spectatedHealth?: number;
   squadStats?: SquadOperatorStats[];
+  /** Warface Capture the Flag (STATION_CAPTURE_5V5) telemetry. */
+  isCaptureMode?: boolean;
+  vanguardFlagStatus?: 'AT_BASE' | 'CARRIED' | 'DROPPED';
+  blackthornFlagStatus?: 'AT_BASE' | 'CARRIED' | 'DROPPED';
+  vanguardFlagCarrier?: string | null;
+  blackthornFlagCarrier?: string | null;
+  vanguardFlagPos?: { x: number; y: number; z: number };
+  blackthornFlagPos?: { x: number; y: number; z: number };
+  captureAlertText?: string | null;
+  captureAlertTeam?: 'VANGUARD' | 'BLACKTHORN' | 'NEUTRAL' | null;
+  captureAlertUntilMs?: number;
 }
 
 export interface BallisticShotTelemetry {
@@ -223,6 +237,7 @@ export interface HudState {
     z: number;
     isDown: boolean;
     isAlly?: boolean;
+    isRevealed?: boolean;
   }>;
 
   // Combat & Drill Telemetry
