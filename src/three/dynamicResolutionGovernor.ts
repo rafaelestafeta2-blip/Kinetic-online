@@ -68,10 +68,14 @@ export function updateDynamicResolutionGovernor(
   );
   const targetCeiling =
     hud.qualityPreset === 'COMPETITIVE_120'
-      ? Math.min(maxDpr, 1.05)
+      ? Math.min(maxDpr, 1.35)
       : hud.qualityPreset === 'BALANCED_60'
-        ? Math.min(maxDpr, 1.4)
+        ? Math.min(maxDpr, 1.65)
         : maxDpr;
+  const minScale =
+    maxDpr >= 1.5
+      ? Math.max(1.15, maxDpr * 0.62)
+      : Math.max(0.78, maxDpr * 0.78);
 
   if (avgFps < 48) {
     drs.lowFpsStreak += 1;
@@ -85,8 +89,8 @@ export function updateDynamicResolutionGovernor(
   }
 
   let nextScale = drs.currentRenderScale;
-  if (drs.lowFpsStreak >= 2 && drs.currentRenderScale > 0.65) {
-    nextScale = Math.max(0.65, drs.currentRenderScale - 0.08);
+  if (drs.lowFpsStreak >= 2 && drs.currentRenderScale > minScale) {
+    nextScale = Math.max(minScale, drs.currentRenderScale - 0.08);
   } else if (drs.highFpsStreak >= 6 && drs.currentRenderScale < targetCeiling) {
     nextScale = Math.min(targetCeiling, drs.currentRenderScale + 0.08);
   }

@@ -550,7 +550,7 @@ export class TacticalFPSEngine {
     this.renderer.toneMappingExposure = 0.95;
     this.currentRenderScale = this.isSoftwareGl
       ? 1.0
-      : Math.min(window.devicePixelRatio || 1, 1.35);
+      : Math.min(window.devicePixelRatio || 1, 1.65);
     this.renderer.setPixelRatio(this.currentRenderScale);
     this.renderer.setSize(container.clientWidth, container.clientHeight);
     attachCompressedTextureSupport(this.renderer);

@@ -129,18 +129,22 @@ function createTacticalFlagProp(colorHex: number, teamLabel: 'VANGUARD' | 'BLACK
   const flagTex = new THREE.CanvasTexture(canvas);
   flagTex.colorSpace = THREE.SRGBColorSpace;
   const bannerGeo = new THREE.PlaneGeometry(1.15, 0.62, 8, 2);
-  const bannerMesh = new THREE.Mesh(
-    bannerGeo,
-    new THREE.MeshBasicMaterial({
-      map: flagTex,
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.96,
-    })
-  );
-  bannerMesh.position.set(0.58, 2.22, 0);
+  const bannerMat = new THREE.MeshBasicMaterial({
+    map: flagTex,
+    side: THREE.FrontSide,
+    transparent: true,
+    opacity: 0.96,
+  });
+  const bannerMesh = new THREE.Mesh(bannerGeo, bannerMat);
+  bannerMesh.position.set(0.58, 2.22, 0.002);
   bannerMesh.userData.ignoreCollider = true;
   group.add(bannerMesh);
+
+  const backBannerMesh = new THREE.Mesh(bannerGeo, bannerMat);
+  backBannerMesh.position.set(0, 0, -0.004);
+  backBannerMesh.rotation.y = Math.PI;
+  backBannerMesh.userData.ignoreCollider = true;
+  bannerMesh.add(backBannerMesh);
 
   return { group, bannerMesh, ringMesh };
 }

@@ -97,11 +97,12 @@ export function detectDeviceCapability(): DeviceCapability {
 
   const cpuCores =
     typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 4;
-  const memoryGb =
-    typeof navigator !== 'undefined' &&
-    (navigator as unknown as { deviceMemory?: number }).deviceMemory
-      ? (navigator as unknown as { deviceMemory: number }).deviceMemory
-      : 4;
+  const rawDeviceMemory =
+    typeof navigator !== 'undefined'
+      ? (navigator as unknown as { deviceMemory?: number }).deviceMemory
+      : undefined;
+  const hasDeviceMemory = typeof rawDeviceMemory === 'number' && rawDeviceMemory > 0;
+  const memoryGb = hasDeviceMemory ? rawDeviceMemory : 6;
 
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
   const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
@@ -154,23 +155,22 @@ export function detectDeviceCapability(): DeviceCapability {
   }
 
   // CPU e RAM só rebaixam o nível, nunca elevam
-  if (tier === 'ULTRA' && (cpuCores < 6 || memoryGb < 6)) {
+  if (tier === 'ULTRA' && (cpuCores < 6 || (hasDeviceMemory && memoryGb < 6))) {
     tier = 'HIGH';
   }
-  if (tier === 'HIGH' && (cpuCores < 4 || memoryGb < 4)) {
+  if (tier === 'HIGH' && (cpuCores < 4 || (hasDeviceMemory && memoryGb < 4))) {
     tier = 'MEDIUM';
   }
-  if (tier === 'MEDIUM' && (cpuCores < 4 || memoryGb < 3)) {
+  if (tier === 'MEDIUM' && (cpuCores < 4 || (hasDeviceMemory && memoryGb < 3))) {
     tier = 'LOW';
   }
 
-  // Mobile mid-range phones often report optimistic GPU names but thermal-throttle hard.
-  // Prefer stable 40–60 FPS over brief ULTRA spikes.
+  // Mobile phones thermal-throttle at sustained 120Hz ULTRA; cap AUTO mobile at HIGH/MEDIUM safely
+  // without blindly demoting devices whose WebView omits navigator.deviceMemory.
   if (isMobile) {
     if (tier === 'ULTRA') tier = 'HIGH';
-    if (tier === 'HIGH' && (memoryGb <= 4 || cpuCores <= 6)) tier = 'MEDIUM';
-    if (tier === 'MEDIUM' && (memoryGb <= 3 || cpuCores <= 4)) tier = 'LOW';
-    // Common low Adreno/Mali already LOW; keep.
+    if (tier === 'HIGH' && ((hasDeviceMemory && memoryGb <= 3) || cpuCores <= 4)) tier = 'MEDIUM';
+    if (tier === 'MEDIUM' && ((hasDeviceMemory && memoryGb <= 2) || cpuCores <= 2)) tier = 'LOW';
   }
 
   return {
@@ -189,25 +189,24 @@ export function getPresetSettings(
   switch (tier) {
     case 'LOW':
       return {
-        // Weak phones: prioritize frame time over resolution.
-        resolution: 'SCALE_50',
+        resolution: 'SCALE_65',
         shadows: 'OFF',
-        textures: 'LOW',
+        textures: 'MEDIUM',
         viewDistance: 'NEAR',
         fog: false,
         pbrReflections: false,
         muzzleLight: false,
-        acesToneMapping: false,
-        fpsLimit: 30,
+        acesToneMapping: true,
+        fpsLimit: 60,
       };
     case 'MEDIUM':
       return {
-        resolution: 'AUTO_ECO',
+        resolution: 'AUTO_BALANCED',
         shadows: 'LOW',
-        textures: 'MEDIUM',
+        textures: 'HIGH',
         viewDistance: 'MEDIUM',
         fog: true,
-        pbrReflections: false,
+        pbrReflections: true,
         muzzleLight: false,
         acesToneMapping: true,
         fpsLimit: 60,
@@ -245,7 +244,7 @@ export function getDefaultGameSettings(): GameSettings {
   return {
     ...base,
     preset: 'AUTO',
-    tacticalPostFx: cap.tier === 'HIGH' || cap.tier === 'ULTRA',
+    tacticalPostFx: cap.tier !== 'LOW',
     showFpsCounter: false,
     showSpawnDebug: false,
     batterySaver: false,
@@ -358,7 +357,16 @@ export function loadGameSettings(): GameSettings {
     const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
     if (!raw) return getDefaultGameSettings();
     const parsed = JSON.parse(raw);
-    return validateSettings(parsed);
+    const validated = validateSettings(parsed);
+    if (validated.preset === 'AUTO') {
+      const cap = detectDeviceCapability();
+      return {
+        ...validated,
+        ...getPresetSettings(cap.tier),
+        tacticalPostFx: cap.tier !== 'LOW',
+      };
+    }
+    return validated;
   } catch {
     return getDefaultGameSettings();
   }
@@ -390,7 +398,7 @@ export function applyPreset(
   return {
     ...current,
     ...graphicFields,
-    tacticalPostFx: resolvedTier === 'HIGH' || resolvedTier === 'ULTRA',
+    tacticalPostFx: resolvedTier !== 'LOW',
     preset,
   };
 }

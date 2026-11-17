@@ -36,6 +36,7 @@ interface EngineGraphicsCache {
   lastAcesToneMapping: boolean | null;
   lastTextureQuality: GameSettings['textures'] | null;
   lastAnisotropy: number | null;
+  lastResolutionMode: GameSettings['resolution'] | null;
   cachedEnvironmentTex: THREE.Texture | null;
 }
 
@@ -80,6 +81,7 @@ export function applyGraphicsToEngine(
       lastAcesToneMapping: null,
       lastTextureQuality: null,
       lastAnisotropy: null,
+      lastResolutionMode: null,
       cachedEnvironmentTex: scene.environment || null,
     };
     engineCacheMap.set(rawEngine, cache);
@@ -121,16 +123,19 @@ export function applyGraphicsToEngine(
 
   if (settings.resolution === 'AUTO_ECO') {
     engine.state.qualityPreset = 'COMPETITIVE_120';
-    autoCeiling = Math.min(maxDpr, 1.05);
+    autoCeiling = Math.min(maxDpr, 1.35);
   } else if (settings.resolution === 'AUTO_BALANCED') {
     engine.state.qualityPreset = 'BALANCED_60';
-    autoCeiling = Math.min(maxDpr, 1.4);
+    autoCeiling = Math.min(maxDpr, 1.65);
   } else if (settings.resolution === 'AUTO_MAX') {
     engine.state.qualityPreset = 'ULTRA_PBR';
     autoCeiling = maxDpr;
   }
 
-  let resolvedScale = engine.currentRenderScale > 0 ? engine.currentRenderScale : 1.0;
+  const resModeChanged = cache.lastResolutionMode !== settings.resolution;
+  cache.lastResolutionMode = settings.resolution;
+
+  let resolvedScale = engine.currentRenderScale > 0 ? engine.currentRenderScale : autoCeiling;
   let enableDrs = true;
 
   if (effectiveFpsLimit === 30 || settings.batterySaver) {
@@ -140,9 +145,7 @@ export function applyGraphicsToEngine(
         parseInt(settings.resolution.replace('SCALE_', ''), 10) || 100;
       resolvedScale = maxDpr * (pct / 100);
     } else {
-      const currentOrMax =
-        engine.currentRenderScale > 0 ? engine.currentRenderScale : autoCeiling;
-      resolvedScale = Math.min(currentOrMax, autoCeiling);
+      resolvedScale = resModeChanged ? autoCeiling : Math.min(resolvedScale, autoCeiling);
     }
   } else if (settings.resolution.startsWith('SCALE_')) {
     enableDrs = false;
@@ -150,9 +153,7 @@ export function applyGraphicsToEngine(
     resolvedScale = maxDpr * (pct / 100);
   } else {
     enableDrs = true;
-    const currentOrMax =
-      engine.currentRenderScale > 0 ? engine.currentRenderScale : autoCeiling;
-    resolvedScale = Math.min(currentOrMax, autoCeiling);
+    resolvedScale = resModeChanged ? autoCeiling : Math.min(resolvedScale, autoCeiling);
   }
 
   engine.state.dynamicResolutionEnabled = enableDrs;
@@ -303,10 +304,10 @@ export function applyGraphicsToEngine(
 
   // 8. Texturas, Anisotropia e Normal/Bump Maps (sem trava para cobrir assets carregados depois)
   const hwMaxAnisotropy = Math.max(1, renderer.capabilities.getMaxAnisotropy());
-  let desiredAniso = 1;
+  let desiredAniso = 2;
   switch (settings.textures) {
     case 'LOW':
-      desiredAniso = 1;
+      desiredAniso = 2;
       break;
     case 'MEDIUM':
       desiredAniso = 4;
