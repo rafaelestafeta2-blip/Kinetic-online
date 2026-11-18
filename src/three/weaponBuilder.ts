@@ -1453,11 +1453,43 @@ export function buildTacticalWeaponRig(
               std.map.colorSpace = THREE.SRGBColorSpace;
               std.map.needsUpdate = true;
             }
-            if (std.color) {
+            if (std.color && std.map) {
               std.color.setHex(0xffffff);
             }
             const matName = (std.name || '').toLowerCase();
-            if (
+            if (opts.weaponId === 'S_MILITARY' && matName === 'mi_manny_02') {
+              // Tactical operator gloves & forearm armor plates (seamless TrekDry leather/micro-weave)
+              const gloveMap = textures.gloveFabric.clone();
+              gloveMap.repeat.set(8, 8);
+              gloveMap.needsUpdate = true;
+              const gloveBump = textures.gloveBump.clone();
+              gloveBump.repeat.set(8, 8);
+              gloveBump.needsUpdate = true;
+              std.map = gloveMap;
+              std.bumpMap = gloveBump;
+              std.bumpScale = 0.008;
+              std.color.setHex(0x323944);
+              std.roughness = 0.62;
+              std.metalness = 0.14;
+              std.vertexColors = false;
+              std.needsUpdate = true;
+            } else if (opts.weaponId === 'S_MILITARY' && matName === 'mi_manny_01') {
+              // Combat Ripstop MultiCam / Ranger tactical sleeves
+              const sleeveMap = textures.combatSleeve.clone();
+              sleeveMap.repeat.set(6, 6);
+              sleeveMap.needsUpdate = true;
+              const sleeveBump = textures.gloveBump.clone();
+              sleeveBump.repeat.set(6, 6);
+              sleeveBump.needsUpdate = true;
+              std.map = sleeveMap;
+              std.bumpMap = sleeveBump;
+              std.bumpScale = 0.004;
+              std.color.setHex(0xd4ddd0);
+              std.roughness = 0.84;
+              std.metalness = 0.04;
+              std.vertexColors = false;
+              std.needsUpdate = true;
+            } else if (
               opts.weaponId === 'S_MILITARY' &&
               (matName === 'm_holoshort_opacity' ||
                 matName.includes('holoshort_opacity'))

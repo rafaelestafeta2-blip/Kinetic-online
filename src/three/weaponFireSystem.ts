@@ -5,6 +5,7 @@ import {
   playMaterialImpact3D,
   playShellCasingDrop3D,
 } from '../audio/tacticalImmersionAudio';
+import { getWeaponBallistics } from '../data/weaponBallistics';
 import { getSprayOffset, getWeaponFeel } from '../data/weaponFeel';
 import { mobileHardware } from '../mobile/nativeHardware';
 import { samplePeerPoseAt } from '../multiplayer/peerSnapshotBuffer';
@@ -342,18 +343,12 @@ export function executeSingleShot(engine: any): void {
 
     engine.weaponRig.muzzleWorldPos.getWorldPosition(_worldPos2);
 
-    const pelletCount = isShotgun ? 8 : 1;
+    const ballistics = getWeaponBallistics(engine.state.activeWeapon as WeaponId);
+    const pelletCount = ballistics.pelletCount;
     const baseDir = _rayDir.clone();
-    const pelletSpread =
-      engine.state.activeWeapon === 'SHOTGUN_12'
-        ? wasScopedAtShot
-          ? 0.036
-          : 0.052
-        : engine.state.activeWeapon === 'SHOTGUN_SPAS'
-          ? wasScopedAtShot
-            ? 0.04
-            : 0.058
-          : 0;
+    const pelletSpread = wasScopedAtShot
+      ? ballistics.pelletSpreadAds
+      : ballistics.pelletSpreadHip;
 
     // For bolt-action Snipers: immediately exit the scope zoom AFTER the shot raycast so the player sees the 3D bolt-action animation!
     if (isSniper && wasScopedAtShot) {
@@ -406,7 +401,7 @@ export function executeSingleShot(engine: any): void {
           }
         }
         engine.raycaster.set(_rayOrigin, pDir);
-        engine.raycaster.far = isShotgun ? 34 : 140;
+        engine.raycaster.far = ballistics.maxRange;
 
         const glbCollider =
           engine.state.drillMode === 'DUST2_BOMB_5V5'
@@ -486,7 +481,9 @@ export function executeSingleShot(engine: any): void {
             }
           }
         } else if (p < 2) {
-          _worldPos.copy(_rayOrigin).addScaledVector(pDir, isShotgun ? 28 : 80);
+          _worldPos
+            .copy(_rayOrigin)
+            .addScaledVector(pDir, Math.min(80, ballistics.maxRange));
           engine.fxPool.spawnTracer(_worldPos2, _worldPos);
         }
       }

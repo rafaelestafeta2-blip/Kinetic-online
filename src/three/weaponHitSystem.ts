@@ -1,16 +1,13 @@
 import * as THREE from 'three';
-import {
-  playKillConfirmSound,
-  playRealHitmarkerSound,
-} from '../audio/characterAndBombAudio';
 import { soundEngine } from '../audio/soundEngine';
 import { triggerTacticalRadioCallout } from '../audio/tacticalImmersionAudio';
+import { computeBallisticDamage } from '../data/weaponBallistics';
 import { mobileHardware } from '../mobile/nativeHardware';
 import {
-  getLocalOnlinePlayerState,
   isOnlineMatchActive,
   publishCombatHit,
 } from '../multiplayer/onlineRoomService';
+import { WeaponId } from '../types/game';
 import { triggerBotHitAnimation } from './botCharacterSystem';
 import { alertBotsToPlayerCombat } from './botNavigationSystem';
 import { YardBotEntity } from './yardPropsBuilder';
@@ -21,10 +18,16 @@ export function handleTargetHit(engine: any, targetId: string, hitZone: 'HEAD' |
     const target = engine.targetMap.get(targetId);
     if (!target || target.isDown || (target as YardBotEntity).isAlly) return;
 
-    engine.state.hits += 1;
-    const velocityMs = Math.round(
-      Math.max(420, (engine.state.suppressorAttached ? 915 : 890) - distanceMeters * 2.4)
+    const weaponId = engine.state.activeWeapon as WeaponId;
+    const ballisticsHit = computeBallisticDamage(
+      weaponId,
+      distanceMeters,
+      hitZone === 'STEEL_GONG' ? 'TORSO_A' : hitZone,
+      Boolean(engine.state.suppressorAttached)
     );
+
+    engine.state.hits += 1;
+    const velocityMs = ballisticsHit.velocityMs;
 
     if (hitZone === 'STEEL_GONG') {
       // Steel Gong Harmonics & Reactive Swing
@@ -41,17 +44,17 @@ export function handleTargetHit(engine: any, targetId: string, hitZone: 'HEAD' |
     }
 
     const isSniper =
-      engine.state.activeWeapon === 'SNIPER_BOLT' ||
-      engine.state.activeWeapon === 'SNIPER_TACTICAL';
+      weaponId === 'SNIPER_BOLT' ||
+      weaponId === 'SNIPER_TACTICAL';
 
     if (hitZone === 'ARMOR' && target.armorHealth > 0) {
-      if (isSniper) {
+      if (ballisticsHit.armorPiercing) {
         // Sniper .338 Lapua / .308 AP round punches straight through armor, shattering it and continuing to lethal body damage
         target.armorHealth = 0;
         if (target.armorMesh) target.armorMesh.visible = false;
         soundEngine.playImpact('ARMOR_BREAK');
       } else {
-        target.armorHealth -= isShotgunPellet ? 16 : 34;
+        target.armorHealth -= ballisticsHit.armorDamage;
         target.hitTiltVelocity = -5.5;
         triggerBotHitAnimation(target);
         engine.fxPool.spawnImpactFX(hitPoint, hitNormal, true, false);
@@ -67,25 +70,18 @@ export function handleTargetHit(engine: any, targetId: string, hitZone: 'HEAD' |
         } else {
           soundEngine.playImpact('TORSO');
         }
-        engine.recordShotTelemetry(distanceMeters, 'ARMOR', isShotgunPellet ? 14 : 25, velocityMs);
+        engine.recordShotTelemetry(
+          distanceMeters,
+          'ARMOR',
+          Math.max(1, Math.round(ballisticsHit.armorDamage * 0.75)),
+          velocityMs
+        );
         return;
       }
     }
 
     const isHead = hitZone === 'HEAD';
-    let damage = isSniper ? 250 : isHead ? 110 : 42;
-    if (isShotgunPellet) {
-      // Short-range 12ga buckshot: devastating <= 11m, steep falloff beyond 18m
-      const closeFactor =
-        distanceMeters <= 10
-          ? 1.0
-          : distanceMeters >= 24
-            ? 0.2
-            : 1.0 - ((distanceMeters - 10) / 14) * 0.8;
-      const perPelletBase =
-        engine.state.activeWeapon === 'SHOTGUN_12' ? 28 : 24;
-      damage = Math.max(4, Math.round(perPelletBase * closeFactor * (isHead ? 1.5 : 1.0)));
-    }
+    const damage = ballisticsHit.damage;
     target.health -= damage;
     if (isOnlineMatchActive() && target.root.userData?.remotePlayerUid) {
       publishCombatHit(
@@ -103,9 +99,6 @@ export function handleTargetHit(engine: any, targetId: string, hitZone: 'HEAD' |
     engine.state.hitMarkerAlpha = 1.0;
     engine.state.hitMarkerIsCrit = isHead || isSniper;
     engine.state.hitMarkerIsKill = target.health <= 0;
-    if (target.health > 0) {
-      playRealHitmarkerSound(isHead || isSniper);
-    }
 
     if (isHead || isSniper) {
       if (isHead) engine.state.headshots += 1;
@@ -144,7 +137,6 @@ export function handleTargetHit(engine: any, targetId: string, hitZone: 'HEAD' |
       engine.state.hitMarkerIsKill = true;
       engine.state.killConfirmAlpha = 1.0;
       engine.state.killConfirmLabel = isHead ? 'HEADSHOT · HITKILL' : 'ABATE CONFIRMADO';
-      playKillConfirmSound(isHead);
 
       const bot = target as YardBotEntity;
       if (engine.state.drillMode !== 'FREE_RANGE') {

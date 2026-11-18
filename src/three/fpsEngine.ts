@@ -1,8 +1,6 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import {
-  playKillConfirmSound,
-  playRealHitmarkerSound,
   playRealPlayerHitGrunt,
   preloadCharacterAndBombAudio,
   stopMatchEndFanfare,
@@ -2077,9 +2075,6 @@ export class TacticalFPSEngine {
         this.state.killConfirmAlpha = 1.0;
         this.state.killConfirmLabel =
           killsCount > 1 ? `${killsCount}x HITKILL!` : 'ABATE CONFIRMADO';
-        playKillConfirmSound(false);
-      } else {
-        playRealHitmarkerSound(false);
       }
       this.state.reloadTypeLabel =
         killsCount > 0
