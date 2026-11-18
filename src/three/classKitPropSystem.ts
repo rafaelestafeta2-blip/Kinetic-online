@@ -15,11 +15,12 @@ import {
   getKitUseTimings,
   preloadMixamoAnimPack,
 } from './mixamoAnimPackLoader';
+import { resolveAssetUrl } from '../utils/assetUrl';
 
 const KIT_URLS: Record<'AMMO' | 'HEAL' | 'ARMOR', string> = {
-  AMMO: '/models/props/class_kits/ammo_crate.glb',
-  HEAL: '/models/props/class_kits/medkit.glb',
-  ARMOR: '/models/props/class_kits/armor_plate.glb',
+  AMMO: resolveAssetUrl('/models/props/class_kits/ammo_crate.glb'),
+  HEAL: resolveAssetUrl('/models/props/class_kits/medkit.glb'),
+  ARMOR: resolveAssetUrl('/models/props/class_kits/armor_plate.glb'),
 };
 
 /** Target world size (meters) for 1P hold vs world/gesture prop. */

@@ -53,6 +53,7 @@ import {
 } from './standerTiroBuilder';
 import { YardBotEntity } from './yardPropsBuilder';
 import { arenaAssetMode, isMapSpawnHarness } from './mapModeUtils';
+import { applyMobileTextureBudget } from './gpuBudget';
 
 /** Block match start when GLB bake produced an empty / unready floor (→ white void). */
 function assertGlbFloorReady(label: string, bundle: Dust2LevelBundle): void {
@@ -494,6 +495,7 @@ export async function prepareMatchArena(
   }
 
   if (!isSoftwareGl) {
+    applyMobileTextureBudget(activeGroup, renderer, isSoftwareGl, 1024);
     const textureSet = new Set<THREE.Texture>();
     activeGroup.traverse((obj) => {
       if ((obj as THREE.Mesh).isMesh) {

@@ -623,7 +623,7 @@ export function updatePlayerMovementAndCollision(engine: any, dt: number): void 
           (engine.cameraShake || 0) + 0.006 * impact,
           0.02
         );
-        soundEngine.playFootstep(true, false);
+        soundEngine.playPlayerLand(impact);
       }
       engine.playerPos.y = groundHeight;
       engine.playerVel.y = 0;

@@ -6,10 +6,11 @@ import { Dust2TriangleCollider } from './dust2Collider';
 import { Dust2LevelBundle, runExclusiveGlbLoad } from './dust2LevelBuilder';
 import { TacticalTargetEntity } from './levelBuilder';
 import { YardBotEntity } from './yardPropsBuilder';
+import { resolveAssetUrl } from '../utils/assetUrl';
 
 /** Station Arena — FBX urban transit station + 2048x2048 PBR atlas (`Arena_tex01.png`). */
-export const STATION_ARENA_FBX_URL = '/maps/station_arena/Station_Arena.FBX';
-export const STATION_ARENA_ATLAS_URL = '/maps/station_arena/Arena_tex01.png';
+export const STATION_ARENA_FBX_URL = resolveAssetUrl('/maps/station_arena/Station_Arena.FBX');
+export const STATION_ARENA_ATLAS_URL = resolveAssetUrl('/maps/station_arena/Arena_tex01.png');
 
 /**
  * Raw FBX units are in centimeters (`Ground_0` is 1783 × 1556 units).

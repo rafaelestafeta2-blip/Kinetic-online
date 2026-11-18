@@ -1,5 +1,21 @@
-// Hybrid Real Sample (.WAV) + Procedural Web Audio API Tactical Sound Engine
+// Hybrid Real Sample (.WAV/.MP3) + Procedural Web Audio API Tactical Sound Engine
 import { WeaponId } from '../types/game';
+import {
+  createMultiVariationBank,
+  createSingleClipBank,
+  decodeMultiBank,
+  decodeSingleBank,
+  KINEMATION_FOOTSTEP_URLS,
+  KINEMATION_SHOT_URLS,
+  KINEMATION_SINGLE_URLS,
+  MultiVariationBank,
+  pickMultiDecodedBuffer,
+  playMultiBankSample,
+  playSingleBankSample,
+  preloadMultiBank,
+  preloadSingleBank,
+  SingleClipBank,
+} from './kinemationAudioBank';
 
 export const DESERT_EAGLE_WAV_LOCAL_URL =
   '/sounds/151071__vabadus__desert-eagle.wav';
@@ -311,6 +327,46 @@ class TacticalSoundEngine {
   private footstepRunPool: HTMLAudioElement[] = [];
   private footstepRunPoolIdx = 0;
 
+  // KINEMATION Multi-Variation Shot, Movement & Per-Weapon Reload Banks
+  private kinShotMps5: MultiVariationBank = createMultiVariationBank(KINEMATION_SHOT_URLS.mps5);
+  private kinShotMx16a4: MultiVariationBank = createMultiVariationBank(KINEMATION_SHOT_URLS.mx16a4);
+  private kinShotAkx200: MultiVariationBank = createMultiVariationBank(KINEMATION_SHOT_URLS.akx200);
+  private kinShotDrake12: MultiVariationBank = createMultiVariationBank(KINEMATION_SHOT_URLS.drake12);
+  private kinShotMk14: MultiVariationBank = createMultiVariationBank(KINEMATION_SHOT_URLS.mk14);
+  private kinShotKar98k: MultiVariationBank = createMultiVariationBank(KINEMATION_SHOT_URLS.kar98k);
+  private kinShotDgl50: MultiVariationBank = createMultiVariationBank(KINEMATION_SHOT_URLS.dgl50);
+  private kinStepWalk: MultiVariationBank = createMultiVariationBank(KINEMATION_FOOTSTEP_URLS.walk);
+  private kinStepRun: MultiVariationBank = createMultiVariationBank(KINEMATION_FOOTSTEP_URLS.run);
+
+  private kinAimIn: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.aimIn);
+  private kinAimOut: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.aimOut);
+  private kinEquip: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.equip);
+  private kinUnequip: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.unequip);
+  private kinUnequipPistol: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.unequipPistol);
+  private kinFiremode: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.firemode);
+  private kinJump: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.jump);
+  private kinLand: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.land);
+  private kinGrenadePin: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.grenadePin);
+  private kinGrenadeThrow: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.grenadeThrow);
+
+  private kinMps5Tac: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.mps5Tac);
+  private kinMps5Empty: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.mps5Empty);
+  private kinMx16a4Tac: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.mx16a4Tac);
+  private kinMx16a4Empty: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.mx16a4Empty);
+  private kinAkx200Tac: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.akx200Tac);
+  private kinAkx200Empty: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.akx200Empty);
+  private kinDgl50Tac: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.dgl50Tac);
+  private kinDgl50Empty: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.dgl50Empty);
+  private kinMk14Tac: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.mk14Tac);
+  private kinMk14Empty: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.mk14Empty);
+  private kinDrake12Start: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.drake12Start);
+  private kinDrake12Insert: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.drake12Insert);
+  private kinDrake12End: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.drake12End);
+  private kinKar98kBoltOpen: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.kar98kBoltOpen);
+  private kinKar98kBulletInsert: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.kar98kBulletInsert);
+  private kinKar98kBoltClose: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.kar98kBoltClose);
+  private kar98kReloadTimers: Array<ReturnType<typeof setTimeout>> = [];
+
   // Main Menu Background Music & Match Loading Ambient
   private menuMusicAudio: HTMLAudioElement | null = null;
   private isMenuMusicPlaying = false;
@@ -369,13 +425,96 @@ class TacticalSoundEngine {
       this.preloadShotgunSamples();
       this.preloadGrenadeSamples();
       this.preloadMovementAndSwapSamples();
+      this.preloadKinemationBanks();
     }
     if (this.ctx) {
       this.tryDecodeGrenadeSamples(this.ctx);
+      this.tryDecodeKinemationBanks(this.ctx);
       if (this.ctx.state === 'suspended') {
         void this.ctx.resume().catch(() => {});
       }
     }
+  }
+
+  private preloadKinemationBanks(): void {
+    const getCtx = () => this.ctx;
+    preloadMultiBank(this.kinShotMps5, getCtx, true);
+    preloadMultiBank(this.kinShotMx16a4, getCtx, true);
+    preloadMultiBank(this.kinShotAkx200, getCtx, true);
+    preloadMultiBank(this.kinShotDrake12, getCtx, true);
+    preloadMultiBank(this.kinShotMk14, getCtx, true);
+    preloadMultiBank(this.kinShotKar98k, getCtx, true);
+    preloadMultiBank(this.kinShotDgl50, getCtx, true);
+    preloadMultiBank(this.kinStepWalk, getCtx, false);
+    preloadMultiBank(this.kinStepRun, getCtx, false);
+
+    preloadSingleBank(this.kinAimIn, getCtx, 2);
+    preloadSingleBank(this.kinAimOut, getCtx, 2);
+    preloadSingleBank(this.kinEquip, getCtx, 2);
+    preloadSingleBank(this.kinUnequip, getCtx, 1);
+    preloadSingleBank(this.kinUnequipPistol, getCtx, 1);
+    preloadSingleBank(this.kinFiremode, getCtx, 2);
+    preloadSingleBank(this.kinJump, getCtx, 2);
+    preloadSingleBank(this.kinLand, getCtx, 2);
+    preloadSingleBank(this.kinGrenadePin, getCtx, 2);
+    preloadSingleBank(this.kinGrenadeThrow, getCtx, 2);
+
+    preloadSingleBank(this.kinMps5Tac, getCtx, 2);
+    preloadSingleBank(this.kinMps5Empty, getCtx, 2);
+    preloadSingleBank(this.kinMx16a4Tac, getCtx, 2);
+    preloadSingleBank(this.kinMx16a4Empty, getCtx, 2);
+    preloadSingleBank(this.kinAkx200Tac, getCtx, 2);
+    preloadSingleBank(this.kinAkx200Empty, getCtx, 2);
+    preloadSingleBank(this.kinDgl50Tac, getCtx, 2);
+    preloadSingleBank(this.kinDgl50Empty, getCtx, 2);
+    preloadSingleBank(this.kinMk14Tac, getCtx, 2);
+    preloadSingleBank(this.kinMk14Empty, getCtx, 2);
+    preloadSingleBank(this.kinDrake12Start, getCtx, 1);
+    preloadSingleBank(this.kinDrake12Insert, getCtx, 3);
+    preloadSingleBank(this.kinDrake12End, getCtx, 2);
+    preloadSingleBank(this.kinKar98kBoltOpen, getCtx, 2);
+    preloadSingleBank(this.kinKar98kBulletInsert, getCtx, 2);
+    preloadSingleBank(this.kinKar98kBoltClose, getCtx, 2);
+  }
+
+  private tryDecodeKinemationBanks(ctx: AudioContext): void {
+    decodeMultiBank(this.kinShotMps5, ctx);
+    decodeMultiBank(this.kinShotMx16a4, ctx);
+    decodeMultiBank(this.kinShotAkx200, ctx);
+    decodeMultiBank(this.kinShotDrake12, ctx);
+    decodeMultiBank(this.kinShotMk14, ctx);
+    decodeMultiBank(this.kinShotKar98k, ctx);
+    decodeMultiBank(this.kinShotDgl50, ctx);
+    decodeMultiBank(this.kinStepWalk, ctx);
+    decodeMultiBank(this.kinStepRun, ctx);
+
+    decodeSingleBank(this.kinAimIn, ctx);
+    decodeSingleBank(this.kinAimOut, ctx);
+    decodeSingleBank(this.kinEquip, ctx);
+    decodeSingleBank(this.kinUnequip, ctx);
+    decodeSingleBank(this.kinUnequipPistol, ctx);
+    decodeSingleBank(this.kinFiremode, ctx);
+    decodeSingleBank(this.kinJump, ctx);
+    decodeSingleBank(this.kinLand, ctx);
+    decodeSingleBank(this.kinGrenadePin, ctx);
+    decodeSingleBank(this.kinGrenadeThrow, ctx);
+
+    decodeSingleBank(this.kinMps5Tac, ctx);
+    decodeSingleBank(this.kinMps5Empty, ctx);
+    decodeSingleBank(this.kinMx16a4Tac, ctx);
+    decodeSingleBank(this.kinMx16a4Empty, ctx);
+    decodeSingleBank(this.kinAkx200Tac, ctx);
+    decodeSingleBank(this.kinAkx200Empty, ctx);
+    decodeSingleBank(this.kinDgl50Tac, ctx);
+    decodeSingleBank(this.kinDgl50Empty, ctx);
+    decodeSingleBank(this.kinMk14Tac, ctx);
+    decodeSingleBank(this.kinMk14Empty, ctx);
+    decodeSingleBank(this.kinDrake12Start, ctx);
+    decodeSingleBank(this.kinDrake12Insert, ctx);
+    decodeSingleBank(this.kinDrake12End, ctx);
+    decodeSingleBank(this.kinKar98kBoltOpen, ctx);
+    decodeSingleBank(this.kinKar98kBulletInsert, ctx);
+    decodeSingleBank(this.kinKar98kBoltClose, ctx);
   }
 
   private preloadM4a1ShotSample(): void {
@@ -607,6 +746,7 @@ class TacticalSoundEngine {
       this.tryDecodeShotgunSamples(this.ctx);
       this.tryDecodeGrenadeSamples(this.ctx);
       this.tryDecodeMovementAndSwapSamples(this.ctx);
+      this.tryDecodeKinemationBanks(this.ctx);
     }
     if (!this.noiseBuffer && this.ctx) {
       const length = this.ctx.sampleRate * 1.5;
@@ -1202,6 +1342,7 @@ class TacticalSoundEngine {
             this.tryDecodeDryFire(ctx);
             this.tryDecodeSniperSamples(ctx);
             this.tryDecodeShotgunSamples(ctx);
+            this.tryDecodeKinemationBanks(ctx);
           }
         },
       },
@@ -1226,6 +1367,20 @@ class TacticalSoundEngine {
     }
   }
 
+  private playBoltLockedPing(ctx: AudioContext, now: number): void {
+    const mechOsc = ctx.createOscillator();
+    const mechGain = ctx.createGain();
+    mechOsc.type = 'square';
+    mechOsc.frequency.setValueAtTime(2450, now + 0.04);
+    mechOsc.frequency.exponentialRampToValueAtTime(1780, now + 0.15);
+    mechGain.gain.setValueAtTime(0.15, now + 0.04);
+    mechGain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+    mechOsc.connect(mechGain);
+    mechGain.connect(ctx.destination);
+    mechOsc.start(now + 0.04);
+    mechOsc.stop(now + 0.17);
+  }
+
   public playGunshot(
     suppressed: boolean,
     boltLockedBackAfterShot: boolean,
@@ -1236,133 +1391,148 @@ class TacticalSoundEngine {
 
     const now = ctx.currentTime;
 
-    // 1. REAL DESERT EAGLE (.50 AE) WAV SAMPLE FOR P50 HEAVY PISTOL
+    // 1. PISTOL (.50 AE DGL50 KINEMATION 4-variation pool -> Desert Eagle WAV fallback)
     if (weaponId === 'P50_PISTOL') {
-      if (this.desertEagleBuffer) {
-        const src = ctx.createBufferSource();
-        src.buffer = this.desertEagleBuffer;
-        // Subtle organic pitch variation per shot
-        src.playbackRate.setValueAtTime(0.985 + Math.random() * 0.03, now);
-
-        const gain = ctx.createGain();
-        if (suppressed) {
-          const lp = ctx.createBiquadFilter();
-          lp.type = 'lowpass';
-          lp.frequency.setValueAtTime(1450, now);
-          gain.gain.setValueAtTime(0.58, now);
-          src.connect(lp);
-          lp.connect(gain);
-        } else {
-          gain.gain.setValueAtTime(1.0, now);
-          src.connect(gain);
+      const playedKin = playMultiBankSample(this.kinShotDgl50, ctx, {
+        volume: suppressed ? 0.56 : 0.96,
+        pitch: 1.0,
+        pitchJitter: 0.04,
+        suppressed,
+        lowpassHz: 1450,
+      });
+      if (!playedKin) {
+        if (this.desertEagleBuffer) {
+          const src = ctx.createBufferSource();
+          src.buffer = this.desertEagleBuffer;
+          src.playbackRate.setValueAtTime(0.985 + Math.random() * 0.03, now);
+          const gain = ctx.createGain();
+          if (suppressed) {
+            const lp = ctx.createBiquadFilter();
+            lp.type = 'lowpass';
+            lp.frequency.setValueAtTime(1450, now);
+            gain.gain.setValueAtTime(0.58, now);
+            src.connect(lp);
+            lp.connect(gain);
+          } else {
+            gain.gain.setValueAtTime(1.0, now);
+            src.connect(gain);
+          }
+          gain.connect(ctx.destination);
+          src.start(now);
+        } else if (this.htmlAudioPool.length > 0) {
+          const el = this.htmlAudioPool[this.htmlAudioPoolIdx];
+          this.htmlAudioPoolIdx =
+            (this.htmlAudioPoolIdx + 1) % this.htmlAudioPool.length;
+          el.currentTime = 0;
+          el.volume = suppressed ? 0.55 : 1.0;
+          el.play().catch(() => {});
         }
-        gain.connect(ctx.destination);
-        src.start(now);
-      } else if (this.htmlAudioPool.length > 0) {
-        const el = this.htmlAudioPool[this.htmlAudioPoolIdx];
-        this.htmlAudioPoolIdx =
-          (this.htmlAudioPoolIdx + 1) % this.htmlAudioPool.length;
-        el.currentTime = 0;
-        el.volume = suppressed ? 0.55 : 1.0;
-        el.play().catch(() => {});
       }
 
       if (boltLockedBackAfterShot) {
-        const mechOsc = ctx.createOscillator();
-        const mechGain = ctx.createGain();
-        mechOsc.type = 'square';
-        mechOsc.frequency.setValueAtTime(2450, now + 0.04);
-        mechOsc.frequency.exponentialRampToValueAtTime(1780, now + 0.15);
-        mechGain.gain.setValueAtTime(0.16, now + 0.04);
-        mechGain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
-        mechOsc.connect(mechGain);
-        mechGain.connect(ctx.destination);
-        mechOsc.start(now + 0.04);
-        mechOsc.stop(now + 0.17);
+        this.playBoltLockedPing(ctx, now);
       }
       return;
     }
 
-    // 2. REAL M4A1 5.56MM ASSAULT RIFLE WAV SAMPLE FOR M4A1 SOPMOD, CARABINA TÁTICA & SCAR-L S-MILITARY
+    // 2. 5.56MM NATO CARBINES (MX16A4 KINEMATION 4-variation pool -> M4A1 WAV fallback)
     if (
       weaponId === 'M4_CARBINE' ||
       weaponId === 'CARBINE_AR' ||
       weaponId === 'S_MILITARY'
     ) {
-      if (this.m4a1ShotBuffer) {
-        const src = ctx.createBufferSource();
-        src.buffer = this.m4a1ShotBuffer;
-        // Subtle organic pitch variation per shot
-        src.playbackRate.setValueAtTime(0.98 + Math.random() * 0.04, now);
-
-        const gain = ctx.createGain();
-        if (suppressed) {
-          const lp = ctx.createBiquadFilter();
-          lp.type = 'lowpass';
-          lp.frequency.setValueAtTime(1250, now);
-          gain.gain.setValueAtTime(0.55, now);
-          src.connect(lp);
-          lp.connect(gain);
-        } else {
-          gain.gain.setValueAtTime(0.95, now);
-          src.connect(gain);
+      const pitch =
+        weaponId === 'S_MILITARY' ? 0.96 : weaponId === 'CARBINE_AR' ? 1.03 : 1.0;
+      const playedKin = playMultiBankSample(this.kinShotMx16a4, ctx, {
+        volume: suppressed ? 0.54 : 0.94,
+        pitch,
+        pitchJitter: 0.045,
+        suppressed,
+        lowpassHz: 1250,
+      });
+      if (!playedKin) {
+        if (this.m4a1ShotBuffer) {
+          const src = ctx.createBufferSource();
+          src.buffer = this.m4a1ShotBuffer;
+          src.playbackRate.setValueAtTime(0.98 + Math.random() * 0.04, now);
+          const gain = ctx.createGain();
+          if (suppressed) {
+            const lp = ctx.createBiquadFilter();
+            lp.type = 'lowpass';
+            lp.frequency.setValueAtTime(1250, now);
+            gain.gain.setValueAtTime(0.55, now);
+            src.connect(lp);
+            lp.connect(gain);
+          } else {
+            gain.gain.setValueAtTime(0.95, now);
+            src.connect(gain);
+          }
+          gain.connect(ctx.destination);
+          src.start(now);
+        } else if (this.m4a1ShotAudioPool.length > 0) {
+          const el = this.m4a1ShotAudioPool[this.m4a1ShotPoolIdx];
+          this.m4a1ShotPoolIdx =
+            (this.m4a1ShotPoolIdx + 1) % this.m4a1ShotAudioPool.length;
+          el.currentTime = 0;
+          el.volume = suppressed ? 0.55 : 0.95;
+          el.play().catch(() => {});
         }
-        gain.connect(ctx.destination);
-        src.start(now);
-      } else if (this.m4a1ShotAudioPool.length > 0) {
-        const el = this.m4a1ShotAudioPool[this.m4a1ShotPoolIdx];
-        this.m4a1ShotPoolIdx =
-          (this.m4a1ShotPoolIdx + 1) % this.m4a1ShotAudioPool.length;
-        el.currentTime = 0;
-        el.volume = suppressed ? 0.55 : 0.95;
-        el.play().catch(() => {});
       }
 
       if (boltLockedBackAfterShot) {
-        const mechOsc = ctx.createOscillator();
-        const mechGain = ctx.createGain();
-        mechOsc.type = 'square';
-        mechOsc.frequency.setValueAtTime(2200, now + 0.04);
-        mechOsc.frequency.exponentialRampToValueAtTime(1500, now + 0.15);
-        mechGain.gain.setValueAtTime(0.12, now + 0.04);
-        mechGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
-        mechOsc.connect(mechGain);
-        mechGain.connect(ctx.destination);
-        mechOsc.start(now + 0.04);
-        mechOsc.stop(now + 0.16);
+        this.playBoltLockedPing(ctx, now);
       }
       return;
     }
 
-    // 3. REAL AK-47 KALASHNIKOV (7.62X39MM) PUNCHY METALLIC WAV SAMPLE FOR AK47_RIFLE & AK12_RIFLE
+    // 3. KALASHNIKOV SERIES (AKX200 KINEMATION 4-variation pool for AK12_RIFLE -> AK47 WAV fallback)
     if (weaponId === 'AK47_RIFLE' || weaponId === 'AK12_RIFLE') {
-      if (this.ak47ShotBuffer) {
-        const src = ctx.createBufferSource();
-        src.buffer = this.ak47ShotBuffer;
-        // Subtle organic pitch variation per shot
-        src.playbackRate.setValueAtTime(0.98 + Math.random() * 0.04, now);
-
-        const gain = ctx.createGain();
-        if (suppressed) {
-          const lp = ctx.createBiquadFilter();
-          lp.type = 'lowpass';
-          lp.frequency.setValueAtTime(1350, now);
-          gain.gain.setValueAtTime(0.62, now);
-          src.connect(lp);
-          lp.connect(gain);
-        } else {
-          gain.gain.setValueAtTime(1.0, now);
-          src.connect(gain);
+      const preferAkx = weaponId === 'AK12_RIFLE';
+      const played =
+        preferAkx &&
+        playMultiBankSample(this.kinShotAkx200, ctx, {
+          volume: suppressed ? 0.58 : 0.96,
+          pitch: 1.0,
+          pitchJitter: 0.045,
+          suppressed,
+          lowpassHz: 1350,
+        });
+      if (!played) {
+        if (this.ak47ShotBuffer) {
+          const src = ctx.createBufferSource();
+          src.buffer = this.ak47ShotBuffer;
+          src.playbackRate.setValueAtTime(0.98 + Math.random() * 0.04, now);
+          const gain = ctx.createGain();
+          if (suppressed) {
+            const lp = ctx.createBiquadFilter();
+            lp.type = 'lowpass';
+            lp.frequency.setValueAtTime(1350, now);
+            gain.gain.setValueAtTime(0.62, now);
+            src.connect(lp);
+            lp.connect(gain);
+          } else {
+            gain.gain.setValueAtTime(1.0, now);
+            src.connect(gain);
+          }
+          gain.connect(ctx.destination);
+          src.start(now);
+        } else if (
+          !playMultiBankSample(this.kinShotAkx200, ctx, {
+            volume: suppressed ? 0.58 : 0.96,
+            pitch: 0.95,
+            pitchJitter: 0.04,
+            suppressed,
+            lowpassHz: 1350,
+          }) &&
+          this.ak47ShotAudioPool.length > 0
+        ) {
+          const el = this.ak47ShotAudioPool[this.ak47ShotPoolIdx];
+          this.ak47ShotPoolIdx =
+            (this.ak47ShotPoolIdx + 1) % this.ak47ShotAudioPool.length;
+          el.currentTime = 0;
+          el.volume = suppressed ? 0.62 : 1.0;
+          el.play().catch(() => {});
         }
-        gain.connect(ctx.destination);
-        src.start(now);
-      } else if (this.ak47ShotAudioPool.length > 0) {
-        const el = this.ak47ShotAudioPool[this.ak47ShotPoolIdx];
-        this.ak47ShotPoolIdx =
-          (this.ak47ShotPoolIdx + 1) % this.ak47ShotAudioPool.length;
-        el.currentTime = 0;
-        el.volume = suppressed ? 0.62 : 1.0;
-        el.play().catch(() => {});
       }
 
       if (boltLockedBackAfterShot) {
@@ -1371,190 +1541,131 @@ class TacticalSoundEngine {
       return;
     }
 
-    // 4. REAL SNIPER RIFLE (.338 LAPUA / .308 WIN) WAV SAMPLE FOR SNIPER_BOLT & SNIPER_TACTICAL
+    // 4. PRECISION SNIPERS & DMR (KAR98K / MK14 EBR KINEMATION 4-variation pools -> Sniper WAV fallback)
     if (weaponId === 'SNIPER_BOLT' || weaponId === 'SNIPER_TACTICAL') {
-      if (this.sniperShotBuffer) {
-        const src = ctx.createBufferSource();
-        src.buffer = this.sniperShotBuffer;
-        src.playbackRate.setValueAtTime(
-          (weaponId === 'SNIPER_BOLT' ? 0.97 : 1.01) +
-            (Math.random() - 0.5) * 0.03,
-          now
-        );
-
-        const gain = ctx.createGain();
-        if (suppressed) {
-          const lp = ctx.createBiquadFilter();
-          lp.type = 'lowpass';
-          lp.frequency.setValueAtTime(1350, now);
-          gain.gain.setValueAtTime(0.65, now);
-          src.connect(lp);
-          lp.connect(gain);
-        } else {
-          gain.gain.setValueAtTime(1.0, now);
-          src.connect(gain);
+      const bank =
+        weaponId === 'SNIPER_BOLT' ? this.kinShotKar98k : this.kinShotMk14;
+      const playedKin = playMultiBankSample(bank, ctx, {
+        volume: suppressed ? 0.62 : 0.98,
+        pitch: 1.0,
+        pitchJitter: 0.035,
+        suppressed,
+        lowpassHz: 1350,
+      });
+      if (!playedKin) {
+        if (this.sniperShotBuffer) {
+          const src = ctx.createBufferSource();
+          src.buffer = this.sniperShotBuffer;
+          src.playbackRate.setValueAtTime(
+            (weaponId === 'SNIPER_BOLT' ? 0.97 : 1.01) +
+              (Math.random() - 0.5) * 0.03,
+            now
+          );
+          const gain = ctx.createGain();
+          if (suppressed) {
+            const lp = ctx.createBiquadFilter();
+            lp.type = 'lowpass';
+            lp.frequency.setValueAtTime(1350, now);
+            gain.gain.setValueAtTime(0.65, now);
+            src.connect(lp);
+            lp.connect(gain);
+          } else {
+            gain.gain.setValueAtTime(1.0, now);
+            src.connect(gain);
+          }
+          gain.connect(ctx.destination);
+          src.start(now);
+        } else if (this.sniperShotAudioPool.length > 0) {
+          const el = this.sniperShotAudioPool[this.sniperShotPoolIdx];
+          this.sniperShotPoolIdx =
+            (this.sniperShotPoolIdx + 1) % this.sniperShotAudioPool.length;
+          el.currentTime = 0;
+          el.volume = suppressed ? 0.65 : 1.0;
+          el.play().catch(() => {});
         }
-        gain.connect(ctx.destination);
-        src.start(now);
-      } else if (this.sniperShotAudioPool.length > 0) {
-        const el = this.sniperShotAudioPool[this.sniperShotPoolIdx];
-        this.sniperShotPoolIdx =
-          (this.sniperShotPoolIdx + 1) % this.sniperShotAudioPool.length;
-        el.currentTime = 0;
-        el.volume = suppressed ? 0.65 : 1.0;
-        el.play().catch(() => {});
       }
       return;
     }
 
-    // 5. REAL 12-GAUGE BUCKSHOT SHOTGUN BLAST WAV (SHOTGUN_12 PUMP & SHOTGUN_SPAS COMBAT)
+    // 5. 12-GAUGE SHOTGUNS (DRAKE-12 KINEMATION 4-variation pool -> Shotgun WAV fallback)
     if (weaponId === 'SHOTGUN_12' || weaponId === 'SHOTGUN_SPAS') {
-      if (this.shotgunShotBuffer) {
-        const src = ctx.createBufferSource();
-        src.buffer = this.shotgunShotBuffer;
-        // Slightly deeper pitch for pump-action M870, slightly crisper for semi-auto SPAS-12
-        const basePitch = weaponId === 'SHOTGUN_12' ? 0.97 : 1.03;
-        src.playbackRate.setValueAtTime(
-          basePitch + (Math.random() - 0.5) * 0.04,
-          now
-        );
-
-        const gain = ctx.createGain();
-        if (suppressed) {
-          const lp = ctx.createBiquadFilter();
-          lp.type = 'lowpass';
-          lp.frequency.setValueAtTime(1450, now);
-          gain.gain.setValueAtTime(0.65, now);
-          src.connect(lp);
-          lp.connect(gain);
-        } else {
-          gain.gain.setValueAtTime(1.0, now);
-          src.connect(gain);
+      const basePitch = weaponId === 'SHOTGUN_12' ? 0.98 : 1.04;
+      const playedKin = playMultiBankSample(this.kinShotDrake12, ctx, {
+        volume: suppressed ? 0.62 : 0.98,
+        pitch: basePitch,
+        pitchJitter: 0.04,
+        suppressed,
+        lowpassHz: 1450,
+      });
+      if (!playedKin) {
+        if (this.shotgunShotBuffer) {
+          const src = ctx.createBufferSource();
+          src.buffer = this.shotgunShotBuffer;
+          src.playbackRate.setValueAtTime(
+            basePitch + (Math.random() - 0.5) * 0.04,
+            now
+          );
+          const gain = ctx.createGain();
+          if (suppressed) {
+            const lp = ctx.createBiquadFilter();
+            lp.type = 'lowpass';
+            lp.frequency.setValueAtTime(1450, now);
+            gain.gain.setValueAtTime(0.65, now);
+            src.connect(lp);
+            lp.connect(gain);
+          } else {
+            gain.gain.setValueAtTime(1.0, now);
+            src.connect(gain);
+          }
+          gain.connect(ctx.destination);
+          src.start(now);
+        } else if (this.shotgunShotAudioPool.length > 0) {
+          const el = this.shotgunShotAudioPool[this.shotgunShotPoolIdx];
+          this.shotgunShotPoolIdx =
+            (this.shotgunShotPoolIdx + 1) % this.shotgunShotAudioPool.length;
+          el.currentTime = 0;
+          el.playbackRate = basePitch;
+          el.volume = suppressed ? 0.65 : 1.0;
+          el.play().catch(() => {});
         }
-        gain.connect(ctx.destination);
-        src.start(now);
-      } else if (this.shotgunShotAudioPool.length > 0) {
-        const el = this.shotgunShotAudioPool[this.shotgunShotPoolIdx];
-        this.shotgunShotPoolIdx =
-          (this.shotgunShotPoolIdx + 1) % this.shotgunShotAudioPool.length;
-        el.currentTime = 0;
-        el.playbackRate = weaponId === 'SHOTGUN_12' ? 0.97 : 1.03;
-        el.volume = suppressed ? 0.65 : 1.0;
-        el.play().catch(() => {});
-      } else {
-        const boomOsc = ctx.createOscillator();
-        const boomGain = ctx.createGain();
-        boomOsc.type = 'triangle';
-        boomOsc.frequency.setValueAtTime(suppressed ? 95 : 135, now);
-        boomOsc.frequency.exponentialRampToValueAtTime(
-          28,
-          now + (suppressed ? 0.14 : 0.24)
-        );
-        boomGain.gain.setValueAtTime(suppressed ? 0.52 : 0.95, now);
-        boomGain.gain.exponentialRampToValueAtTime(
-          0.001,
-          now + (suppressed ? 0.16 : 0.28)
-        );
-        boomOsc.connect(boomGain);
-        boomGain.connect(ctx.destination);
-        boomOsc.start(now);
-        boomOsc.stop(now + 0.3);
       }
       return;
     }
 
-    // 6. 5.56MM NATO / 9MM PROCEDURAL SYNTHESIS FOR L49 LMG & SMG_MP5
-    if (suppressed) {
-      // Suppressed 5.56mm: High-pressure baffle hiss + tight low thud + loud bolt carrier clack
-      const noise = ctx.createBufferSource();
-      noise.buffer = this.noiseBuffer;
-
-      const filter = ctx.createBiquadFilter();
-      filter.type = 'bandpass';
-      filter.frequency.setValueAtTime(1650, now);
-      filter.frequency.exponentialRampToValueAtTime(420, now + 0.085);
-      filter.Q.value = 1.4;
-
-      const gain = ctx.createGain();
-      gain.gain.setValueAtTime(0.55, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.095);
-
-      noise.connect(filter);
-      filter.connect(gain);
-      gain.connect(ctx.destination);
-      noise.start(now);
-      noise.stop(now + 0.1);
-
-      // Sub baffle punch
-      const subOsc = ctx.createOscillator();
-      const subGain = ctx.createGain();
-      subOsc.type = 'triangle';
-      subOsc.frequency.setValueAtTime(170, now);
-      subOsc.frequency.exponentialRampToValueAtTime(42, now + 0.06);
-      subGain.gain.setValueAtTime(0.5, now);
-      subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.065);
-      subOsc.connect(subGain);
-      subGain.connect(ctx.destination);
-      subOsc.start(now);
-      subOsc.stop(now + 0.07);
-    } else {
-      // Unsuppressed 5.56mm NATO: Muzzle blast transient + chest thump + indoor killhouse reflection tail
-      const subOsc = ctx.createOscillator();
-      const subGain = ctx.createGain();
-      subOsc.type = 'sine';
-      subOsc.frequency.setValueAtTime(195, now);
-      subOsc.frequency.exponentialRampToValueAtTime(36, now + 0.09);
-      subGain.gain.setValueAtTime(0.85, now);
-      subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
-      subOsc.connect(subGain);
-      subGain.connect(ctx.destination);
-      subOsc.start(now);
-      subOsc.stop(now + 0.11);
-
-      // Supersonic crack & blast noise
-      const blast = ctx.createBufferSource();
-      blast.buffer = this.noiseBuffer;
-
-      const blastFilter = ctx.createBiquadFilter();
-      blastFilter.type = 'lowpass';
-      blastFilter.frequency.setValueAtTime(5200, now);
-      blastFilter.frequency.exponentialRampToValueAtTime(340, now + 0.28);
-
-      const blastGain = ctx.createGain();
-      blastGain.gain.setValueAtTime(0.9, now);
-      blastGain.gain.exponentialRampToValueAtTime(0.14, now + 0.05);
-      blastGain.gain.exponentialRampToValueAtTime(0.001, now + 0.36);
-
-      blast.connect(blastFilter);
-      blastFilter.connect(blastGain);
-      blastGain.connect(ctx.destination);
-      blast.start(now);
-      blast.stop(now + 0.38);
+    // 6. SUBMACHINE GUNS & HEAVY LMG (MPS5 9MM & MK14/HEAVY LMG KINEMATION REAL 4-VARIATION SAMPLES)
+    if (weaponId === 'SMG_MP5' || weaponId === 'SMG_45' || weaponId === 'L49_LMG') {
+      const bank = weaponId === 'L49_LMG' ? this.kinShotMk14 : this.kinShotMps5;
+      const pitch = weaponId === 'SMG_45' ? 0.93 : weaponId === 'L49_LMG' ? 0.92 : 1.0;
+      const playedKin = playMultiBankSample(bank, ctx, {
+        volume: suppressed ? 0.52 : 0.92,
+        pitch,
+        pitchJitter: 0.05,
+        suppressed,
+        lowpassHz: 1320,
+      });
+      if (playedKin) {
+        if (boltLockedBackAfterShot) {
+          this.playBoltLockedPing(ctx, now);
+        }
+        return;
+      }
     }
 
-    // Mechanical Bolt Carrier Reciprocation Clack (or Ping if locked back on empty)
-    const mechOsc = ctx.createOscillator();
-    const mechGain = ctx.createGain();
-    mechOsc.type = 'square';
+    // Procedural backup only if buffers are not yet decoded/fetched
+    const subOsc = ctx.createOscillator();
+    const subGain = ctx.createGain();
+    subOsc.type = 'sine';
+    subOsc.frequency.setValueAtTime(suppressed ? 160 : 195, now);
+    subOsc.frequency.exponentialRampToValueAtTime(36, now + 0.09);
+    subGain.gain.setValueAtTime(suppressed ? 0.45 : 0.85, now);
+    subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+    subOsc.connect(subGain);
+    subGain.connect(ctx.destination);
+    subOsc.start(now);
+    subOsc.stop(now + 0.11);
+
     if (boltLockedBackAfterShot) {
-      // Distinct metallic bolt-lock ping
-      mechOsc.frequency.setValueAtTime(2450, now + 0.03);
-      mechOsc.frequency.exponentialRampToValueAtTime(1780, now + 0.14);
-      mechGain.gain.setValueAtTime(0.18, now + 0.03);
-      mechGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
-      mechOsc.connect(mechGain);
-      mechGain.connect(ctx.destination);
-      mechOsc.start(now + 0.03);
-      mechOsc.stop(now + 0.16);
-    } else {
-      mechOsc.frequency.setValueAtTime(1450, now + 0.025);
-      mechOsc.frequency.exponentialRampToValueAtTime(620, now + 0.065);
-      mechGain.gain.setValueAtTime(0.14, now + 0.025);
-      mechGain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
-      mechOsc.connect(mechGain);
-      mechGain.connect(ctx.destination);
-      mechOsc.start(now + 0.025);
-      mechOsc.stop(now + 0.075);
+      this.playBoltLockedPing(ctx, now);
     }
   }
 
@@ -1642,9 +1753,13 @@ class TacticalSoundEngine {
     osc.stop(now + 0.03);
   }
 
-  public playPistolFullReload(): void {
+  public playPistolFullReload(isDry = false): void {
     if (this.muted) return;
     const ctx = this.ensureContext();
+    const bank = isDry ? this.kinDgl50Empty : this.kinDgl50Tac;
+    if (playSingleBankSample(bank, ctx, { volume: 0.96, pitchJitter: 0.02 })) {
+      return;
+    }
 
     if (ctx && this.pistolReloadBuffer) {
       const source = ctx.createBufferSource();
@@ -1657,7 +1772,6 @@ class TacticalSoundEngine {
       return;
     }
 
-    // Zero-latency HTMLAudioElement fallback
     if (this.pistolReloadAudioPool.length > 0) {
       const el = this.pistolReloadAudioPool[this.pistolReloadPoolIdx];
       this.pistolReloadPoolIdx =
@@ -1668,9 +1782,13 @@ class TacticalSoundEngine {
     }
   }
 
-  public playM4a1FullReload(): void {
+  public playM4a1FullReload(isDry = false): void {
     if (this.muted) return;
     const ctx = this.ensureContext();
+    const bank = isDry ? this.kinMx16a4Empty : this.kinMx16a4Tac;
+    if (playSingleBankSample(bank, ctx, { volume: 0.98, pitchJitter: 0.02 })) {
+      return;
+    }
 
     if (ctx && this.m4a1ReloadBuffer) {
       const source = ctx.createBufferSource();
@@ -1683,7 +1801,6 @@ class TacticalSoundEngine {
       return;
     }
 
-    // Zero-latency HTMLAudioElement fallback
     if (this.m4a1ReloadAudioPool.length > 0) {
       const el = this.m4a1ReloadAudioPool[this.m4a1ReloadPoolIdx];
       this.m4a1ReloadPoolIdx =
@@ -1697,6 +1814,10 @@ class TacticalSoundEngine {
   public playAk47FullReload(isDry = false): void {
     if (this.muted) return;
     const ctx = this.ensureContext();
+    const bank = isDry ? this.kinAkx200Empty : this.kinAkx200Tac;
+    if (playSingleBankSample(bank, ctx, { volume: 0.98, pitchJitter: 0.02 })) {
+      return;
+    }
 
     if (ctx && this.ak47ReloadBuffer) {
       const source = ctx.createBufferSource();
@@ -1715,13 +1836,59 @@ class TacticalSoundEngine {
       el.play().catch(() => {});
     }
 
-    // Play the authentic AK-47/AK-12 metallic bolt rack as the hand pulls the charging handle at the end of the reload animation
     const boltRackDelayMs = isDry ? 1500 : 1380;
     setTimeout(() => {
       if (!this.muted) {
         this.playAk47BoltRack();
       }
     }, boltRackDelayMs);
+  }
+
+  public playSmgFullReload(isDry = false): void {
+    if (this.muted) return;
+    const ctx = this.ensureContext();
+    const bank = isDry ? this.kinMps5Empty : this.kinMps5Tac;
+    if (!playSingleBankSample(bank, ctx, { volume: 0.96, pitchJitter: 0.02 })) {
+      this.playReloadStage('MAG_OUT');
+    }
+  }
+
+  public playDmrOrLmgFullReload(isDry = false): void {
+    if (this.muted) return;
+    const ctx = this.ensureContext();
+    const bank = isDry ? this.kinMk14Empty : this.kinMk14Tac;
+    if (!playSingleBankSample(bank, ctx, { volume: 0.96, pitchJitter: 0.02 })) {
+      this.playReloadStage('MAG_OUT');
+    }
+  }
+
+  public playKar98kFullReload(): void {
+    if (this.muted) return;
+    this.kar98kReloadTimers.forEach((t) => clearTimeout(t));
+    this.kar98kReloadTimers = [];
+    const ctx = this.ensureContext();
+    if (!playSingleBankSample(this.kinKar98kBoltOpen, ctx, { volume: 0.95 })) {
+      this.playBoltActionCycle();
+      return;
+    }
+    this.kar98kReloadTimers.push(
+      setTimeout(() => {
+        if (!this.muted) {
+          playSingleBankSample(this.kinKar98kBulletInsert, this.ensureContext(), {
+            volume: 0.95,
+          });
+        }
+      }, 650)
+    );
+    this.kar98kReloadTimers.push(
+      setTimeout(() => {
+        if (!this.muted) {
+          playSingleBankSample(this.kinKar98kBoltClose, this.ensureContext(), {
+            volume: 0.96,
+          });
+        }
+      }, 1450)
+    );
   }
 
   public playAk47BoltRack(): void {
@@ -1753,14 +1920,26 @@ class TacticalSoundEngine {
       return;
     }
 
-    this.playReloadStage('CHARGING_HANDLE');
+    if (!playSingleBankSample(this.kinEquip, ctx, { volume: 0.92, pitch: 1.08 })) {
+      this.playReloadStage('CHARGING_HANDLE');
+    }
   }
 
   public playShotgunShellInsert(pitchRate = 1.0): void {
     if (this.muted) return;
     const ctx = this.ensureContext();
-    let samplePlayed = false;
 
+    if (
+      playSingleBankSample(this.kinDrake12Insert, ctx, {
+        volume: 0.96,
+        pitch: pitchRate,
+        pitchJitter: 0.04,
+      })
+    ) {
+      return;
+    }
+
+    let samplePlayed = false;
     if (ctx) {
       this.tryDecodeShotgunSamples(ctx);
       if (this.shotgunReloadBuffer) {
@@ -1791,33 +1970,7 @@ class TacticalSoundEngine {
       samplePlayed = true;
     }
 
-    // Crisp layered procedural shell-rim metallic click + follower spring snap
-    if (ctx) {
-      const now = ctx.currentTime;
-      const thumpOsc = ctx.createOscillator();
-      const thumpGain = ctx.createGain();
-      thumpOsc.type = 'triangle';
-      thumpOsc.frequency.setValueAtTime(240 * pitchRate, now);
-      thumpOsc.frequency.exponentialRampToValueAtTime(95, now + 0.055);
-      thumpGain.gain.setValueAtTime(samplePlayed ? 0.18 : 0.36, now);
-      thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
-      thumpOsc.connect(thumpGain);
-      thumpGain.connect(ctx.destination);
-      thumpOsc.start(now);
-      thumpOsc.stop(now + 0.065);
-
-      const latchOsc = ctx.createOscillator();
-      const latchGain = ctx.createGain();
-      latchOsc.type = 'square';
-      latchOsc.frequency.setValueAtTime(1950 * pitchRate, now + 0.035);
-      latchOsc.frequency.exponentialRampToValueAtTime(1120 * pitchRate, now + 0.075);
-      latchGain.gain.setValueAtTime(samplePlayed ? 0.12 : 0.28, now + 0.035);
-      latchGain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
-      latchOsc.connect(latchGain);
-      latchGain.connect(ctx.destination);
-      latchOsc.start(now + 0.035);
-      latchOsc.stop(now + 0.085);
-    } else if (!samplePlayed) {
+    if (!samplePlayed) {
       this.playReloadStage('MAG_IN');
     }
   }
@@ -1825,10 +1978,12 @@ class TacticalSoundEngine {
   public playShotgunPumpRack(): void {
     if (this.muted) return;
     const ctx = this.ensureContext();
+    if (playSingleBankSample(this.kinDrake12End, ctx, { volume: 0.96, pitchJitter: 0.03 })) {
+      return;
+    }
     if (!ctx) return;
     const now = ctx.currentTime;
 
-    // Two-stroke tactical pump slide: crisp pull back + solid forward lockup
     const pullOsc = ctx.createOscillator();
     const pullGain = ctx.createGain();
     pullOsc.type = 'sawtooth';
@@ -1852,23 +2007,6 @@ class TacticalSoundEngine {
     lockGain.connect(ctx.destination);
     lockOsc.start(now + 0.145);
     lockOsc.stop(now + 0.26);
-
-    if (this.noiseBuffer) {
-      const n = ctx.createBufferSource();
-      n.buffer = this.noiseBuffer;
-      const bp = ctx.createBiquadFilter();
-      bp.type = 'bandpass';
-      bp.frequency.setValueAtTime(1500, now);
-      bp.Q.value = 2.2;
-      const ng = ctx.createGain();
-      ng.gain.setValueAtTime(0.2, now);
-      ng.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
-      n.connect(bp);
-      bp.connect(ng);
-      ng.connect(ctx.destination);
-      n.start(now);
-      n.stop(now + 0.23);
-    }
   }
 
   public playShotgunFullReload(weaponId: WeaponId, isDry = false): void {
@@ -1876,10 +2014,13 @@ class TacticalSoundEngine {
     this.shotgunReloadTimers.forEach((t) => clearTimeout(t));
     this.shotgunReloadTimers = [];
 
+    const ctx = this.ensureContext();
+    playSingleBankSample(this.kinDrake12Start, ctx, { volume: 0.9 });
+
     const basePitch = weaponId === 'SHOTGUN_12' ? 0.96 : 1.04;
     const shellOffsetsMs = isDry
-      ? [60, 460, 860, 1260, 1660]
-      : [60, 440, 820, 1200];
+      ? [180, 560, 940, 1320, 1700]
+      : [180, 540, 900, 1260];
 
     shellOffsetsMs.forEach((delayMs, idx) => {
       const timer = setTimeout(() => {
@@ -2048,6 +2189,19 @@ class TacticalSoundEngine {
   public playBoltActionCycle(): void {
     if (this.muted) return;
     const ctx = this.ensureContext();
+
+    if (
+      playSingleBankSample(this.kinKar98kBoltOpen, ctx, {
+        volume: 0.96,
+        delaySec: 0.14,
+      })
+    ) {
+      playSingleBankSample(this.kinKar98kBoltClose, ctx, {
+        volume: 0.96,
+        delaySec: 0.62,
+      });
+      return;
+    }
 
     if (ctx && this.sniperBoltBuffer) {
       const now = ctx.currentTime;
@@ -2430,6 +2584,10 @@ class TacticalSoundEngine {
     if (this.muted) return;
     const ctx = this.ensureContext();
 
+    if (playSingleBankSample(this.kinGrenadePin, ctx, { volume: 0.95, pitchJitter: 0.04 })) {
+      return;
+    }
+
     if (ctx && this.grenadePinBuffer) {
       const src = ctx.createBufferSource();
       src.buffer = this.grenadePinBuffer;
@@ -2472,6 +2630,10 @@ class TacticalSoundEngine {
   public playGrenadeThrow(): void {
     if (this.muted) return;
     const ctx = this.ensureContext();
+
+    if (playSingleBankSample(this.kinGrenadeThrow, ctx, { volume: 0.95, pitchJitter: 0.05 })) {
+      return;
+    }
 
     if (ctx && this.grenadeThrowBuffer) {
       const src = ctx.createBufferSource();
@@ -2854,9 +3016,21 @@ class TacticalSoundEngine {
     }
   }
 
-  public playWeaponSwap(): void {
+  public playWeaponSwap(isPistol = false): void {
     if (this.muted) return;
     const ctx = this.ensureContext();
+
+    const holsterBank = isPistol ? this.kinUnequipPistol : this.kinUnequip;
+    playSingleBankSample(holsterBank, ctx, { volume: 0.45, pitchJitter: 0.03 });
+    if (
+      playSingleBankSample(this.kinEquip, ctx, {
+        volume: 0.88,
+        pitchJitter: 0.04,
+        delaySec: 0.05,
+      })
+    ) {
+      return;
+    }
 
     if (ctx && this.weaponSwapBuffer) {
       const src = ctx.createBufferSource();
@@ -2886,9 +3060,30 @@ class TacticalSoundEngine {
     this.playReloadStage('CHARGING_HANDLE');
   }
 
+  public playAimTransition(isAiming: boolean): void {
+    if (this.muted) return;
+    const ctx = this.ensureContext();
+    const bank = isAiming ? this.kinAimIn : this.kinAimOut;
+    if (!playSingleBankSample(bank, ctx, { volume: 0.65, pitchJitter: 0.03 })) {
+      this.playMechanicalSwitch(isAiming ? 1.08 : 0.92);
+    }
+  }
+
+  public playFireModeSwitch(): void {
+    if (this.muted) return;
+    const ctx = this.ensureContext();
+    if (!playSingleBankSample(this.kinFiremode, ctx, { volume: 0.82, pitchJitter: 0.02 })) {
+      this.playMechanicalSwitch(1.15);
+    }
+  }
+
   public playPlayerJump(): void {
     if (this.muted) return;
     const ctx = this.ensureContext();
+
+    if (playSingleBankSample(this.kinJump, ctx, { volume: 0.82, pitchJitter: 0.06 })) {
+      return;
+    }
 
     if (ctx && this.playerJumpBuffer) {
       const src = ctx.createBufferSource();
@@ -2912,6 +3107,15 @@ class TacticalSoundEngine {
       el.currentTime = 0;
       el.volume = 0.85;
       el.play().catch(() => {});
+    }
+  }
+
+  public playPlayerLand(impactStrength = 1.0): void {
+    if (this.muted) return;
+    const ctx = this.ensureContext();
+    const vol = Math.min(0.95, Math.max(0.35, 0.52 * impactStrength));
+    if (!playSingleBankSample(this.kinLand, ctx, { volume: vol, pitchJitter: 0.06 })) {
+      this.playFootstep(true, false);
     }
   }
 
@@ -2948,8 +3152,19 @@ class TacticalSoundEngine {
     if (this.muted) return;
     const ctx = this.ensureContext();
 
-    const volume = isCrouching ? 0.25 : isSprinting ? 0.68 : 0.46;
-    const baseRate = isCrouching ? 0.86 : isSprinting ? 1.06 : 0.95;
+    const volume = isCrouching ? 0.24 : isSprinting ? 0.68 : 0.48;
+    const baseRate = isCrouching ? 0.88 : isSprinting ? 1.04 : 0.98;
+    const stepBank = isSprinting ? this.kinStepRun : this.kinStepWalk;
+
+    if (
+      playMultiBankSample(stepBank, ctx, {
+        volume,
+        pitch: baseRate,
+        pitchJitter: 0.08,
+      })
+    ) {
+      return;
+    }
 
     if (ctx && this.footstepRunBuffer) {
       const src = ctx.createBufferSource();
@@ -3070,18 +3285,20 @@ class TacticalSoundEngine {
     sniperShotBuffer: AudioBuffer | null;
     shotgunShotBuffer: AudioBuffer | null;
     desertEagleBuffer: AudioBuffer | null;
+    smgShotBuffer: AudioBuffer | null;
     footstepRunBuffer: AudioBuffer | null;
   } {
     return {
       muted: this.muted,
       ctx: this.ensureContext(),
       noiseBuffer: this.noiseBuffer,
-      m4a1ShotBuffer: this.m4a1ShotBuffer,
-      ak47ShotBuffer: this.ak47ShotBuffer,
-      sniperShotBuffer: this.sniperShotBuffer,
-      shotgunShotBuffer: this.shotgunShotBuffer,
-      desertEagleBuffer: this.desertEagleBuffer,
-      footstepRunBuffer: this.footstepRunBuffer,
+      m4a1ShotBuffer: pickMultiDecodedBuffer(this.kinShotMx16a4) || this.m4a1ShotBuffer,
+      ak47ShotBuffer: pickMultiDecodedBuffer(this.kinShotAkx200) || this.ak47ShotBuffer,
+      sniperShotBuffer: pickMultiDecodedBuffer(this.kinShotKar98k) || this.sniperShotBuffer,
+      shotgunShotBuffer: pickMultiDecodedBuffer(this.kinShotDrake12) || this.shotgunShotBuffer,
+      desertEagleBuffer: pickMultiDecodedBuffer(this.kinShotDgl50) || this.desertEagleBuffer,
+      smgShotBuffer: pickMultiDecodedBuffer(this.kinShotMps5) || this.m4a1ShotBuffer,
+      footstepRunBuffer: pickMultiDecodedBuffer(this.kinStepRun) || this.footstepRunBuffer,
     };
   }
 }

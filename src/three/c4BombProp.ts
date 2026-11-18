@@ -8,8 +8,9 @@ import {
   createGameGltfLoader,
   ensureMeshoptDecoder,
 } from './gltfLoaderFactory';
+import { resolveAssetUrl } from '../utils/assetUrl';
 
-const C4_URL = '/models/props/c4_explosive.glb';
+const C4_URL = resolveAssetUrl('/models/props/c4_explosive.glb');
 /** Target longest-axis size in meters for world / 1P. */
 const WORLD_SIZE = 0.42;
 const HOLD_SIZE = 0.32;

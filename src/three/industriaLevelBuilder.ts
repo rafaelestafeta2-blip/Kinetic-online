@@ -5,9 +5,10 @@ import { Dust2TriangleCollider } from './dust2Collider';
 import { Dust2LevelBundle, runExclusiveGlbLoad } from './dust2LevelBuilder';
 import { TacticalTargetEntity } from './levelBuilder';
 import { YardBotEntity } from './yardPropsBuilder';
+import { resolveAssetUrl } from '../utils/assetUrl';
 
 /** Industrial yard — ETC1S GPU textures + Meshopt geometry. */
-const INDUSTRIA_LOCAL_URL = '/models/maps/industria_2k.glb';
+const INDUSTRIA_LOCAL_URL = resolveAssetUrl('/models/maps/industria_2k.glb');
 
 /**
  * Unity Map_v1 parent offset + floor lift so asphalt/road planes sit near y≈0.

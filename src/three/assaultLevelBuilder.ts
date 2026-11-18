@@ -9,8 +9,9 @@ import { Dust2TriangleCollider, LadderZone } from './dust2Collider';
 import { Dust2LevelBundle } from './dust2LevelBuilder';
 import { TacticalTargetEntity } from './levelBuilder';
 import { YardBotEntity } from './yardPropsBuilder';
+import { resolveAssetUrl } from '../utils/assetUrl';
 
-const ASSAULT_LOCAL_URL = '/models/maps/cs_assault.glb';
+const ASSAULT_LOCAL_URL = resolveAssetUrl('/models/maps/cs_assault.glb');
 const ASSAULT_REMOTE_FALLBACK_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/5ac523ea15e25fb19a05b1c1396f3daa0f71da64/Mapas/cs_assault_with_real_light.glb';
 

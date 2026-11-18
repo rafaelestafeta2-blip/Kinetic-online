@@ -41,7 +41,7 @@ export interface OnlineHitEvent {
   targetUid: string;
   targetCallsign: string;
   targetTeam: OnlineTeam;
-  weaponId: WeaponId;
+  weaponId: WeaponId | 'GRENADE';
   damage: number;
   isHeadshot: boolean;
   lethal: boolean;

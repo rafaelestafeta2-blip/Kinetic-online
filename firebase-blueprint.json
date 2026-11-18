@@ -7,10 +7,15 @@
       "properties": {
         "uid": {
           "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
           "description": "Firebase Auth UID of the player."
         },
         "callsign": {
           "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
           "description": "In-game username / operator callsign (unique across all players)."
         },
         "callsignLocked": {
@@ -19,11 +24,12 @@
         },
         "avatarDataUrl": {
           "type": "string",
+          "maxLength": 60000,
           "description": "Custom uploaded compressed avatar DataURL or profile photo URL."
         },
         "playerXp": {
           "type": "number",
-          "description": "Accumulated Warface progression XP."
+          "description": "Accumulated Warface progression XP (0 to 50000000)."
         },
         "rankLevel": {
           "type": "number",
@@ -31,14 +37,18 @@
         },
         "rankTitle": {
           "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
           "description": "Current military rank title."
         },
         "playerCash": {
           "type": "number",
-          "description": "Accumulated tactical cash bonus."
+          "description": "Accumulated tactical cash bonus (0 to 50000000)."
         },
         "activeWeapon": {
           "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
           "description": "Currently equipped primary weapon ID."
         },
         "unlockedWeapons": {
@@ -46,7 +56,7 @@
           "items": {
             "type": "string"
           },
-          "description": "Array of unlocked WeaponId strings."
+          "description": "Array of unlocked WeaponId strings (1 to 25 items)."
         },
         "totalKills": {
           "type": "number",
@@ -70,7 +80,7 @@
         },
         "matchesWon": {
           "type": "number",
-          "description": "Total 5v5 bomb match victories."
+          "description": "Total 5v5 bomb match victories (<= matchesPlayed)."
         },
         "bombsPlanted": {
           "type": "number",
@@ -81,7 +91,7 @@
           "items": {
             "type": "string"
           },
-          "description": "Array of unlocked tactical achievement IDs."
+          "description": "Array of unlocked tactical achievement IDs (up to 50 items)."
         },
         "economyVersion": {
           "type": "number",
@@ -89,16 +99,20 @@
         },
         "mmr": {
           "type": "number",
-          "description": "Skill Rating (MMR) for Ranked 5v5 matchmaking."
+          "description": "Skill Rating (MMR) for Ranked 5v5 matchmaking (100 to 10000)."
         },
         "createdAt": {
           "type": "string",
           "format": "date-time",
+          "minLength": 10,
+          "maxLength": 40,
           "description": "ISO timestamp when profile was first created."
         },
         "updatedAt": {
           "type": "string",
           "format": "date-time",
+          "minLength": 10,
+          "maxLength": 40,
           "description": "ISO timestamp when profile was last synced."
         }
       },
@@ -130,15 +144,23 @@
       "properties": {
         "callsign": {
           "type": "string",
+          "minLength": 3,
+          "maxLength": 24,
+          "pattern": "^[A-Z0-9_\\-]+$",
           "description": "The exact uppercase callsign claimed."
         },
         "uid": {
           "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
           "description": "The UID of the player who owns this callsign."
         },
         "createdAt": {
           "type": "string",
           "format": "date-time",
+          "minLength": 10,
+          "maxLength": 40,
           "description": "ISO timestamp when the callsign was claimed."
         }
       },
@@ -151,15 +173,31 @@
       "properties": {
         "roomId": {
           "type": "string",
+          "minLength": 4,
+          "maxLength": 16,
+          "pattern": "^[A-Z0-9]+$",
           "description": "6-character uppercase room code."
         },
         "hostUid": {
           "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
           "description": "UID of the room creator/host."
         },
         "arenaMode": {
           "type": "string",
-          "description": "Selected 5v5 map mode (DUST2_BOMB_5V5, ASSAULT_BOMB_5V5, YARD_BOMB_5V5, INDUSTRIA_BOMB_5V5, HANGAR_BOMB_5V5, EASTERN_CITY_BOMB_5V5, MIRAGE_ANUBIS_BOMB_5V5)."
+          "maxLength": 40,
+          "enum": [
+            "DUST2_BOMB_5V5",
+            "ASSAULT_BOMB_5V5",
+            "YARD_BOMB_5V5",
+            "INDUSTRIA_BOMB_5V5",
+            "HANGAR_BOMB_5V5",
+            "EASTERN_CITY_BOMB_5V5",
+            "MIRAGE_ANUBIS_BOMB_5V5"
+          ],
+          "description": "Selected 5v5 map mode."
         },
         "isPrivate": {
           "type": "boolean",
@@ -167,6 +205,8 @@
         },
         "queueType": {
           "type": "string",
+          "maxLength": 16,
+          "enum": ["CASUAL", "RANKED", "Casual", "Ranked"],
           "description": "Queue mode for matchmaking: CASUAL or RANKED."
         },
         "averageMmr": {
@@ -175,11 +215,13 @@
         },
         "status": {
           "type": "string",
+          "maxLength": 16,
+          "enum": ["WAITING", "PLAYING", "FINISHED"],
           "description": "WAITING, PLAYING, or FINISHED."
         },
         "currentRound": {
           "type": "number",
-          "description": "Current round number (1 to 6)."
+          "description": "Current round number (1 to 20)."
         },
         "vanguardScore": {
           "type": "number",
@@ -191,15 +233,19 @@
         },
         "bombStatus": {
           "type": "string",
+          "maxLength": 16,
+          "enum": ["CARRIED", "PLANTED", "DEFUSED", "DETONATED"],
           "description": "CARRIED, PLANTED, DEFUSED, or DETONATED."
         },
         "plantedSite": {
           "type": "string",
+          "maxLength": 8,
+          "enum": ["NONE", "A", "B"],
           "description": "NONE, A, or B."
         },
         "players": {
           "type": "object",
-          "description": "Map of connected human players keyed by UID."
+          "description": "Map of connected human players keyed by UID (up to 12 entries)."
         },
         "lastHitEvent": {
           "type": "object",
@@ -212,6 +258,8 @@
         "createdAt": {
           "type": "string",
           "format": "date-time",
+          "minLength": 10,
+          "maxLength": 40,
           "description": "ISO timestamp when room was created."
         }
       },
@@ -238,19 +286,22 @@
       "properties": {
         "uid": {
           "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
           "description": "Owner player UID."
         },
         "friends": {
           "type": "object",
-          "description": "Map of confirmed friends keyed by friend UID."
+          "description": "Map of confirmed friends keyed by friend UID (up to 100 entries)."
         },
         "requests": {
           "type": "object",
-          "description": "Map of incoming friend requests keyed by sender UID."
+          "description": "Map of incoming friend requests keyed by sender UID (up to 50 entries)."
         },
         "invites": {
           "type": "object",
-          "description": "Map of active 5v5 room invites keyed by sender UID."
+          "description": "Map of active 5v5 room invites keyed by sender UID (up to 30 entries)."
         },
         "updatedAtMs": {
           "type": "number",
@@ -266,6 +317,9 @@
       "properties": {
         "chatId": {
           "type": "string",
+          "minLength": 3,
+          "maxLength": 260,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
           "description": "Sorted pair of UIDs joined by underscore."
         },
         "participants": {
@@ -273,14 +327,14 @@
           "items": {
             "type": "string"
           },
-          "description": "Two participant UIDs."
+          "description": "Exactly two distinct participant UIDs."
         },
         "messages": {
           "type": "array",
           "items": {
             "type": "object"
           },
-          "description": "Recent direct messages between the two operators."
+          "description": "Recent direct messages between the two operators (up to 60 items)."
         },
         "updatedAtMs": {
           "type": "number",

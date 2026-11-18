@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { SCOPE_PACK_CATALOG, SCOPE_PACK_ORDER } from '../progression/loadoutSystem';
 import { OpticType, WeaponId } from '../types/game';
 import { buildLevel3DWeaponPreviewGroup } from './botWeaponProps';
+import { createGameGltfLoader } from './gltfLoaderFactory';
 import {
   createSecondaryWebGLRenderer,
   disposeSecondaryWebGLRenderer,
@@ -17,7 +17,7 @@ const thumbnailCache = new Map<WeaponId, string>();
 const inFlightCache = new Map<WeaponId, Promise<string | null>>();
 const scopeThumbnailCache = new Map<OpticType, string>();
 const scopeInFlightCache = new Map<OpticType, Promise<string | null>>();
-const sharedScopeGltfLoader = new GLTFLoader();
+const sharedScopeGltfLoader = createGameGltfLoader();
 let renderQueue: Promise<unknown> = Promise.resolve();
 
 interface SharedStudioRig {

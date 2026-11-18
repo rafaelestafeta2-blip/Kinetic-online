@@ -14,12 +14,14 @@ import {
   preloadMixamoAnimPack,
 } from './mixamoAnimPackLoader';
 
-const PRO_RIFLE_LOCAL_URL = '/models/characters/pro_rifle_pack.glb';
+import { resolveAssetUrl } from '../utils/assetUrl';
+
+const PRO_RIFLE_LOCAL_URL = resolveAssetUrl('/models/characters/pro_rifle_pack.glb');
 const PRO_RIFLE_FALLBACK_URL = 'https://github.com/rafaelestafeta2-blip/Gamesfps/releases/download/V1/Pro.Rifle.Pack.glb';
-const SNIPER_OPERATOR_LOCAL_URL = '/models/characters/sniper_operator.glb';
-const VANGUARD_RIFLEMAN_LOCAL_URL = '/models/characters/vanguard_rifleman.glb';
-const VANGUARD_ENGINEER_LOCAL_URL = '/models/characters/vanguard_engineer.glb';
-const VANGUARD_MEDIC_LOCAL_URL = '/models/characters/vanguard_medic.glb';
+const SNIPER_OPERATOR_LOCAL_URL = resolveAssetUrl('/models/characters/sniper_operator.glb');
+const VANGUARD_RIFLEMAN_LOCAL_URL = resolveAssetUrl('/models/characters/vanguard_rifleman.glb');
+const VANGUARD_ENGINEER_LOCAL_URL = resolveAssetUrl('/models/characters/vanguard_engineer.glb');
+const VANGUARD_MEDIC_LOCAL_URL = resolveAssetUrl('/models/characters/vanguard_medic.glb');
 export type CharacterAvatarKind =
   | 'VANGUARD_FUZILEIRO'
   | 'VANGUARD_ENGENHEIRO'

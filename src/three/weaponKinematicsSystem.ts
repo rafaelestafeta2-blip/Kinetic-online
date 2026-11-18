@@ -56,9 +56,6 @@ export function updateWeaponKinematicsAndOptics(engine: any, dt: number): void {
         targetFov = 14;
       } else if (engine.state.activeWeapon === 'SNIPER_TACTICAL') {
         targetFov = 18;
-      } else if (engine.state.activeWeapon === 'AK12_RIFLE') {
-        // Moderate 2.1x optical zoom on AK-12's native scope keeping ~48% bezel and upper receiver crisp
-        targetFov = 34;
       } else {
         targetFov = 58;
       }

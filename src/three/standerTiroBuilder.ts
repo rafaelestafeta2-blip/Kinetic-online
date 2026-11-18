@@ -7,9 +7,10 @@ import {
 } from './levelBuilder';
 import { populateStanderTiroTargetsAndArmory } from './paperTargetBuilder';
 import { buildStanderObstacleHall } from './standerObstacleHallBuilder';
+import { resolveAssetUrl } from '../utils/assetUrl';
 
 /** Shooting range — ETC1S GPU textures + Meshopt geometry. */
-const STANDER_TIRO_LOCAL_URL = '/models/maps/shooting_range_2k.glb';
+const STANDER_TIRO_LOCAL_URL = resolveAssetUrl('/models/maps/shooting_range_2k.glb');
 
 /** Lift so floor planes (~y=-1.16) sit at world y=0. */
 export const STANDER_FLOOR_Y_LIFT = 1.164;

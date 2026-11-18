@@ -20,16 +20,11 @@ interface DroppedMagInstance {
 }
 
 interface SparkParticle {
-  mesh: THREE.Mesh;
   active: boolean;
   age: number;
   maxAge: number;
+  pos: THREE.Vector3;
   vel: THREE.Vector3;
-}
-
-interface BulletDecalInstance {
-  mesh: THREE.Mesh;
-  active: boolean;
 }
 
 interface TracerBeamInstance {
@@ -39,39 +34,60 @@ interface TracerBeamInstance {
   age: number;
 }
 
-// Module-scope reusable math temporaries (Zero GC in update loop)
+const SPARK_COUNT = 64;
+const DECAL_COUNT = 45;
+
+// Module-scope reusable math temporaries (Zero GC in hot combat loops)
 const _upVec = new THREE.Vector3(0, 0, 1);
 const _quat = new THREE.Quaternion();
+const _jitterVec = new THREE.Vector3();
+const _sparkTarget = new THREE.Vector3();
+const _sparkColor = new THREE.Color();
+const _dummy = new THREE.Object3D();
+const _zeroMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
 
 export class BallisticsFXPool {
+  private scene: THREE.Scene;
   private group = new THREE.Group();
+
   private shells: BrassShellInstance[] = [];
   private shellCursor = 0;
+  private shellGeo: THREE.BufferGeometry;
+  private shellMat: THREE.MeshStandardMaterial;
 
   private droppedMags: DroppedMagInstance[] = [];
   private magCursor = 0;
+  private magGeo: THREE.BufferGeometry;
+  private magMat: THREE.MeshStandardMaterial;
 
   private sparks: SparkParticle[] = [];
   private sparkCursor = 0;
+  private sparkMesh: THREE.InstancedMesh;
+  private sparkGeo: THREE.BufferGeometry;
+  private sparkMat: THREE.MeshBasicMaterial;
+  private sparksDirty = false;
 
-  private decals: BulletDecalInstance[] = [];
+  private decalMesh: THREE.InstancedMesh;
+  private decalGeo: THREE.BufferGeometry;
+  private decalMat: THREE.MeshBasicMaterial;
   private decalCursor = 0;
 
   private tracers: TracerBeamInstance[] = [];
   private tracerCursor = 0;
 
   constructor(scene: THREE.Scene) {
+    this.scene = scene;
     scene.add(this.group);
 
     // 1. Pool of 32 Brass 5.56mm Casings
-    const shellGeo = new THREE.CylinderGeometry(0.0048, 0.005, 0.044, 8);
-    const shellMat = new THREE.MeshStandardMaterial({
+    this.shellGeo = new THREE.CylinderGeometry(0.0048, 0.005, 0.044, 8);
+    this.shellMat = new THREE.MeshStandardMaterial({
       color: 0xeab308,
       metalness: 0.94,
       roughness: 0.2,
     });
     for (let i = 0; i < 32; i++) {
-      const mesh = new THREE.Mesh(shellGeo, shellMat);
+      const mesh = new THREE.Mesh(this.shellGeo, this.shellMat);
       mesh.visible = false;
       this.group.add(mesh);
       this.shells.push({
@@ -85,14 +101,14 @@ export class BallisticsFXPool {
     }
 
     // 2. Pool of 8 Dropped Polymer Magazines (for Emergency Speed Reloads)
-    const magGeo = new THREE.BoxGeometry(0.028, 0.165, 0.068);
-    const magMat = new THREE.MeshStandardMaterial({
+    this.magGeo = new THREE.BoxGeometry(0.028, 0.165, 0.068);
+    this.magMat = new THREE.MeshStandardMaterial({
       color: 0x8c7355,
       roughness: 0.78,
       metalness: 0.1,
     });
     for (let i = 0; i < 8; i++) {
-      const mesh = new THREE.Mesh(magGeo, magMat);
+      const mesh = new THREE.Mesh(this.magGeo, this.magMat);
       mesh.visible = false;
       this.group.add(mesh);
       this.droppedMags.push({
@@ -105,42 +121,60 @@ export class BallisticsFXPool {
       });
     }
 
-    // 3. Pool of 64 Impact Spark Particles
-    const sparkGeo = new THREE.BoxGeometry(0.018, 0.018, 0.065);
-    for (let i = 0; i < 64; i++) {
-      const mat = new THREE.MeshBasicMaterial({
-        color: 0xfbbf24,
-        transparent: true,
-        opacity: 1,
-        blending: THREE.AdditiveBlending,
-      });
-      const mesh = new THREE.Mesh(sparkGeo, mat);
-      mesh.visible = false;
-      this.group.add(mesh);
+    // 3. Instanced Pool of 64 Impact Spark Particles (1 draw call total)
+    this.sparkGeo = new THREE.BoxGeometry(0.018, 0.018, 0.065);
+    this.sparkMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.92,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    this.sparkMesh = new THREE.InstancedMesh(
+      this.sparkGeo,
+      this.sparkMat,
+      SPARK_COUNT
+    );
+    this.sparkMesh.frustumCulled = false;
+    this.sparkMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    _sparkColor.setHex(0xfbbf24);
+    for (let i = 0; i < SPARK_COUNT; i++) {
+      this.sparkMesh.setMatrixAt(i, _zeroMatrix);
+      this.sparkMesh.setColorAt(i, _sparkColor);
       this.sparks.push({
-        mesh,
         active: false,
         age: 0,
         maxAge: 0.28,
+        pos: new THREE.Vector3(),
         vel: new THREE.Vector3(),
       });
     }
+    this.sparkMesh.instanceMatrix.needsUpdate = true;
+    if (this.sparkMesh.instanceColor) {
+      this.sparkMesh.instanceColor.needsUpdate = true;
+    }
+    this.group.add(this.sparkMesh);
 
-    // 4. Pool of 45 Bullet Hole Decals (polygonOffset prevents Z-fighting)
-    const decalGeo = new THREE.CircleGeometry(0.026, 10);
-    const decalMat = new THREE.MeshBasicMaterial({
+    // 4. Instanced Pool of 45 Bullet Hole Decals (1 draw call total)
+    this.decalGeo = new THREE.CircleGeometry(0.026, 10);
+    this.decalMat = new THREE.MeshBasicMaterial({
       color: 0x090b0f,
       polygonOffset: true,
       polygonOffsetFactor: -2,
       polygonOffsetUnits: -2,
       depthWrite: false,
     });
-    for (let i = 0; i < 45; i++) {
-      const mesh = new THREE.Mesh(decalGeo, decalMat);
-      mesh.visible = false;
-      this.group.add(mesh);
-      this.decals.push({ mesh, active: false });
+    this.decalMesh = new THREE.InstancedMesh(
+      this.decalGeo,
+      this.decalMat,
+      DECAL_COUNT
+    );
+    this.decalMesh.frustumCulled = false;
+    for (let i = 0; i < DECAL_COUNT; i++) {
+      this.decalMesh.setMatrixAt(i, _zeroMatrix);
     }
+    this.decalMesh.instanceMatrix.needsUpdate = true;
+    this.group.add(this.decalMesh);
 
     // 5. Pool of 12 Supersonic Ballistic Tracer Streaks
     for (let i = 0; i < 12; i++) {
@@ -162,6 +196,30 @@ export class BallisticsFXPool {
     }
   }
 
+  /**
+   * Pre-compiles ballistics FX shaders during loading so the first shot/impact
+   * never stalls WebGL on mobile GPUs.
+   */
+  public prewarm(
+    renderer: THREE.WebGLRenderer,
+    scene: THREE.Scene,
+    camera: THREE.Camera,
+    isSoftwareGl = false
+  ): void {
+    if (isSoftwareGl) return;
+    const prevShell = this.shells[0]?.mesh.visible ?? false;
+    const prevTracer = this.tracers[0]?.line.visible ?? false;
+    if (this.shells[0]) this.shells[0].mesh.visible = true;
+    if (this.tracers[0]) this.tracers[0].line.visible = true;
+    try {
+      renderer.compile(scene, camera);
+    } catch {
+      // non-fatal
+    }
+    if (this.shells[0]) this.shells[0].mesh.visible = prevShell;
+    if (this.tracers[0]) this.tracers[0].line.visible = prevTracer;
+  }
+
   public spawnBrassCasing(
     worldPos: THREE.Vector3,
     cameraRight: THREE.Vector3,
@@ -181,7 +239,6 @@ export class BallisticsFXPool {
       Math.random() * Math.PI
     );
 
-    // Eject up and right
     item.vel
       .copy(cameraRight)
       .multiplyScalar(2.2 + Math.random() * 0.9)
@@ -194,7 +251,10 @@ export class BallisticsFXPool {
     );
   }
 
-  public spawnDroppedMagazine(worldPos: THREE.Vector3, forwardDir: THREE.Vector3): void {
+  public spawnDroppedMagazine(
+    worldPos: THREE.Vector3,
+    forwardDir: THREE.Vector3
+  ): void {
     const item = this.droppedMags[this.magCursor];
     this.magCursor = (this.magCursor + 1) % this.droppedMags.length;
 
@@ -203,10 +263,7 @@ export class BallisticsFXPool {
     item.bounced = false;
     item.mesh.visible = true;
     item.mesh.position.copy(worldPos);
-    item.vel
-      .copy(forwardDir)
-      .multiplyScalar(0.8)
-      .setY(-1.4);
+    item.vel.copy(forwardDir).multiplyScalar(0.8).setY(-1.4);
     item.angVel.set(4.5, (Math.random() - 0.5) * 6, 3.2);
   }
 
@@ -216,50 +273,73 @@ export class BallisticsFXPool {
     isMetallic: boolean,
     isCrit: boolean
   ): void {
-    // 1. Place bullet decal slightly offset along surface normal
-    const decal = this.decals[this.decalCursor];
-    this.decalCursor = (this.decalCursor + 1) % this.decals.length;
-    decal.active = true;
-    decal.mesh.visible = true;
-    decal.mesh.position.copy(hitPoint).addScaledVector(hitNormal, 0.004);
+    // 1. Place bullet decal into instanced ring buffer
+    const decalIdx = this.decalCursor;
+    this.decalCursor = (this.decalCursor + 1) % DECAL_COUNT;
+    _dummy.position.copy(hitPoint).addScaledVector(hitNormal, 0.004);
     _quat.setFromUnitVectors(_upVec, hitNormal);
-    decal.mesh.quaternion.copy(_quat);
+    _dummy.quaternion.copy(_quat);
+    _dummy.scale.setScalar(1);
+    _dummy.updateMatrix();
+    this.decalMesh.setMatrixAt(decalIdx, _dummy.matrix);
+    this.decalMesh.instanceMatrix.needsUpdate = true;
 
-    // 2. Burst of 10 pooled sparks
-    const count = isMetallic || isCrit ? 14 : 7;
-    const sparkColor = isCrit ? 0xef4444 : isMetallic ? 0xfbbf24 : 0x94a3b8;
+    // 2. Burst of pooled instanced sparks (Zero GC)
+    const count = isMetallic || isCrit ? 12 : 6;
+    const sparkColorHex = isCrit ? 0xef4444 : isMetallic ? 0xfbbf24 : 0x94a3b8;
+    _sparkColor.setHex(sparkColorHex);
+
     for (let i = 0; i < count; i++) {
-      const sp = this.sparks[this.sparkCursor];
-      this.sparkCursor = (this.sparkCursor + 1) % this.sparks.length;
+      const idx = this.sparkCursor;
+      this.sparkCursor = (this.sparkCursor + 1) % SPARK_COUNT;
+      const sp = this.sparks[idx];
 
       sp.active = true;
       sp.age = 0;
       sp.maxAge = 0.18 + Math.random() * 0.18;
-      sp.mesh.visible = true;
-      sp.mesh.position.copy(hitPoint).addScaledVector(hitNormal, 0.02);
-      (sp.mesh.material as THREE.MeshBasicMaterial).color.setHex(sparkColor);
-      (sp.mesh.material as THREE.MeshBasicMaterial).opacity = 1;
+      sp.pos.copy(hitPoint).addScaledVector(hitNormal, 0.02);
 
-      const speed = isMetallic ? 5.5 + Math.random() * 6.5 : 2.5 + Math.random() * 3.5;
+      const speed = isMetallic
+        ? 5.5 + Math.random() * 6.5
+        : 2.5 + Math.random() * 3.5;
+      _jitterVec.set(
+        (Math.random() - 0.5) * 1.4,
+        Math.random() * 1.1,
+        (Math.random() - 0.5) * 1.4
+      );
       sp.vel
         .copy(hitNormal)
-        .add(
-          new THREE.Vector3(
-            (Math.random() - 0.5) * 1.4,
-            Math.random() * 1.1,
-            (Math.random() - 0.5) * 1.4
-          )
-        )
+        .add(_jitterVec)
         .normalize()
         .multiplyScalar(speed);
+
+      this.sparkMesh.setColorAt(idx, _sparkColor);
+      _dummy.position.copy(sp.pos);
+      _sparkTarget.copy(sp.pos).add(sp.vel);
+      _dummy.lookAt(_sparkTarget);
+      _dummy.scale.setScalar(1);
+      _dummy.updateMatrix();
+      this.sparkMesh.setMatrixAt(idx, _dummy.matrix);
     }
+
+    this.sparkMesh.instanceMatrix.needsUpdate = true;
+    if (this.sparkMesh.instanceColor) {
+      this.sparkMesh.instanceColor.needsUpdate = true;
+    }
+    this.sparksDirty = true;
   }
 
-  public spawnTracer(startPos: THREE.Vector3, endPos: THREE.Vector3, colorHex = 0xfde047): void {
+  public spawnTracer(
+    startPos: THREE.Vector3,
+    endPos: THREE.Vector3,
+    colorHex = 0xfde047
+  ): void {
     const tr = this.tracers[this.tracerCursor];
     this.tracerCursor = (this.tracerCursor + 1) % this.tracers.length;
 
-    const posAttr = tr.line.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const posAttr = tr.line.geometry.getAttribute(
+      'position'
+    ) as THREE.BufferAttribute;
     posAttr.setXYZ(0, startPos.x, startPos.y, startPos.z);
     posAttr.setXYZ(1, endPos.x, endPos.y, endPos.z);
     posAttr.needsUpdate = true;
@@ -332,25 +412,31 @@ export class BallisticsFXPool {
       }
     }
 
-    // Update Sparks
-    for (let i = 0; i < this.sparks.length; i++) {
-      const sp = this.sparks[i];
-      if (!sp.active) continue;
-      sp.age += dt;
-      if (sp.age >= sp.maxAge) {
-        sp.active = false;
-        sp.mesh.visible = false;
-        continue;
+    // Update Instanced Sparks
+    if (this.sparksDirty) {
+      let anyActive = false;
+      for (let i = 0; i < SPARK_COUNT; i++) {
+        const sp = this.sparks[i];
+        if (!sp.active) continue;
+        sp.age += dt;
+        if (sp.age >= sp.maxAge) {
+          sp.active = false;
+          this.sparkMesh.setMatrixAt(i, _zeroMatrix);
+          continue;
+        }
+        anyActive = true;
+        sp.vel.y -= 12.0 * dt;
+        sp.pos.addScaledVector(sp.vel, dt);
+        const fade = Math.max(0.05, 1 - sp.age / sp.maxAge);
+        _dummy.position.copy(sp.pos);
+        _sparkTarget.copy(sp.pos).add(sp.vel);
+        _dummy.lookAt(_sparkTarget);
+        _dummy.scale.set(fade, fade, fade);
+        _dummy.updateMatrix();
+        this.sparkMesh.setMatrixAt(i, _dummy.matrix);
       }
-      sp.vel.y -= 12.0 * dt;
-      sp.mesh.position.addScaledVector(sp.vel, dt);
-      sp.mesh.lookAt(
-        sp.mesh.position.x + sp.vel.x,
-        sp.mesh.position.y + sp.vel.y,
-        sp.mesh.position.z + sp.vel.z
-      );
-      (sp.mesh.material as THREE.MeshBasicMaterial).opacity =
-        1 - sp.age / sp.maxAge;
+      this.sparkMesh.instanceMatrix.needsUpdate = true;
+      this.sparksDirty = anyActive;
     }
 
     // Update Tracers
@@ -364,6 +450,24 @@ export class BallisticsFXPool {
       } else {
         tr.mat.opacity = 0.72 * (1 - tr.age / 0.085);
       }
+    }
+  }
+
+  public dispose(): void {
+    this.scene.remove(this.group);
+    this.shellGeo.dispose();
+    this.shellMat.dispose();
+    this.magGeo.dispose();
+    this.magMat.dispose();
+    this.sparkGeo.dispose();
+    this.sparkMat.dispose();
+    this.sparkMesh.dispose();
+    this.decalGeo.dispose();
+    this.decalMat.dispose();
+    this.decalMesh.dispose();
+    for (let i = 0; i < this.tracers.length; i++) {
+      this.tracers[i].line.geometry.dispose();
+      this.tracers[i].mat.dispose();
     }
   }
 }

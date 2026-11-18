@@ -1,7 +1,9 @@
 import * as THREE from 'three';
-import { GLTFLoader, GLTFParser } from 'three/addons/loaders/GLTFLoader.js';
+import type { GLTFParser } from 'three/addons/loaders/GLTFLoader.js';
+import { createGameGltfLoader } from './gltfLoaderFactory';
+import { resolveAssetUrl } from '../utils/assetUrl';
 
-const M4_FPS_PACK_LOCAL_URL = '/models/m4_fps_pack.glb';
+const M4_FPS_PACK_LOCAL_URL = resolveAssetUrl('/models/m4_fps_pack.glb');
 const M4_FPS_PACK_GITHUB_RAW_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/d7b8cb9d6d09ac5bfaa3aa11fd0cd8057dd3c862/m4_fps_animations_pack.glb';
 
@@ -137,7 +139,7 @@ export class GrenadeFirstPersonHandRig {
   }
 
   private loadRiggedM4Hands(): void {
-    const loader = new GLTFLoader();
+    const loader = createGameGltfLoader();
     loader.register((parser) => new SpecularGlossinessHandPlugin(parser));
 
     const onLoaded = (gltf: { scene: THREE.Group }) => {

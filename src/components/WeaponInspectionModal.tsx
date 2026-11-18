@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import type { GLTF, GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { soundEngine } from '../audio/soundEngine';
+import { createGameGltfLoader } from '../three/gltfLoaderFactory';
 import {
   getRankForXp,
   getRequiredXpForOptic,
@@ -764,10 +765,10 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
     const scopeSpec = SCOPE_PACK_CATALOG[equippedOptic];
     if (!scopeSpec?.modelUrl) return;
 
-    loader.load(scopeSpec.modelUrl, (gltf) => {
+    loader.load(scopeSpec.modelUrl, (gltf: GLTF) => {
       if (cancelled) return;
       const scopeScene = gltf.scene;
-      scopeScene.traverse((child) => {
+      scopeScene.traverse((child: THREE.Object3D) => {
         const m = child as THREE.Mesh;
         if (!m.isMesh) return;
         m.frustumCulled = false;
@@ -873,8 +874,8 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
     scene.add(turntablePivot);
     turntablePivotRef.current = turntablePivot;
 
-    // Configure GLTFLoader with KHR_materials_pbrSpecularGlossiness support
-    const gltfLoader = new GLTFLoader();
+    // Configure GLTFLoader with Draco/Meshopt/KTX2 + KHR_materials_pbrSpecularGlossiness support
+    const gltfLoader = createGameGltfLoader();
     gltfLoader.register((parser) => ({
       name: 'KHR_materials_pbrSpecularGlossiness',
       extendMaterialParams: async (

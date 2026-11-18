@@ -63,6 +63,8 @@ import {
   getOpticAdsTransform,
   TacticalWeaponRig,
 } from './weaponBuilder';
+import { warmSubtreeOnGpu } from './gpuBudget';
+import { runtimeTelemetry } from '../telemetry/runtimeTelemetry';
 import { AssetPreloader } from './preloader';
 import { buildYardLevel } from './yardLevelBuilder';
 import { YardBombSystem } from './yardBombSystem';
@@ -546,15 +548,18 @@ export class TacticalFPSEngine {
     this.state.nextRankXp = nextRank ? nextRank.requiredXp : rankInfo.requiredXp;
 
     // 1. Mandatory Software-WebGL Guard
+    let detectedGpuRenderer = 'unknown';
     this.isSoftwareGl = (() => {
       const gl = document.createElement('canvas').getContext('webgl2');
       if (!gl) return true;
       const ext = gl.getExtension('WEBGL_debug_renderer_info');
       const param = ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER;
       const gpu = String(gl.getParameter(param));
+      detectedGpuRenderer = gpu;
       gl.getExtension('WEBGL_lose_context')?.loseContext();
       return /SwiftShader|llvmpipe|softpipe|Software|Basic Render/i.test(gpu);
     })();
+    runtimeTelemetry.initEnvironment(detectedGpuRenderer);
 
     this.renderer = new THREE.WebGLRenderer({
       antialias: !this.isSoftwareGl,
@@ -648,7 +653,19 @@ export class TacticalFPSEngine {
 
     // 5. Procedural Textures, Weapon Rig, Level & Ballistics Pool
     this.textures = createProceduralTextures(this.renderer);
-    this.weaponRig = buildTacticalWeaponRig(this.textures, this.isSoftwareGl);
+    this.weaponRig = buildTacticalWeaponRig(
+      this.textures,
+      this.isSoftwareGl,
+      (subtree) => {
+        warmSubtreeOnGpu(
+          subtree,
+          this.scene,
+          this.camera,
+          this.renderer,
+          this.isSoftwareGl
+        );
+      }
+    );
     this.camera.add(this.weaponRig.root);
     this.unsubInventory = subscribePlayerInventory(() => {
       const w = this.state.activeWeapon;
@@ -789,6 +806,12 @@ export class TacticalFPSEngine {
       onProgress
     );
     preloadCharacterAndBombAudio();
+    this.fxPool.prewarm(
+      this.renderer,
+      this.scene,
+      this.camera,
+      this.isSoftwareGl
+    );
     this.grenadeSystem.prewarmShadersAndTextures(
       this.renderer,
       this.isSoftwareGl
@@ -809,6 +832,7 @@ export class TacticalFPSEngine {
     onProgress: (pct: number, statusLabel: string) => void
   ): Promise<void> {
     this.stopLoop();
+    const loadStartMs = performance.now();
     await prepareMatchArena({
       mode,
       renderer: this.renderer,
@@ -829,6 +853,7 @@ export class TacticalFPSEngine {
       grenadeSystem: this.grenadeSystem,
       onProgress,
     });
+    runtimeTelemetry.recordMatchLoad(mode, performance.now() - loadStartMs);
   }
 
   /**
@@ -1092,7 +1117,13 @@ export class TacticalFPSEngine {
       this.postMatchShowcase?.stop(this.camera, this.weaponRig.root);
       this.playerDeathTp?.stop(this.camera, this.weaponRig.root);
     }
+    this.weaponRig?.pruneUnusedWeapons([
+      this.primaryWeapon,
+      this.secondaryWeapon,
+      'KNIFE_TACTICAL',
+    ]);
     this.cleanupMatchAssets();
+    runtimeTelemetry.flush(true);
     this.state.screen = 'MAIN_MENU';
     this.startLoop();
     if (document.pointerLockElement) {
@@ -1434,7 +1465,7 @@ export class TacticalFPSEngine {
     isHeadshot: boolean,
     killerCallsign: string,
     killerTeam: 'BLACKTHORN' | 'VANGUARD',
-    killerWeapon: WeaponId,
+    killerWeapon: WeaponId | 'GRENADE',
     onFinish: () => void,
     killerPos?: THREE.Vector3 | null
   ): void {
@@ -1682,7 +1713,7 @@ export class TacticalFPSEngine {
     };
     this.state.reloadTypeLabel = modeNames[this.state.fireMode];
     this.magCheckTimer = 1.5;
-    soundEngine.playMechanicalSwitch(1.15);
+    soundEngine.playFireModeSwitch();
     this.emitHud();
   }
 
@@ -1844,7 +1875,7 @@ export class TacticalFPSEngine {
     // Boot calls selectWeapon while the intro video is on screen. The swap
     // sample is the character-equip sound the player was hearing underneath it.
     if (this.state.screen === 'PLAYING') {
-      soundEngine.playWeaponSwap();
+      soundEngine.playWeaponSwap(weaponId === 'P50_PISTOL');
     }
     if (
       (weaponId === 'AK47_RIFLE' || weaponId === 'AK12_RIFLE') &&
@@ -2032,7 +2063,7 @@ export class TacticalFPSEngine {
 
       const remoteUid = t.root.userData?.remotePlayerUid as string | undefined;
       if (remoteUid && isOnlineMatchActive()) {
-        publishCombatHit(remoteUid, blastDmg, false, this.state.activeWeapon);
+        publishCombatHit(remoteUid, blastDmg, false, 'GRENADE');
       }
 
       if (t.health <= 0) {
@@ -2219,7 +2250,7 @@ export class TacticalFPSEngine {
     if (!this.state.isAds) {
       this.touchHoldBreath = false;
     }
-    soundEngine.playMechanicalSwitch(1.05);
+    soundEngine.playAimTransition(this.state.isAds);
     this.emitHud();
   }
 
@@ -2449,6 +2480,7 @@ export class TacticalFPSEngine {
   public resetScenario(mode: DrillMode, keepMatchScore = false): void {
     const loadoutMod = getClassCombatModifiers();
     this.state.drillMode = mode;
+    runtimeTelemetry.setContext(mode, this.state.qualityPreset);
     resetClassSupportForRound(this as any);
     this.playerReviveUntilSec = 0;
     this.playerReviveExpired = false;
@@ -2493,6 +2525,16 @@ export class TacticalFPSEngine {
     const startingWeapon = !keepMatchScore
       ? loadoutMod.primaryWeapon
       : this.primaryWeapon || loadoutMod.primaryWeapon || 'M4_CARBINE';
+    this.weaponRig?.prewarmLoadout([
+      startingWeapon,
+      this.secondaryWeapon || 'P50_PISTOL',
+      'KNIFE_TACTICAL',
+    ]);
+    this.weaponRig?.pruneUnusedWeapons([
+      startingWeapon,
+      this.secondaryWeapon || 'P50_PISTOL',
+      'KNIFE_TACTICAL',
+    ]);
     this.selectWeapon(startingWeapon);
     this.state.fragGrenades = loadoutMod.fragCount;
     this.state.smokeGrenades = loadoutMod.smokeCount;
@@ -3087,8 +3129,10 @@ export class TacticalFPSEngine {
       this.triggerPulledThisPress = false;
       this.attemptFireWeapon();
     } else if (e.button === 2) {
+      if (!this.state.isAds) {
+        soundEngine.playAimTransition(true);
+      }
       this.state.isAds = true;
-      soundEngine.playMechanicalSwitch(1.05);
     }
   };
 
@@ -3097,6 +3141,9 @@ export class TacticalFPSEngine {
     if (e.button === 0) {
       this.triggerPulledThisPress = false;
     } else if (e.button === 2) {
+      if (this.state.isAds) {
+        soundEngine.playAimTransition(false);
+      }
       this.state.isAds = false;
     }
   };
@@ -3230,6 +3277,15 @@ export class TacticalFPSEngine {
     this.renderer.setSize(w, h);
   };
 
+  private onWebGlContextLost = (e: Event): void => {
+    e.preventDefault();
+    runtimeTelemetry.recordError('context_lost', 'canvas_webglcontextlost');
+  };
+
+  private onWebGlContextRestored = (): void => {
+    runtimeTelemetry.recordError('context_restored');
+  };
+
   private bindEvents(): void {
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
@@ -3243,6 +3299,16 @@ export class TacticalFPSEngine {
     window.addEventListener('contextmenu', this.onContextMenu);
     window.addEventListener('resize', this.onResize);
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
+    this.renderer.domElement.addEventListener(
+      'webglcontextlost',
+      this.onWebGlContextLost,
+      false
+    );
+    this.renderer.domElement.addEventListener(
+      'webglcontextrestored',
+      this.onWebGlContextRestored,
+      false
+    );
     this.renderer.domElement.addEventListener('touchstart', this.onCanvasTouchStart, {
       passive: true,
     });
@@ -3356,7 +3422,8 @@ export class TacticalFPSEngine {
       this.state.reloadTypeLabel = `RECARREGANDO ${shellsToLoad} CARTUCHO${shellsToLoad > 1 ? 'S' : ''}...`;
       this.stageSoundFlags = { magOut: false, magIn: false, boltSlap: false };
       this.weaponRig.triggerShotgunShellInsertAnimation(
-        Math.min(0.45, shellInterval)
+        Math.min(0.45, shellInterval),
+        this.reloadDuration
       );
       this.emitHud();
       return;
@@ -3389,26 +3456,36 @@ export class TacticalFPSEngine {
     }
 
     if (this.state.activeWeapon === 'P50_PISTOL') {
-      this.reloadDuration = 2.25;
-      soundEngine.playPistolFullReload();
+      this.reloadDuration = dryReload ? 2.15 : 1.75;
+      soundEngine.playPistolFullReload(dryReload);
+    } else if (
+      this.state.activeWeapon === 'SMG_MP5' ||
+      this.state.activeWeapon === 'SMG_45'
+    ) {
+      this.reloadDuration = dryReload ? 2.3 : 1.85;
+      soundEngine.playSmgFullReload(dryReload);
     } else if (
       this.state.activeWeapon === 'M4_CARBINE' ||
       this.state.activeWeapon === 'CARBINE_AR' ||
       this.state.activeWeapon === 'S_MILITARY'
     ) {
-      this.reloadDuration = this.state.activeWeapon === 'S_MILITARY' ? 2.5 : 2.75;
-      soundEngine.playM4a1FullReload();
+      this.reloadDuration = this.state.activeWeapon === 'S_MILITARY' ? 2.4 : 2.55;
+      soundEngine.playM4a1FullReload(dryReload);
     } else if (
       this.state.activeWeapon === 'AK47_RIFLE' ||
       this.state.activeWeapon === 'AK12_RIFLE'
     ) {
       this.reloadDuration = dryReload ? 2.5 : 2.0;
       soundEngine.playAk47FullReload(dryReload);
-    } else if (
-      this.state.activeWeapon === 'SNIPER_BOLT' ||
-      this.state.activeWeapon === 'SNIPER_TACTICAL'
-    ) {
-      soundEngine.playBoltActionCycle();
+    } else if (this.state.activeWeapon === 'L49_LMG') {
+      this.reloadDuration = dryReload ? 2.75 : 2.25;
+      soundEngine.playDmrOrLmgFullReload(dryReload);
+    } else if (this.state.activeWeapon === 'SNIPER_TACTICAL') {
+      this.reloadDuration = dryReload ? 2.6 : 2.15;
+      soundEngine.playDmrOrLmgFullReload(dryReload);
+    } else if (this.state.activeWeapon === 'SNIPER_BOLT') {
+      this.reloadDuration = 2.2;
+      soundEngine.playKar98kFullReload();
     }
 
     this.reloadTimer = 0;
@@ -3601,6 +3678,9 @@ export class TacticalFPSEngine {
     this.elapsedTime += dt;
 
     this.updateDynamicResolutionGovernor(rawDt);
+    if (this.state.screen === 'PLAYING') {
+      runtimeTelemetry.recordFrame(rawDt);
+    }
 
     if (
       this.state.screen === 'TITLE' ||
@@ -4168,6 +4248,14 @@ export class TacticalFPSEngine {
     document.removeEventListener('pointerlockchange', this.onPointerLockChange);
 
     this.renderer.domElement.removeEventListener(
+      'webglcontextlost',
+      this.onWebGlContextLost
+    );
+    this.renderer.domElement.removeEventListener(
+      'webglcontextrestored',
+      this.onWebGlContextRestored
+    );
+    this.renderer.domElement.removeEventListener(
       'touchstart',
       this.onCanvasTouchStart
     );
@@ -4184,7 +4272,9 @@ export class TacticalFPSEngine {
       this.onCanvasTouchEnd
     );
 
-    (this.fxPool as unknown as { dispose?: () => void })?.dispose?.();
+    runtimeTelemetry.flush(true);
+    this.weaponRig?.dispose();
+    this.fxPool?.dispose?.();
     (
       this.grenadeSystem as unknown as {
         dispose?: () => void;

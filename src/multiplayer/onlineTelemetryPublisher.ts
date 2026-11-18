@@ -159,7 +159,7 @@ export function publishRoomCombatHit(
   targetUid: string,
   damage: number,
   isHeadshot: boolean,
-  weaponId: WeaponId,
+  weaponId: WeaponId | 'GRENADE',
   localUid?: string | null
 ): OnlineHitEvent | null {
   if (!activeRoom) return null;

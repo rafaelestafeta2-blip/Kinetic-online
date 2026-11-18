@@ -65,10 +65,10 @@ export async function pushProfileToFirestoreNow(): Promise<void> {
   state.isSyncing = true;
   emitState();
 
-  const payload: PlayerCloudProfile = {
-    ...state.profile,
+  const { email: _omitEmail, ...restProfile } = state.profile;
+  const payload = {
+    ...restProfile,
     uid: user.uid,
-    email: '',
     updatedAt: new Date().toISOString(),
   };
 
@@ -130,7 +130,8 @@ onAuthStateChanged(auth, async (user) => {
     const merged = mergeLocalAndCloudProfiles(state.profile, cloudData, user);
     state.profile = merged;
     persistLocalProfile(merged);
-    void setDoc(playerRef, merged).catch((err) => {
+    const { email: _omitEmail, ...cloudSafeProfile } = merged;
+    void setDoc(playerRef, cloudSafeProfile).catch((err) => {
       handleFirestoreError(err, OperationType.WRITE, `players/${user.uid}`);
     });
     state.lastSyncedAt = merged.updatedAt;

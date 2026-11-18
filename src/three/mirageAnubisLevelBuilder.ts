@@ -5,9 +5,10 @@ import { Dust2TriangleCollider } from './dust2Collider';
 import { Dust2LevelBundle, runExclusiveGlbLoad } from './dust2LevelBuilder';
 import { TacticalTargetEntity } from './levelBuilder';
 import { YardBotEntity } from './yardPropsBuilder';
+import { resolveAssetUrl } from '../utils/assetUrl';
 
 /** Mirage Anubis — ETC1S GPU textures + Meshopt geometry. */
-const MIRAGE_ANUBIS_LOCAL_URL = '/models/maps/mirage_anubis_2k.glb';
+const MIRAGE_ANUBIS_LOCAL_URL = resolveAssetUrl('/models/maps/mirage_anubis_2k.glb');
 
 /**
  * Source AABB y≈[-1.11, 44.7]; lift brings street level near y≈0.

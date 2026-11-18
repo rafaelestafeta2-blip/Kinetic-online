@@ -1,24 +1,25 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { playRealGrenadeBounce } from '../audio/characterAndBombAudio';
 import { soundEngine } from '../audio/soundEngine';
 import { mobileHardware } from '../mobile/nativeHardware';
 import { GrenadeType } from '../types/game';
+import { createGameGltfLoader } from './gltfLoaderFactory';
+import { resolveAssetUrl } from '../utils/assetUrl';
 import {
   GrenadeFirstPersonHandRig,
   isolateSingleFragGrenadeInGlb,
 } from './grenadeViewmodelRig';
 import { ColliderBox } from './levelBuilder';
 
-const FRAG_GLB_LOCAL_URL = '/models/granada_frag.glb';
+const FRAG_GLB_LOCAL_URL = resolveAssetUrl('/models/granada_frag.glb');
 const FRAG_GLB_GITHUB_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/cf32fb142ec4e96c6f4dfd7c2a07079868411bcc/Sound/Granada/granade_read_the_description.glb';
 
-const M18_SMOKE_GLB_LOCAL_URL = '/models/m18_smoke_grenade.glb';
+const M18_SMOKE_GLB_LOCAL_URL = resolveAssetUrl('/models/m18_smoke_grenade.glb');
 const M18_SMOKE_GLB_GITHUB_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/cf32fb142ec4e96c6f4dfd7c2a07079868411bcc/Sound/Granada/m18_smoke_grenade.glb';
 
-const S13_SMOKE_GLB_LOCAL_URL = '/models/s13_smoke_grenade.glb';
+const S13_SMOKE_GLB_LOCAL_URL = resolveAssetUrl('/models/s13_smoke_grenade.glb');
 const S13_SMOKE_GLB_GITHUB_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/cf32fb142ec4e96c6f4dfd7c2a07079868411bcc/Sound/Granada/s13_smoke_grenade.glb';
 
@@ -88,7 +89,7 @@ const _THROW_UPWARD_IMPULSE = new THREE.Vector3(0, 3.3, 0);
 export class TacticalGrenadeSystem {
   private scene: THREE.Scene;
   private camera: THREE.PerspectiveCamera;
-  private loader = new GLTFLoader();
+  private loader = createGameGltfLoader();
 
   // Cached 3D GLB Templates (Frag & Smoke canisters only — no exhaust tube)
   private fragTemplate: THREE.Group | null = null;

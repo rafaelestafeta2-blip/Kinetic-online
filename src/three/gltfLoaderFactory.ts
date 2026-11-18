@@ -16,8 +16,18 @@ const KTX2_TRANSCODER_PATH = '/basis/';
 
 let meshoptReady: Promise<void> | null = null;
 let ktx2Loader: KTX2Loader | null = null;
+let sharedDracoLoader: DRACOLoader | null = null;
 
-type LoaderWithDraco = GLTFLoader & { __draco?: DRACOLoader };
+type LoaderWithDraco = GLTFLoader & { __draco?: DRACOLoader; __ownsDraco?: boolean };
+
+function getSharedDracoLoader(): DRACOLoader {
+  if (!sharedDracoLoader) {
+    sharedDracoLoader = new DRACOLoader();
+    sharedDracoLoader.setDecoderPath(DRACO_DECODER_PATH);
+    sharedDracoLoader.preload();
+  }
+  return sharedDracoLoader;
+}
 
 /** Ensure Meshopt WASM/JS is ready before parsing meshopt GLBs. */
 export function ensureMeshoptDecoder(): Promise<void> {
@@ -40,14 +50,23 @@ export function createGameGltfLoader(loadingManager?: THREE.LoadingManager): GLT
   const loader = new GLTFLoader(loadingManager) as LoaderWithDraco;
   loader.setMeshoptDecoder(MeshoptDecoder);
   if (ktx2Loader) loader.setKTX2Loader(ktx2Loader);
-  const draco = new DRACOLoader(loadingManager);
-  draco.setDecoderPath(DRACO_DECODER_PATH);
-  draco.preload();
-  loader.setDRACOLoader(draco);
-  loader.__draco = draco;
+  if (loadingManager) {
+    const draco = new DRACOLoader(loadingManager);
+    draco.setDecoderPath(DRACO_DECODER_PATH);
+    draco.preload();
+    loader.setDRACOLoader(draco);
+    loader.__draco = draco;
+    loader.__ownsDraco = true;
+  } else {
+    loader.setDRACOLoader(getSharedDracoLoader());
+    loader.__ownsDraco = false;
+  }
   return loader;
 }
 
 export function disposeGameGltfLoader(loader: GLTFLoader): void {
-  (loader as LoaderWithDraco).__draco?.dispose();
+  const withDraco = loader as LoaderWithDraco;
+  if (withDraco.__ownsDraco) {
+    withDraco.__draco?.dispose();
+  }
 }

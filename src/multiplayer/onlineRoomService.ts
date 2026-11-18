@@ -3,6 +3,7 @@ import { auth, db, handleFirestoreError, OperationType } from '../firebase/fireb
 import { getCloudSyncState } from '../firebase/playerCloudSync';
 import { registerMatchProgressionGate } from '../progression/matchProgressionGate';
 import { getEquippedWeaponSkinId, getPlayerInventoryState } from '../progression/loadoutSystem';
+import { runtimeTelemetry } from '../telemetry/runtimeTelemetry';
 import { DrillMode, WarfaceClassId, WeaponId } from '../types/game';
 import { applyIncomingPlayerState } from './combatNetcode';
 import {
@@ -58,6 +59,7 @@ let activeRoom: OnlineRoomState | null = null;
 let roomUnsub: Unsubscribe | null = null;
 let wsClient: WebSocket | null = null;
 let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let wsPingTimer: ReturnType<typeof setInterval> | null = null;
 let wsReconnectAttempts = 0;
 let intentionalWsClose = false;
 let wsConnected = false;
@@ -195,6 +197,27 @@ function clearWsReconnectTimer(): void {
   }
 }
 
+function clearWsPingTimer(): void {
+  if (wsPingTimer) {
+    clearInterval(wsPingTimer);
+    wsPingTimer = null;
+  }
+}
+
+function startWsPingTimer(ws: WebSocket): void {
+  clearWsPingTimer();
+  const sendPing = () => {
+    if (wsClient !== ws || ws.readyState !== WebSocket.OPEN) return;
+    try {
+      ws.send(JSON.stringify({ type: 'PING', clientTs: Date.now() }));
+    } catch {
+      // ignore transient ws write error
+    }
+  };
+  sendPing();
+  wsPingTimer = setInterval(sendPing, 10000);
+}
+
 function scheduleWsReconnect(): void {
   if (intentionalWsClose || !activeRoom || activeRoom.status === 'FINISHED') return;
   if (wsReconnectTimer) return;
@@ -254,13 +277,15 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
       }
       ws.send(JSON.stringify({
         type: 'JOIN_ROOM', roomId: liveRoom.roomId, uid: livePlayer.uid, idToken,
-        queueType, arenaMode: liveRoom.arenaMode, isPrivate: liveRoom.isPrivate,
+          queueType, arenaMode: liveRoom.arenaMode, isPrivate: liveRoom.isPrivate,
         mmr: livePlayer.mmr || 2450, player: livePlayer,
       }));
+      startWsPingTimer(ws);
       if (liveRoom.status !== 'PLAYING') emitRoomState();
     };
     ws.onclose = () => {
       wsConnected = false;
+      clearWsPingTimer();
       if (wsClient === ws) {
         wsClient = null;
       }
@@ -287,8 +312,13 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
           serverConfirmed?: boolean;
           bombStatus?: OnlineRoomState['bombStatus'];
           plantedSite?: OnlineRoomState['plantedSite'];
+          clientTs?: number;
           ts?: number;
         };
+        if (msg.type === 'PONG' && typeof msg.clientTs === 'number') {
+          runtimeTelemetry.recordPingSample(Date.now() - msg.clientTs);
+          return;
+        }
         if (!activeRoom) return;
         const localUid = getEffectiveLocalUid();
 
@@ -867,7 +897,7 @@ export function publishGrenadeThrow(
   }
 }
 
-export function publishCombatHit(targetUid: string, damage: number, isHeadshot: boolean, weaponId: WeaponId): void {
+export function publishCombatHit(targetUid: string, damage: number, isHeadshot: boolean, weaponId: WeaponId | 'GRENADE'): void {
   const hit = publishRoomCombatHit(
     activeRoom,
     wsClient,

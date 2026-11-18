@@ -14,7 +14,9 @@ import {
   tryFindBalancedMatch,
 } from './src/server/matchmakingEngine';
 import {
+  clearRoomCombatAuthority,
   IncomingHitLike,
+  issueMatchRewardReceipt,
   recordServerPlayerPose,
   validateCombatHit,
 } from './src/server/combatAuthority';
@@ -54,6 +56,113 @@ async function startServer(): Promise<void> {
       playersInQueue: matchmakingQueue.size,
       ts: Date.now(),
     });
+  });
+
+  const telemetryBuffer: Array<Record<string, unknown>> = [];
+  const MAX_TELEMETRY_BUFFER = 200;
+
+  app.post('/api/telemetry', (req, res) => {
+    const body = req.body as Record<string, unknown> | undefined;
+    if (!body || typeof body !== 'object') {
+      res.sendStatus(400);
+      return;
+    }
+    const sanitized = {
+      sessionId: String(body.sessionId || '').slice(0, 48),
+      platform: body.platform === 'android_capacitor' ? 'android_capacitor' : 'web',
+      gpuRenderer: String(body.gpuRenderer || 'unknown').slice(0, 120),
+      drillMode: String(body.drillMode || 'FREE_RANGE').slice(0, 40),
+      qualityPreset: String(body.qualityPreset || 'BALANCED_60').slice(0, 24),
+      avgFps: Number(body.avgFps) || 0,
+      p95FrameMs: Number(body.p95FrameMs) || 0,
+      p99FrameMs: Number(body.p99FrameMs) || 0,
+      hitchCount: Math.max(0, Math.round(Number(body.hitchCount) || 0)),
+      totalFrames: Math.max(0, Math.round(Number(body.totalFrames) || 0)),
+      matchLoadMs: body.matchLoadMs !== null && Number.isFinite(Number(body.matchLoadMs))
+        ? Math.round(Number(body.matchLoadMs))
+        : null,
+      pingMs: body.pingMs !== null && Number.isFinite(Number(body.pingMs))
+        ? Math.round(Number(body.pingMs))
+        : null,
+      webglContextLostCount: Math.max(0, Math.round(Number(body.webglContextLostCount) || 0)),
+      lastError: body.lastError ? String(body.lastError).slice(0, 180) : null,
+      ts: Date.now(),
+    };
+    telemetryBuffer.push(sanitized);
+    if (telemetryBuffer.length > MAX_TELEMETRY_BUFFER) {
+      telemetryBuffer.shift();
+    }
+    res.sendStatus(204);
+  });
+
+  app.get('/api/telemetry/summary', (_req, res) => {
+    const count = telemetryBuffer.length;
+    if (count === 0) {
+      res.json({ count: 0, avgFps: 0, p95FrameMs: 0, p99FrameMs: 0, webglContextLosses: 0, recentErrors: [] });
+      return;
+    }
+    let fpsSum = 0;
+    let p95Sum = 0;
+    let p99Sum = 0;
+    let loadSum = 0;
+    let loadCount = 0;
+    let pingSum = 0;
+    let pingCount = 0;
+    let hitches = 0;
+    let contextLosses = 0;
+    const recentErrors: string[] = [];
+
+    for (let i = 0; i < count; i++) {
+      const s = telemetryBuffer[i];
+      fpsSum += Number(s.avgFps || 0);
+      p95Sum += Number(s.p95FrameMs || 0);
+      p99Sum += Number(s.p99FrameMs || 0);
+      hitches += Number(s.hitchCount || 0);
+      contextLosses += Number(s.webglContextLostCount || 0);
+      if (typeof s.matchLoadMs === 'number') {
+        loadSum += s.matchLoadMs;
+        loadCount += 1;
+      }
+      if (typeof s.pingMs === 'number') {
+        pingSum += s.pingMs;
+        pingCount += 1;
+      }
+      if (typeof s.lastError === 'string' && s.lastError && recentErrors.length < 10) {
+        recentErrors.push(s.lastError);
+      }
+    }
+
+    res.json({
+      count,
+      avgFps: Math.round(fpsSum / count),
+      p95FrameMs: Number((p95Sum / count).toFixed(1)),
+      p99FrameMs: Number((p99Sum / count).toFixed(1)),
+      avgMatchLoadMs: loadCount > 0 ? Math.round(loadSum / loadCount) : null,
+      avgPingMs: pingCount > 0 ? Math.round(pingSum / pingCount) : null,
+      totalHitches: hitches,
+      webglContextLosses: contextLosses,
+      recentErrors,
+    });
+  });
+
+  app.post('/api/match/verify-reward', (req, res) => {
+    const { roomId, uid, claimedXp, claimedCash } = req.body as {
+      roomId?: string;
+      uid?: string;
+      claimedXp?: number;
+      claimedCash?: number;
+    };
+    if (!roomId || !uid) {
+      res.status(400).json({ ok: false, reason: 'missing_room_or_uid' });
+      return;
+    }
+    const receipt = issueMatchRewardReceipt({
+      roomId: String(roomId).toUpperCase().slice(0, 12),
+      uid: String(uid).slice(0, 128),
+      claimedXp: Number(claimedXp) || 0,
+      claimedCash: Number(claimedCash) || 0,
+    });
+    res.json({ ok: true, ...receipt });
   });
 
   app.post('/api/matchmaking/check-mmr', async (req, res) => {
@@ -108,6 +217,17 @@ async function startServer(): Promise<void> {
         };
 
         if (!msg || typeof msg.type !== 'string') return;
+
+        if (msg.type === 'PING') {
+          ws.send(
+            JSON.stringify({
+              type: 'PONG',
+              clientTs: typeof msg.clientTs === 'number' ? msg.clientTs : Date.now(),
+              serverTs: Date.now(),
+            })
+          );
+          return;
+        }
 
         // 1. Entrada na fila de Matchmaking ('CASUAL' ou 'RANKED')
         if (msg.type === 'JOIN_QUEUE' && msg.uid) {
@@ -405,7 +525,15 @@ async function startServer(): Promise<void> {
   });
 
   const runMatchmakingSweep = (): void => {
+    const staleRooms: string[] = [];
+    roomMetaMap.forEach((meta, rid) => {
+      const m = roomsMap.get(rid);
+      if ((!m || m.size === 0) && Date.now() - meta.createdAtMs > 1000 * 60 * 30) {
+        staleRooms.push(rid);
+      }
+    });
     purgeStaleRooms();
+    staleRooms.forEach((rid) => clearRoomCombatAuthority(rid));
     if (matchmakingQueue.size < 10) return;
 
     const buckets = new Map<string, QueuedPlayerEntry[]>();

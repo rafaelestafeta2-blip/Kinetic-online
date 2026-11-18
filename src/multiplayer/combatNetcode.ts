@@ -260,7 +260,7 @@ export function buildCombatHitEvent(
   targetUid: string,
   damage: number,
   isHeadshot: boolean,
-  weaponId: WeaponId
+  weaponId: WeaponId | 'GRENADE'
 ): { hit: OnlineHitEvent; nextVictimHp: number; lethal: boolean } {
   const nextVictimHp = Math.max(0, victim.health - damage);
   const lethal = nextVictimHp <= 0;

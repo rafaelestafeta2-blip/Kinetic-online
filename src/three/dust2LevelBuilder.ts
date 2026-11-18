@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Dust2TriangleCollider } from './dust2Collider';
 import { createGameGltfLoader, disposeGameGltfLoader, ensureMeshoptDecoder } from './gltfLoaderFactory';
+import { resolveAssetUrl } from '../utils/assetUrl';
 import { TacticalLevelData, TacticalTargetEntity } from './levelBuilder';
 import { WeaponId } from '../types/game';
 import { YardBotEntity } from './yardPropsBuilder';
@@ -140,7 +141,7 @@ export async function loadDust2MapGeometry(
   try {
     const gltf = await new Promise<{ scene: THREE.Group }>((resolve, reject) => {
       gltfLoader.load(
-        '/models/maps/de_dust2.glb',
+        resolveAssetUrl('/models/maps/de_dust2.glb'),
         (loaded) => resolve(loaded),
         (evt) => {
           if (evt.lengthComputable && evt.total > 0) {

@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { BotAnimState, BotClipMap } from './botCharacterClips';
+import { resolveAssetUrl } from '../utils/assetUrl';
 
 const BASE = '/models/animations';
 
@@ -141,7 +142,7 @@ export function preloadMixamoAnimPack(
         const spec = all[idx];
         try {
           const fbx = await new Promise<THREE.Group>((resolve, reject) => {
-            loader.load(spec.url, resolve, undefined, reject);
+            loader.load(resolveAssetUrl(spec.url), resolve, undefined, reject);
           });
           const clip = extractClip(fbx, spec.key);
           if (clip) {

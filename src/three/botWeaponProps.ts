@@ -1,12 +1,14 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import type { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { WeaponId } from '../types/game';
+import { createGameGltfLoader } from './gltfLoaderFactory';
 import {
   createSculptedThirdPersonWeaponMesh,
   isSculptedWeaponId,
 } from './sculptedFirearms';
 import { normalizeAnimatedM4A4Model } from './weaponBuilder';
 import { applyWeaponSkinToObject3D } from './weaponSkinMaterial';
+import { resolveAssetUrl } from '../utils/assetUrl';
 
 interface RealGlbWeaponSpec {
   id: WeaponId;
@@ -468,7 +470,7 @@ function populateMountWithRealGlb(
 }
 
 function createGlbLoader(): GLTFLoader {
-  const loader = new GLTFLoader();
+  const loader = createGameGltfLoader();
   loader.register((parser) => ({
     name: 'KHR_materials_pbrSpecularGlossiness',
     extendMaterialParams: async (
@@ -507,7 +509,7 @@ export function preloadRealBotWeaponGlbs(): Promise<void> {
   for (const spec of WEAPON_GLB_SPECS) {
     const p = new Promise<THREE.Group | null>((resolve) => {
       loader.load(
-        spec.url,
+        resolveAssetUrl(spec.url),
         (gltf) => {
           const previewTpl = buildBakedStaticGroup(
             gltf.scene,
@@ -551,7 +553,7 @@ export function preloadRealBotWeaponGlbs(): Promise<void> {
   for (const spec of INVENTORY_PREVIEW_OVERRIDE_SPECS) {
     const p = new Promise<void>((resolve) => {
       loader.load(
-        spec.url,
+        resolveAssetUrl(spec.url),
         (gltf) => {
           try {
             if (spec.url.includes('animated_fps_m4a4')) {

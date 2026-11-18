@@ -1,6 +1,10 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
     function isAuthenticated() {
       return request.auth != null;
     }
@@ -9,8 +13,20 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
     function isValidId(id) {
       return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidChatId(id) {
+      return id is string && id.size() >= 3 && id.size() <= 260 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
     function isValidOptionalString(data, field, maxLen) {
@@ -37,29 +53,112 @@ service cloud.firestore {
           'matchesPlayed', 'matchesWon', 'bombsPlanted',
           'unlockedAchievements', 'economyVersion', 'mmr', 'createdAt', 'updatedAt'
         ])
-        && data.uid is string && data.uid == request.auth.uid
-        && data.callsign is string && data.callsign.size() >= 1 && data.callsign.size() <= 32
+        && data.uid is string
+        && data.uid == request.auth.uid
+        && data.uid.size() >= 1
+        && data.uid.size() <= 128
+        && data.callsign is string
+        && data.callsign.size() >= 1
+        && data.callsign.size() <= 32
         && (!('callsignLocked' in data) || data.callsignLocked is bool)
-        && (!('economyVersion' in data) || isNonNegativeNumber(data.economyVersion))
-        && (!('mmr' in data) || isNonNegativeNumber(data.mmr))
-        && isValidOptionalString(data, 'email', 160)
+        && (!('economyVersion' in data) || (data.economyVersion is number && data.economyVersion >= 1 && data.economyVersion <= 100))
+        && (!('mmr' in data) || (data.mmr is number && data.mmr >= 100 && data.mmr <= 10000))
+        && (!('email' in data) || (data.email is string && data.email.size() == 0))
         && isValidOptionalString(data, 'avatarDataUrl', 60000)
-        && isNonNegativeNumber(data.playerXp)
+        && isNonNegativeNumber(data.playerXp) && data.playerXp <= 50000000
         && data.rankLevel is number && data.rankLevel >= 1 && data.rankLevel <= 70
         && data.rankTitle is string && data.rankTitle.size() >= 1 && data.rankTitle.size() <= 64
-        && isNonNegativeNumber(data.playerCash)
+        && isNonNegativeNumber(data.playerCash) && data.playerCash <= 50000000
         && data.activeWeapon is string && data.activeWeapon.size() >= 1 && data.activeWeapon.size() <= 40
-        && data.unlockedWeapons is list && data.unlockedWeapons.size() <= 25
-        && isNonNegativeNumber(data.totalKills)
-        && isNonNegativeNumber(data.totalDeaths)
-        && isNonNegativeNumber(data.totalAssists)
-        && isNonNegativeNumber(data.totalHeadshots)
-        && isNonNegativeNumber(data.matchesPlayed)
-        && isNonNegativeNumber(data.matchesWon)
-        && isNonNegativeNumber(data.bombsPlanted)
-        && data.unlockedAchievements is list && data.unlockedAchievements.size() <= 50
-        && data.createdAt is string && data.createdAt.size() <= 40
-        && data.updatedAt is string && data.updatedAt.size() <= 40;
+        && data.unlockedWeapons is list && data.unlockedWeapons.size() >= 1 && data.unlockedWeapons.size() <= 25 && data.unlockedWeapons[0] is string
+        && isNonNegativeNumber(data.totalKills) && data.totalKills <= 1000000
+        && isNonNegativeNumber(data.totalDeaths) && data.totalDeaths <= 1000000
+        && isNonNegativeNumber(data.totalAssists) && data.totalAssists <= 1000000
+        && isNonNegativeNumber(data.totalHeadshots) && data.totalHeadshots <= 1000000
+        && isNonNegativeNumber(data.matchesPlayed) && data.matchesPlayed <= 500000
+        && isNonNegativeNumber(data.matchesWon) && data.matchesWon <= data.matchesPlayed
+        && isNonNegativeNumber(data.bombsPlanted) && data.bombsPlanted <= 500000
+        && data.unlockedAchievements is list && data.unlockedAchievements.size() <= 50 && (data.unlockedAchievements.size() == 0 || data.unlockedAchievements[0] is string)
+        && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 40
+        && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 40;
+    }
+
+    function isPlayerEconomyMigrationAction() {
+      return (!('economyVersion' in existing()) || existing().economyVersion != 2)
+        && incoming().economyVersion == 2
+        && incoming().playerXp == 0
+        && incoming().playerCash == 3000;
+    }
+
+    function isPlayerAccountResetAction() {
+      return incoming().playerXp == 0
+        && incoming().playerCash == 3000
+        && incoming().rankLevel == 1
+        && incoming().totalKills == 0
+        && incoming().totalDeaths == 0
+        && incoming().totalAssists == 0
+        && incoming().totalHeadshots == 0
+        && incoming().matchesPlayed == 0
+        && incoming().matchesWon == 0
+        && incoming().bombsPlanted == 0
+        && incoming().unlockedAchievements.size() == 0
+        && incoming().mmr == 1000
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'email', 'playerXp', 'playerCash', 'rankLevel', 'rankTitle',
+          'totalKills', 'totalDeaths', 'totalAssists', 'totalHeadshots',
+          'matchesPlayed', 'matchesWon', 'bombsPlanted',
+          'unlockedAchievements', 'unlockedWeapons', 'economyVersion', 'mmr', 'updatedAt'
+        ]);
+    }
+
+    function isPlayerProgressionUpdateAction() {
+      return incoming().playerXp >= existing().playerXp
+        && incoming().playerXp <= existing().playerXp + 6000
+        && incoming().playerCash >= existing().playerCash - 50000
+        && incoming().playerCash <= existing().playerCash + 6000
+        && (
+          !('mmr' in incoming())
+          || !('mmr' in existing())
+          || (existing().mmr == 1000 && incoming().mmr == 2450)
+          || (incoming().mmr >= existing().mmr - 65 && incoming().mmr <= existing().mmr + 65)
+        )
+        && incoming().totalKills >= existing().totalKills
+        && incoming().totalKills <= existing().totalKills + 60
+        && incoming().totalDeaths >= existing().totalDeaths
+        && incoming().totalDeaths <= existing().totalDeaths + 60
+        && incoming().totalAssists >= existing().totalAssists
+        && incoming().totalAssists <= existing().totalAssists + 60
+        && incoming().totalHeadshots >= existing().totalHeadshots
+        && incoming().totalHeadshots <= existing().totalHeadshots + 60
+        && incoming().matchesPlayed >= existing().matchesPlayed
+        && incoming().matchesPlayed <= existing().matchesPlayed + 5
+        && incoming().matchesWon >= existing().matchesWon
+        && incoming().matchesWon <= existing().matchesWon + 5
+        && incoming().bombsPlanted >= existing().bombsPlanted
+        && incoming().bombsPlanted <= existing().bombsPlanted + 20
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'callsign', 'callsignLocked', 'email', 'avatarDataUrl',
+          'playerXp', 'rankLevel', 'rankTitle', 'playerCash',
+          'activeWeapon', 'unlockedWeapons',
+          'totalKills', 'totalDeaths', 'totalAssists', 'totalHeadshots',
+          'matchesPlayed', 'matchesWon', 'bombsPlanted',
+          'unlockedAchievements', 'economyVersion', 'mmr', 'updatedAt'
+        ]);
+    }
+
+    function isValidUsernameRegistry(data, usernameLower) {
+      return data.keys().hasAll(['callsign', 'uid', 'createdAt'])
+        && data.keys().hasOnly(['callsign', 'uid', 'createdAt'])
+        && data.uid is string
+        && data.uid == request.auth.uid
+        && data.uid.size() >= 1
+        && data.uid.size() <= 128
+        && data.callsign is string
+        && data.callsign.size() >= 3
+        && data.callsign.size() <= 24
+        && data.callsign.matches('^[A-Z0-9_\\-]+$')
+        && data.callsign.lower() == usernameLower
+        && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 40;
     }
 
     function isAllowedArenaMode(mode) {
@@ -84,22 +183,45 @@ service cloud.firestore {
           'bombStatus', 'plantedSite', 'players', 'lastHitEvent',
           'updatedAtMs', 'createdAt'
         ])
-        && data.roomId is string && data.roomId.size() >= 4 && data.roomId.size() <= 16
+        && data.roomId is string && data.roomId.size() >= 4 && data.roomId.size() <= 16 && data.roomId.matches('^[A-Z0-9]+$')
         && data.hostUid is string && data.hostUid.size() >= 1 && data.hostUid.size() <= 128
-        && data.arenaMode is string && isAllowedArenaMode(data.arenaMode)
+        && data.arenaMode is string && data.arenaMode.size() <= 40 && isAllowedArenaMode(data.arenaMode)
         && data.isPrivate is bool
-        && (!('queueType' in data) || (data.queueType is string && data.queueType in ['CASUAL', 'RANKED', 'Casual', 'Ranked']))
-        && (!('averageMmr' in data) || isNonNegativeNumber(data.averageMmr))
-        && data.status is string && data.status in ['WAITING', 'PLAYING', 'FINISHED']
-        && isNonNegativeNumber(data.currentRound)
-        && isNonNegativeNumber(data.vanguardScore)
-        && isNonNegativeNumber(data.blackthornScore)
-        && data.bombStatus is string && data.bombStatus in ['CARRIED', 'PLANTED', 'DEFUSED', 'DETONATED']
-        && data.plantedSite is string && data.plantedSite in ['NONE', 'A', 'B']
+        && (!('queueType' in data) || (data.queueType is string && data.queueType.size() <= 16 && data.queueType in ['CASUAL', 'RANKED', 'Casual', 'Ranked']))
+        && (!('averageMmr' in data) || (data.averageMmr is number && data.averageMmr >= 0 && data.averageMmr <= 10000))
+        && data.status is string && data.status.size() <= 16 && data.status in ['WAITING', 'PLAYING', 'FINISHED']
+        && data.currentRound is number && data.currentRound >= 1 && data.currentRound <= 20
+        && data.vanguardScore is number && data.vanguardScore >= 0 && data.vanguardScore <= 20
+        && data.blackthornScore is number && data.blackthornScore >= 0 && data.blackthornScore <= 20
+        && data.bombStatus is string && data.bombStatus.size() <= 16 && data.bombStatus in ['CARRIED', 'PLANTED', 'DEFUSED', 'DETONATED']
+        && data.plantedSite is string && data.plantedSite.size() <= 8 && data.plantedSite in ['NONE', 'A', 'B']
         && data.players is map && data.players.size() <= 12
+        && (!('lastHitEvent' in data) || (data.lastHitEvent is map && data.lastHitEvent.size() <= 16))
         && (!('queueType' in data) || !(data.queueType in ['RANKED', 'Ranked']) || data.status != 'PLAYING' || data.players.size() == 10)
         && isNonNegativeNumber(data.updatedAtMs)
-        && data.createdAt is string && data.createdAt.size() <= 40;
+        && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 40;
+    }
+
+    function isRoomJoinAction() {
+      return existing().status == 'WAITING'
+        && incoming().diff(existing()).affectedKeys().hasOnly(['players', 'averageMmr', 'updatedAtMs'])
+        && incoming().players.diff(existing().players).affectedKeys().hasOnly([request.auth.uid]);
+    }
+
+    function isRoomLeaveAction() {
+      return (request.auth.uid in existing().players)
+        && incoming().diff(existing()).affectedKeys().hasOnly(['players', 'updatedAtMs'])
+        && incoming().players.diff(existing().players).affectedKeys().hasOnly([request.auth.uid])
+        && !(request.auth.uid in incoming().players);
+    }
+
+    function isRoomActivePlayAction() {
+      return existing().status != 'FINISHED'
+        && (request.auth.uid in existing().players || existing().hostUid == request.auth.uid)
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'status', 'currentRound', 'vanguardScore', 'blackthornScore',
+          'bombStatus', 'plantedSite', 'players', 'lastHitEvent', 'averageMmr', 'updatedAtMs'
+        ]);
     }
 
     function isValidSocialInbox(data) {
@@ -112,77 +234,119 @@ service cloud.firestore {
         && isNonNegativeNumber(data.updatedAtMs);
     }
 
-    function isValidDirectChat(data) {
+    function isValidDirectChat(data, chatId) {
       return data.keys().hasAll(['chatId', 'participants', 'messages', 'updatedAtMs'])
         && data.keys().hasOnly(['chatId', 'participants', 'messages', 'updatedAtMs'])
-        && data.chatId is string && data.chatId.size() >= 3 && data.chatId.size() <= 260
-        && data.participants is list && data.participants.size() == 2
+        && data.chatId is string && data.chatId == chatId && data.chatId.size() >= 3 && data.chatId.size() <= 260
+        && data.participants is list
+        && data.participants.size() == 2
+        && data.participants[0] is string
+        && data.participants[1] is string
+        && data.participants[0] != data.participants[1]
         && request.auth.uid in data.participants
-        && data.messages is list && data.messages.size() <= 60
+        && data.messages is list
+        && data.messages.size() <= 60
+        && (data.messages.size() == 0 || data.messages[0] is map)
         && isNonNegativeNumber(data.updatedAtMs);
     }
 
     match /players/{userId} {
       allow get: if isAuthenticated() && isValidId(userId);
-      allow create: if isOwner(userId) && isValidId(userId) && isValidPlayerProfile(request.resource.data);
+      allow list: if false;
+      allow create: if isOwner(userId)
+        && isValidId(userId)
+        && isValidPlayerProfile(incoming())
+        && incoming().playerXp <= 1000000
+        && incoming().playerCash <= 1000000;
       allow update: if isOwner(userId)
         && isValidId(userId)
-        && isValidPlayerProfile(request.resource.data)
-        && request.resource.data.uid == resource.data.uid
-        && request.resource.data.createdAt == resource.data.createdAt
-        && (!('callsignLocked' in resource.data) || !resource.data.callsignLocked || request.resource.data.callsign == resource.data.callsign);
+        && isValidPlayerProfile(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && (!('callsignLocked' in existing()) || !existing().callsignLocked || (incoming().callsign == existing().callsign && incoming().callsignLocked))
+        && (isPlayerEconomyMigrationAction() || isPlayerAccountResetAction() || isPlayerProgressionUpdateAction());
       allow delete: if isOwner(userId) && isValidId(userId);
     }
 
     match /usernames/{usernameLower} {
       allow get: if isAuthenticated() && isValidId(usernameLower);
+      allow list: if false;
       allow create: if isAuthenticated()
         && isValidId(usernameLower)
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.keys().hasAll(['callsign', 'uid', 'createdAt'])
-        && request.resource.data.keys().hasOnly(['callsign', 'uid', 'createdAt'])
-        && request.resource.data.callsign is string
-        && request.resource.data.callsign.size() >= 2
-        && request.resource.data.callsign.size() <= 24
-        && request.resource.data.uid is string && request.resource.data.uid.size() <= 128
-        && request.resource.data.createdAt is string && request.resource.data.createdAt.size() <= 40;
+        && isValidUsernameRegistry(incoming(), usernameLower);
       allow update, delete: if false;
     }
 
     match /rooms/{roomId} {
       allow get: if isAuthenticated() && isValidId(roomId);
-      allow list: if isAuthenticated() && resource.data.isPrivate == false;
+      allow list: if isAuthenticated() && existing().isPrivate == false;
       allow create: if isAuthenticated()
         && isValidId(roomId)
-        && request.resource.data.hostUid == request.auth.uid
-        && isValidMultiplayerRoom(request.resource.data);
+        && isValidMultiplayerRoom(incoming())
+        && incoming().roomId == roomId
+        && incoming().hostUid == request.auth.uid
+        && incoming().status == 'WAITING'
+        && request.auth.uid in incoming().players;
       allow update: if isAuthenticated()
         && isValidId(roomId)
-        && isValidMultiplayerRoom(request.resource.data)
-        && request.resource.data.roomId == resource.data.roomId
-        && request.resource.data.createdAt == resource.data.createdAt;
-      allow delete: if isAuthenticated() && isValidId(roomId) && resource.data.hostUid == request.auth.uid;
+        && isValidMultiplayerRoom(incoming())
+        && incoming().roomId == existing().roomId
+        && incoming().hostUid == existing().hostUid
+        && incoming().arenaMode == existing().arenaMode
+        && incoming().isPrivate == existing().isPrivate
+        && incoming().createdAt == existing().createdAt
+        && (!('queueType' in existing()) || incoming().queueType == existing().queueType)
+        && (isRoomJoinAction() || isRoomLeaveAction() || isRoomActivePlayAction());
+      allow delete: if isAuthenticated() && isValidId(roomId) && existing().hostUid == request.auth.uid;
     }
 
     match /social_inboxes/{userId} {
       allow get: if isAuthenticated() && isValidId(userId);
-      allow create, update: if isAuthenticated()
+      allow list: if false;
+      allow create: if isAuthenticated()
         && isValidId(userId)
-        && request.resource.data.uid == userId
-        && isValidSocialInbox(request.resource.data);
+        && isValidSocialInbox(incoming())
+        && incoming().uid == userId
+        && (
+          isOwner(userId)
+          || (
+            incoming().friends.size() == 0
+            && (incoming().requests.size() == 0 || incoming().requests.keys().hasOnly([request.auth.uid]))
+            && (incoming().invites.size() == 0 || incoming().invites.keys().hasOnly([request.auth.uid]))
+          )
+        );
+      allow update: if isAuthenticated()
+        && isValidId(userId)
+        && isValidSocialInbox(incoming())
+        && incoming().uid == existing().uid
+        && incoming().diff(existing()).affectedKeys().hasOnly(['friends', 'requests', 'invites', 'updatedAtMs'])
+        && (
+          isOwner(userId)
+          || (
+            incoming().friends.diff(existing().friends).affectedKeys().hasOnly([request.auth.uid])
+            && incoming().requests.diff(existing().requests).affectedKeys().hasOnly([request.auth.uid])
+            && incoming().invites.diff(existing().invites).affectedKeys().hasOnly([request.auth.uid])
+          )
+        );
       allow delete: if isOwner(userId) && isValidId(userId);
     }
 
     match /direct_chats/{chatId} {
-      allow get: if isAuthenticated() && isValidId(chatId);
-      allow create, update: if isAuthenticated()
-        && isValidId(chatId)
-        && isValidDirectChat(request.resource.data);
+      allow get: if isAuthenticated()
+        && isValidChatId(chatId)
+        && (resource == null || request.auth.uid in existing().participants);
+      allow list: if false;
+      allow create: if isAuthenticated()
+        && isValidChatId(chatId)
+        && isValidDirectChat(incoming(), chatId);
+      allow update: if isAuthenticated()
+        && isValidChatId(chatId)
+        && isValidDirectChat(incoming(), chatId)
+        && request.auth.uid in existing().participants
+        && incoming().chatId == existing().chatId
+        && incoming().participants == existing().participants
+        && incoming().diff(existing()).affectedKeys().hasOnly(['messages', 'updatedAtMs']);
       allow delete: if false;
-    }
-
-    match /{document=**} {
-      allow read, write: if false;
     }
   }
 }

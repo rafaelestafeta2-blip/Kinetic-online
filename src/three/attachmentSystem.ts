@@ -1,6 +1,8 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import type { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { WeaponId } from '../types/game';
+import { createGameGltfLoader } from './gltfLoaderFactory';
+import { resolveAssetUrl } from '../utils/assetUrl';
 
 export type MuzzleType =
   | 'NONE'
@@ -193,52 +195,85 @@ export class WeaponAttachmentSystem {
   private currentCharm: CharmType = 'NONE';
   private currentWeapon: WeaponId = 'M4_CARBINE';
 
+  private gltfLoader: GLTFLoader | null = null;
+  private loadingMuzzles = new Set<MuzzleType>();
+  private loadingCharms = new Set<CharmType>();
+
+  private static readonly MUZZLE_URLS: Partial<Record<MuzzleType, string>> = {
+    SILENCER_PACK: '/models/accessories/scopes/Silencer_Pack_01.glb',
+    SL01_LONG: '/models/accessories/SL01_Slim_Long_Suppressor.glb',
+    SC01_SHORT: '/models/accessories/SC01_Short_Suppressor.glb',
+    FH01_FLASH_HIDER: '/models/accessories/FH01_Petal_Flash_Hider.glb',
+    MB01_BRAKE: '/models/accessories/MB01_Cut_Muzzle_Brake.glb',
+    MC01_COMPENSATOR: '/models/accessories/MC01_Compact_Compensator.glb',
+  };
+
+  private static readonly CHARM_URLS: Partial<Record<CharmType, string>> = {
+    HONEY_CUB: '/models/accessories/Charm_Honey_Cub.glb',
+    MICRO_TERMINAL: '/models/accessories/Charm_Micro_Terminal.glb',
+    STARDROP_TEAL: '/models/accessories/Charm_Stardrop_Smoke_Teal.glb',
+  };
+
   constructor(weaponMotionAnchor: THREE.Group) {
     this.muzzleAnchor = new THREE.Group();
     this.charmAnchor = new THREE.Group();
     weaponMotionAnchor.add(this.muzzleAnchor);
     weaponMotionAnchor.add(this.charmAnchor);
-
-    this.loadModels();
   }
 
-  private loadModels(): void {
-    const gltfLoader = new GLTFLoader();
+  private getLoader(): GLTFLoader {
+    if (!this.gltfLoader) {
+      this.gltfLoader = createGameGltfLoader();
+    }
+    return this.gltfLoader;
+  }
 
-    const muzzleDefs: Array<{ type: MuzzleType; url: string }> = [
-      { type: 'SILENCER_PACK', url: '/models/accessories/scopes/Silencer_Pack_01.glb' },
-      { type: 'SL01_LONG', url: '/models/accessories/SL01_Slim_Long_Suppressor.glb' },
-      { type: 'SC01_SHORT', url: '/models/accessories/SC01_Short_Suppressor.glb' },
-      { type: 'FH01_FLASH_HIDER', url: '/models/accessories/FH01_Petal_Flash_Hider.glb' },
-      { type: 'MB01_BRAKE', url: '/models/accessories/MB01_Cut_Muzzle_Brake.glb' },
-      { type: 'MC01_COMPENSATOR', url: '/models/accessories/MC01_Compact_Compensator.glb' },
-    ];
-
-    muzzleDefs.forEach(({ type, url }) => {
-      gltfLoader.load(url, (gltf) => {
+  private ensureMuzzleLoaded(type: MuzzleType): void {
+    if (type === 'NONE' || this.muzzleModels.has(type) || this.loadingMuzzles.has(type)) {
+      return;
+    }
+    const localUrl = WeaponAttachmentSystem.MUZZLE_URLS[type];
+    if (!localUrl) return;
+    this.loadingMuzzles.add(type);
+    this.getLoader().load(
+      resolveAssetUrl(localUrl),
+      (gltf) => {
+        this.loadingMuzzles.delete(type);
         const root = gltf.scene;
         root.visible = false;
         this.muzzleAnchor.add(root);
         this.muzzleModels.set(type, root);
         this.syncMuzzleVisibility();
-      });
-    });
+      },
+      undefined,
+      () => {
+        this.loadingMuzzles.delete(type);
+      }
+    );
+  }
 
-    const charmDefs: Array<{ type: CharmType; url: string }> = [
-      { type: 'HONEY_CUB', url: '/models/accessories/Charm_Honey_Cub.glb' },
-      { type: 'MICRO_TERMINAL', url: '/models/accessories/Charm_Micro_Terminal.glb' },
-      { type: 'STARDROP_TEAL', url: '/models/accessories/Charm_Stardrop_Smoke_Teal.glb' },
-    ];
-
-    charmDefs.forEach(({ type, url }) => {
-      gltfLoader.load(url, (gltf) => {
+  private ensureCharmLoaded(type: CharmType): void {
+    if (type === 'NONE' || this.charmModels.has(type) || this.loadingCharms.has(type)) {
+      return;
+    }
+    const localUrl = WeaponAttachmentSystem.CHARM_URLS[type];
+    if (!localUrl) return;
+    this.loadingCharms.add(type);
+    this.getLoader().load(
+      resolveAssetUrl(localUrl),
+      (gltf) => {
+        this.loadingCharms.delete(type);
         const root = gltf.scene;
         root.visible = false;
         this.charmAnchor.add(root);
         this.charmModels.set(type, root);
         this.syncCharmVisibility();
-      });
-    });
+      },
+      undefined,
+      () => {
+        this.loadingCharms.delete(type);
+      }
+    );
   }
 
   public updateWeaponAlignment(weaponId: WeaponId): void {
@@ -263,11 +298,13 @@ export class WeaponAttachmentSystem {
 
   public setMuzzle(type: MuzzleType): void {
     this.currentMuzzle = type;
+    this.ensureMuzzleLoaded(type);
     this.syncMuzzleVisibility();
   }
 
   public setCharm(type: CharmType): void {
     this.currentCharm = type;
+    this.ensureCharmLoaded(type);
     this.syncCharmVisibility();
   }
 

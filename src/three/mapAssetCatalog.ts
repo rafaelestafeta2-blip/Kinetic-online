@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { DrillMode } from '../types/game';
+import { resolveAssetUrl } from '../utils/assetUrl';
 
 /** Map GLB URLs for bomb arenas — keep in sync with *LevelBuilder LOCAL_URL constants. */
 export const MAP_GLB_BY_MODE: Partial<Record<DrillMode, string>> = {
@@ -35,7 +36,8 @@ export function enableMapAssetCache(): void {
 }
 
 export function getMapGlbUrlForMode(mode: DrillMode): string | null {
-  return MAP_GLB_BY_MODE[mode] ?? null;
+  const local = MAP_GLB_BY_MODE[mode];
+  return local ? resolveAssetUrl(local) : null;
 }
 
 const PREFETCH_FILE_TIMEOUT_MS = 10000;

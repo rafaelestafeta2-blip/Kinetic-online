@@ -6,9 +6,10 @@ import { Dust2LevelBundle, runExclusiveGlbLoad } from './dust2LevelBuilder';
 import { TacticalTargetEntity } from './levelBuilder';
 import { consolidateDuplicateMeshesToInstances } from './scenePerfOptimizer';
 import { YardBotEntity } from './yardPropsBuilder';
+import { resolveAssetUrl } from '../utils/assetUrl';
 
 /** Eastern City — ETC1S GPU textures + Meshopt geometry. */
-const EASTERN_CITY_LOCAL_URL = '/models/maps/eastern_city_2k.glb';
+const EASTERN_CITY_LOCAL_URL = resolveAssetUrl('/models/maps/eastern_city_2k.glb');
 
 /**
  * Source AABB y≈[-3.34, 21.2]; lift brings street level near y≈0.

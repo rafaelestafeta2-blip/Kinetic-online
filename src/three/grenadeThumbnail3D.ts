@@ -5,21 +5,22 @@
 
 import { useEffect, useState } from 'react';
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { GrenadeType } from '../types/game';
+import { createGameGltfLoader } from './gltfLoaderFactory';
 import { isolateSingleFragGrenadeInGlb } from './grenadeViewmodelRig';
 import {
   createSecondaryWebGLRenderer,
   disposeSecondaryWebGLRenderer,
 } from './webglContextGuard';
+import { resolveAssetUrl } from '../utils/assetUrl';
 
 const THUMB_W = 360;
 const THUMB_H = 280;
 
-const FRAG_URL = '/models/granada_frag.glb';
-const SMOKE_URL = '/models/m18_smoke_grenade.glb';
-const SMOKE_FALLBACK_URL = '/models/s13_smoke_grenade.glb';
+const FRAG_URL = resolveAssetUrl('/models/granada_frag.glb');
+const SMOKE_URL = resolveAssetUrl('/models/m18_smoke_grenade.glb');
+const SMOKE_FALLBACK_URL = resolveAssetUrl('/models/s13_smoke_grenade.glb');
 
 const thumbnailCache = new Map<GrenadeType, string>();
 const inFlightCache = new Map<GrenadeType, Promise<string | null>>();
@@ -33,7 +34,7 @@ interface SharedStudioRig {
 }
 
 let sharedRig: SharedStudioRig | null = null;
-const gltfLoader = new GLTFLoader();
+const gltfLoader = createGameGltfLoader();
 
 function getSharedStudioRig(): SharedStudioRig | null {
   if (sharedRig) return sharedRig;

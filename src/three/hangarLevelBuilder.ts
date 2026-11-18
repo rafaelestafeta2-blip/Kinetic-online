@@ -5,9 +5,10 @@ import { Dust2TriangleCollider } from './dust2Collider';
 import { Dust2LevelBundle, runExclusiveGlbLoad } from './dust2LevelBuilder';
 import { TacticalTargetEntity } from './levelBuilder';
 import { YardBotEntity } from './yardPropsBuilder';
+import { resolveAssetUrl } from '../utils/assetUrl';
 
 /** Hangar — ETC1S GPU textures + Meshopt geometry. */
-const HANGAR_LOCAL_URL = '/models/maps/hangar_2k.glb';
+const HANGAR_LOCAL_URL = resolveAssetUrl('/models/maps/hangar_2k.glb');
 
 /**
  * angar.fbx floor sits near y≈0 (AABB y≈[-0.6, 27]). Small lift clears floor thickness.

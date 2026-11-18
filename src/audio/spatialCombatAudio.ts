@@ -101,18 +101,21 @@ export function playSpatialBotGunshot(
   filter.connect(gainNode);
   outputNode.connect(ctx.destination);
 
+  const isSmg = weaponId === 'SMG_MP5' || weaponId === 'SMG_45';
   const isShotgun =
     weaponId === 'SHOTGUN_12' || weaponId === 'SHOTGUN_SPAS';
   const sampleBuffer =
     isShotgun
       ? state.shotgunShotBuffer || state.ak47ShotBuffer
-      : weaponId === 'AK47_RIFLE' || weaponId === 'AK12_RIFLE'
-        ? state.ak47ShotBuffer || state.m4a1ShotBuffer
-        : isSniper
-          ? state.sniperShotBuffer || state.ak47ShotBuffer
-          : weaponId === 'P50_PISTOL'
-            ? state.desertEagleBuffer || state.m4a1ShotBuffer
-            : state.m4a1ShotBuffer || state.ak47ShotBuffer;
+      : isSmg
+        ? state.smgShotBuffer || state.m4a1ShotBuffer
+        : weaponId === 'AK47_RIFLE' || weaponId === 'AK12_RIFLE'
+          ? state.ak47ShotBuffer || state.m4a1ShotBuffer
+          : isSniper
+            ? state.sniperShotBuffer || state.ak47ShotBuffer
+            : weaponId === 'P50_PISTOL'
+              ? state.desertEagleBuffer || state.m4a1ShotBuffer
+              : state.m4a1ShotBuffer || state.ak47ShotBuffer;
 
   if (sampleBuffer) {
     const src = ctx.createBufferSource();
