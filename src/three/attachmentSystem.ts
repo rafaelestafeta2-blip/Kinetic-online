@@ -55,8 +55,8 @@ export const WEAPON_MUZZLE_OFFSETS: Record<WeaponId, WeaponMuzzleTransform> = {
     rotation: new THREE.Euler(0, -Math.PI / 2, 0),
   },
   SHOTGUN_SPAS: {
-    position: new THREE.Vector3(0, 0.012, -0.54),
-    scale: 1.18,
+    position: new THREE.Vector3(0, -0.062, -0.635),
+    scale: 1.15,
     rotation: new THREE.Euler(0, -Math.PI / 2, 0),
   },
   M4_CARBINE: {
@@ -77,6 +77,11 @@ export const WEAPON_MUZZLE_OFFSETS: Record<WeaponId, WeaponMuzzleTransform> = {
   AK12_RIFLE: {
     position: new THREE.Vector3(0, 0.01, -0.464),
     scale: 1.06,
+    rotation: new THREE.Euler(0, -Math.PI / 2, 0),
+  },
+  S_MILITARY: {
+    position: new THREE.Vector3(-0.011, -0.068, -0.786),
+    scale: 1.08,
     rotation: new THREE.Euler(0, -Math.PI / 2, 0),
   },
   L49_LMG: {
@@ -126,7 +131,7 @@ export const WEAPON_CHARM_OFFSETS: Record<WeaponId, WeaponCharmTransform> = {
     rotation: new THREE.Euler(0, 0, 0),
   },
   SHOTGUN_SPAS: {
-    position: new THREE.Vector3(-0.03, 0.006, 0.02),
+    position: new THREE.Vector3(-0.036, -0.055, -0.14),
     scale: 1.65,
     rotation: new THREE.Euler(0, 0, 0),
   },
@@ -147,6 +152,11 @@ export const WEAPON_CHARM_OFFSETS: Record<WeaponId, WeaponCharmTransform> = {
   },
   AK12_RIFLE: {
     position: new THREE.Vector3(-0.034, 0.022, -0.02),
+    scale: 1.8,
+    rotation: new THREE.Euler(0, 0, 0),
+  },
+  S_MILITARY: {
+    position: new THREE.Vector3(-0.036, -0.048, -0.14),
     scale: 1.8,
     rotation: new THREE.Euler(0, 0, 0),
   },

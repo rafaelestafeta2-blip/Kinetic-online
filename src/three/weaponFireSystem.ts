@@ -164,7 +164,8 @@ export function executeSingleShot(engine: any): void {
                   ? engine.easternCityLevelData.collider
                 : engine.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5'
                   ? engine.mirageAnubisLevelData.collider
-                : engine.state.drillMode === 'STATION_CAPTURE_5V5'
+                : engine.state.drillMode === 'STATION_CAPTURE_5V5' ||
+                    engine.state.drillMode === 'STATION_TDM_5V5'
                   ? engine.stationArenaLevelData.collider
                 : null;
       const hit = raycastCombatShot(
@@ -258,7 +259,9 @@ export function executeSingleShot(engine: any): void {
               ? 0.095
               : engine.state.activeWeapon === 'AK12_RIFLE'
                 ? 0.086
-                : 0.078;
+                : engine.state.activeWeapon === 'S_MILITARY'
+                  ? 0.08
+                  : 0.078;
     }
     engine.state.shotsFired += 1;
 
@@ -418,7 +421,8 @@ export function executeSingleShot(engine: any): void {
                     ? engine.easternCityLevelData.collider
                     : engine.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5'
                       ? engine.mirageAnubisLevelData.collider
-                      : engine.state.drillMode === 'STATION_CAPTURE_5V5'
+                      : engine.state.drillMode === 'STATION_CAPTURE_5V5' ||
+                          engine.state.drillMode === 'STATION_TDM_5V5'
                         ? engine.stationArenaLevelData.collider
                         : null;
 

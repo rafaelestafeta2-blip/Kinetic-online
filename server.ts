@@ -1,4 +1,5 @@
 import express from 'express';
+import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { createServer as createViteServer } from 'vite';
@@ -486,6 +487,16 @@ async function startServer(): Promise<void> {
   setInterval(runMatchmakingSweep, 2000);
 
   if (process.env.NODE_ENV !== 'production') {
+    app.use((req, res, next) => {
+      if (/^\/(models|sound|assets)\//.test(req.path)) {
+        const publicFile = path.join(process.cwd(), 'public', decodeURIComponent(req.path));
+        if (!fs.existsSync(publicFile)) {
+          res.status(404).type('text/plain').send('Asset not found');
+          return;
+        }
+      }
+      next();
+    });
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
@@ -494,7 +505,11 @@ async function startServer(): Promise<void> {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*all', (_req, res) => {
+    app.get('*all', (req, res) => {
+      if (/^\/(models|sound|assets)\//.test(req.path)) {
+        res.status(404).type('text/plain').send('Asset not found');
+        return;
+      }
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

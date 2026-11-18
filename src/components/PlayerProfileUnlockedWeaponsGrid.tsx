@@ -19,6 +19,7 @@ interface WeaponProfileDisplayItem {
 const WEAPON_ITEMS: WeaponProfileDisplayItem[] = [
   { id: 'M4_CARBINE', name: 'M4A1 SOPMOD', stars: 5, masteryCur: 8, masteryMax: 10 },
   { id: 'AK12_RIFLE', name: 'AK-12 SPETSNAZ', stars: 5, masteryCur: 10, masteryMax: 10 },
+  { id: 'S_MILITARY', name: 'SCAR-L S-MILITARY', stars: 5, masteryCur: 9, masteryMax: 10 },
   { id: 'AK47_RIFLE', name: 'AK-47 KALASHNIKOV', stars: 5, masteryCur: 10, masteryMax: 10 },
   { id: 'CARBINE_AR', name: 'CARABINA TÁTICA', stars: 4, masteryCur: 7, masteryMax: 10 },
   { id: 'SHOTGUN_12', name: 'M870 BREACHER 12GA', stars: 5, masteryCur: 7, masteryMax: 10 },

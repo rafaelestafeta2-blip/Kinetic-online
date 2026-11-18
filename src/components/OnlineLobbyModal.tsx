@@ -21,7 +21,7 @@ interface OnlineLobbyModalProps {
 }
 
 const PRIVATE_ROOM_MAPS: DrillMode[] = [
-  'STATION_CAPTURE_5V5',
+  'STATION_TDM_5V5',
   'DUST2_BOMB_5V5',
   'ASSAULT_BOMB_5V5',
   'INDUSTRIA_BOMB_5V5',
@@ -32,6 +32,10 @@ const PRIVATE_ROOM_MAPS: DrillMode[] = [
 ];
 
 const MAP_LABELS: Record<string, { title: string; subtitle: string }> = {
+  STATION_TDM_5V5: {
+    title: 'STATION ARENA',
+    subtitle: 'Estação Urbana • Mata-Mata 5v5 (Alvo 40 Abates)',
+  },
   STATION_CAPTURE_5V5: {
     title: 'STATION ARENA',
     subtitle: 'Estação Urbana • Captura de Bandeira 5v5 (6 Rodadas)',

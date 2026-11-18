@@ -15,6 +15,7 @@ const WEAPON_LABELS: Record<WeaponId, string> = {
   M4_CARBINE: 'M4A1 CARBINE',
   AK47_RIFLE: 'AK-47 RIFLE',
   AK12_RIFLE: 'AK-12 SPETSNAZ',
+  S_MILITARY: 'SCAR-L S-MILITARY',
   SNIPER_BOLT: 'AWP SNIPER',
   SNIPER_TACTICAL: 'M110 SASS',
   SMG_45: 'VECTOR .45',
@@ -116,7 +117,7 @@ export const PostMatchSummaryOverlay: React.FC<PostMatchSummaryOverlayProps> = (
             </span>
             <span className="text-slate-600 hidden sm:inline">|</span>
             <span className="text-slate-300 text-xs sm:text-sm hidden sm:inline">
-              ROUNDS
+              {yardBomb.isTdmMode ? 'ABATES (TDM)' : 'ROUNDS'}
             </span>
           </div>
 

@@ -36,6 +36,7 @@ export function getActiveGlbCollider(
     case 'MIRAGE_ANUBIS_BOMB_5V5':
       return engine.mirageAnubisLevelData.collider;
     case 'STATION_CAPTURE_5V5':
+    case 'STATION_TDM_5V5':
       return engine.stationArenaLevelData.collider;
     default:
       return null;
@@ -51,6 +52,7 @@ export function isGlbNavMeshMode(mode: DrillMode): boolean {
     mode === 'HANGAR_BOMB_5V5' ||
     mode === 'EASTERN_CITY_BOMB_5V5' ||
     mode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
-    mode === 'STATION_CAPTURE_5V5'
+    mode === 'STATION_CAPTURE_5V5' ||
+    mode === 'STATION_TDM_5V5'
   );
 }

@@ -213,7 +213,7 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
             ? mode === 'MAP_TEST_MIRAGE'
               ? 'TESTE · MIRAGE'
               : 'MIRAGE ANUBIS'
-          : mode === 'STATION_CAPTURE_5V5'
+          : mode === 'STATION_CAPTURE_5V5' || mode === 'STATION_TDM_5V5'
             ? 'STATION ARENA'
           : mode === 'ASSAULT_BOMB_5V5'
           ? 'CS_ASSAULT'
@@ -241,6 +241,7 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
     if (completedRef.current) return;
     completedRef.current = true;
     soundEngine.stopPlantBombTutorial();
+    soundEngine.stopMatchLoadingAmbient();
     onComplete();
   };
 
@@ -272,6 +273,9 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
       firstTime = !isOnline && localStorage.getItem(TUTORIAL_STORAGE_KEY) !== 'true';
     } catch {}
 
+    soundEngine.stopMenuMusic();
+    soundEngine.playMatchLoadingAmbient();
+
     if (firstTime) {
       setIsFirstTimeTutorial(true);
       soundEngine.playPlantBombTutorial();
@@ -295,6 +299,7 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
       mode === 'EASTERN_CITY_BOMB_5V5' ||
       mode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
       mode === 'STATION_CAPTURE_5V5' ||
+      mode === 'STATION_TDM_5V5' ||
       mode === 'FREE_RANGE' ||
       mode === 'MAP_TEST_INDUSTRIA' ||
       mode === 'MAP_TEST_HANGAR' ||
@@ -462,6 +467,7 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
       window.clearTimeout(revealTimer);
       window.clearInterval(tick);
       soundEngine.stopPlantBombTutorial();
+      soundEngine.stopMatchLoadingAmbient();
     };
   }, [mode, isOnline]);
 
@@ -550,7 +556,7 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
             OPERAÇÃO TÁTICA · {mapCodeLabel}
           </div>
           <h1 className="text-2xl sm:text-4xl font-display font-black tracking-wider text-white uppercase mt-1">
-            MAPA: {mapCodeLabel} ({mode === 'STATION_CAPTURE_5V5' ? 'CAPTURE 5V5' : 'BOMB 5V5'})
+            MAPA: {mapCodeLabel} ({mode === 'STATION_TDM_5V5' ? 'MATA-MATA 5V5' : mode === 'STATION_CAPTURE_5V5' ? 'CAPTURE 5V5' : 'BOMB 5V5'})
           </h1>
           <p className="text-xs font-mono text-slate-300 mt-1">
             Sincronizando recursos 3D e aguardando jogadores da sala...
@@ -592,7 +598,11 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
           <span className="text-amber-400 font-bold">MAPA: {mapCodeLabel}</span>
           <span className="text-slate-400 mx-1.5">·</span>
           <span className="text-sky-300">
-            {mode === 'STATION_CAPTURE_5V5' ? 'CAPTURE THE FLAG' : 'PLANT THE BOMB'}
+            {mode === 'STATION_TDM_5V5'
+              ? 'TEAM DEATHMATCH'
+              : mode === 'STATION_CAPTURE_5V5'
+                ? 'CAPTURE THE FLAG'
+                : 'PLANT THE BOMB'}
           </span>
         </div>
       </header>
@@ -692,9 +702,11 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
           <div className="shrink-0">
             <span className="text-slate-400 block text-[9px]">Modo de Jogo:</span>
             <span className="font-bold text-white">
-              {mode === 'STATION_CAPTURE_5V5'
-                ? 'Capture the Flag (5 vs 5 · 6 Rodadas)'
-                : 'Plant the Bomb (5 vs 5)'}
+              {mode === 'STATION_TDM_5V5'
+                ? 'Mata-Mata em Equipe (5 vs 5 · Alvo 40 Abates)'
+                : mode === 'STATION_CAPTURE_5V5'
+                  ? 'Capture the Flag (5 vs 5 · 6 Rodadas)'
+                  : 'Plant the Bomb (5 vs 5)'}
             </span>
           </div>
           <div className="flex-1 text-center px-2 text-[10px] sm:text-[11px] text-amber-200 font-bold leading-snug">

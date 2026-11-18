@@ -10,6 +10,7 @@ export const MAP_GLB_BY_MODE: Partial<Record<DrillMode, string>> = {
   EASTERN_CITY_BOMB_5V5: '/models/maps/eastern_city_2k.glb',
   MIRAGE_ANUBIS_BOMB_5V5: '/models/maps/mirage_anubis_2k.glb',
   STATION_CAPTURE_5V5: '/maps/station_arena/Station_Arena.FBX',
+  STATION_TDM_5V5: '/maps/station_arena/Station_Arena.FBX',
   FREE_RANGE: '/models/maps/shooting_range_2k.glb',
   MAP_TEST_INDUSTRIA: '/models/maps/industria_2k.glb',
   MAP_TEST_HANGAR: '/models/maps/hangar_2k.glb',

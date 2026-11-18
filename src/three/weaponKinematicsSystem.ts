@@ -85,7 +85,8 @@ export function updateWeaponKinematicsAndOptics(engine: any, dt: number): void {
               ? engine.easternCityLevelData.collider
             : engine.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5'
               ? engine.mirageAnubisLevelData.collider
-            : engine.state.drillMode === 'STATION_CAPTURE_5V5'
+            : engine.state.drillMode === 'STATION_CAPTURE_5V5' ||
+                engine.state.drillMode === 'STATION_TDM_5V5'
               ? engine.stationArenaLevelData.collider
             : null;
 

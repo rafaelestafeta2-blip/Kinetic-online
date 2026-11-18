@@ -69,6 +69,12 @@ export const WEAPON_REAL_META: Record<
     category: 'Fuzil de Assalto',
     unlockLevel: 1,
   },
+  S_MILITARY: {
+    name: 'SCAR-L S-MILITARY',
+    caliber: '5.56x45mm NATO',
+    category: 'Fuzil de Assalto',
+    unlockLevel: 1,
+  },
   CARBINE_AR: {
     name: 'HK416 CQB',
     caliber: '5.56x45mm NATO',

@@ -71,9 +71,9 @@ const OFFICIAL_RANKED_MAP_POOL: Array<{
     subtitle: 'Fortaleza de Arenito · Plant the Bomb 5v5',
   },
   {
-    id: 'STATION_CAPTURE_5V5',
+    id: 'STATION_TDM_5V5',
     title: 'STATION ARENA',
-    subtitle: 'Estação Ferroviária · Captura de Bandeira 5v5 (6 Rodadas)',
+    subtitle: 'Estação Ferroviária · Mata-Mata em Equipe 5v5 (Alvo 40 Abates)',
   },
 ];
 

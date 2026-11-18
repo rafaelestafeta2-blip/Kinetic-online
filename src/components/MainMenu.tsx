@@ -62,6 +62,7 @@ const WEAPON_DISPLAY_NAMES: Record<
   SHOTGUN_SPAS: { name: 'SPAS-12 TÁTICA 12GA', caliber: 'Calibre 12', category: 'Escopeta Semiautomática' },
   AK47_RIFLE: { name: 'AK-47 COMANDO', caliber: '7.62x39mm', category: 'Fuzil de Assalto' },
   AK12_RIFLE: { name: 'AK-12 SPETSNAZ', caliber: '5.45x39mm', category: 'Fuzil de Assalto' },
+  S_MILITARY: { name: 'SCAR-L S-MILITARY', caliber: '5.56x45mm NATO', category: 'Fuzil de Assalto' },
   CARBINE_AR: { name: 'CARABINA TÁTICA', caliber: '5.56x45mm', category: 'Carabina de Precisão' },
   L49_LMG: { name: 'LMG PESADA 100R', caliber: '5.56x45mm', category: 'Metralhadora Leve' },
   SNIPER_TACTICAL: { name: 'SNIPER TÁTICA S&B', caliber: '.308 Win', category: 'Fuzil Sniper' },

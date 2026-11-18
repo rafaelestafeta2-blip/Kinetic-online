@@ -1,5 +1,8 @@
 import * as THREE from 'three';
-import { playRealHitmarkerSound } from '../audio/characterAndBombAudio';
+import {
+  playKillConfirmSound,
+  playRealHitmarkerSound,
+} from '../audio/characterAndBombAudio';
 import { soundEngine } from '../audio/soundEngine';
 import { triggerTacticalRadioCallout } from '../audio/tacticalImmersionAudio';
 import { mobileHardware } from '../mobile/nativeHardware';
@@ -31,6 +34,7 @@ export function handleTargetHit(engine: any, targetId: string, hitZone: 'HEAD' |
       engine.state.score += 75;
       engine.state.hitMarkerAlpha = 1.0;
       engine.state.hitMarkerIsCrit = false;
+      engine.state.hitMarkerIsKill = false;
       engine.state.lastHitZone = 'TORSO';
       engine.recordShotTelemetry(distanceMeters, 'STEEL_GONG', 75, velocityMs);
       return;
@@ -53,6 +57,7 @@ export function handleTargetHit(engine: any, targetId: string, hitZone: 'HEAD' |
         engine.fxPool.spawnImpactFX(hitPoint, hitNormal, true, false);
         engine.state.hitMarkerAlpha = 1.0;
         engine.state.hitMarkerIsCrit = false;
+        engine.state.hitMarkerIsKill = false;
         engine.state.lastHitZone = 'ARMOR';
 
         if (target.armorHealth <= 0 && target.armorMesh) {
@@ -97,7 +102,10 @@ export function handleTargetHit(engine: any, targetId: string, hitZone: 'HEAD' |
     engine.fxPool.spawnImpactFX(hitPoint, hitNormal, isHead || isSniper, isHead || isSniper);
     engine.state.hitMarkerAlpha = 1.0;
     engine.state.hitMarkerIsCrit = isHead || isSniper;
-    playRealHitmarkerSound(isHead || isSniper);
+    engine.state.hitMarkerIsKill = target.health <= 0;
+    if (target.health > 0) {
+      playRealHitmarkerSound(isHead || isSniper);
+    }
 
     if (isHead || isSniper) {
       if (isHead) engine.state.headshots += 1;
@@ -119,7 +127,12 @@ export function handleTargetHit(engine: any, targetId: string, hitZone: 'HEAD' |
     if (target.health <= 0) {
       target.isDown = true;
       target.lastDeathWasHeadshot = isHead;
-      target.downTimer = engine.state.drillMode === 'FREE_RANGE' ? 2.6 : 9999;
+      target.downTimer =
+        engine.state.drillMode === 'FREE_RANGE'
+          ? 2.6
+          : engine.state.drillMode === 'STATION_TDM_5V5'
+            ? 3.2
+            : 9999;
       target.isTelegraphing = false;
       if (target.laserLine) target.laserLine.visible = false;
       if (isHead) {
@@ -127,6 +140,11 @@ export function handleTargetHit(engine: any, targetId: string, hitZone: 'HEAD' |
       }
       engine.state.score += isHead ? 150 : 100;
       engine.state.lastHitZone = 'KILL';
+      engine.state.hitMarkerIsCrit = true;
+      engine.state.hitMarkerIsKill = true;
+      engine.state.killConfirmAlpha = 1.0;
+      engine.state.killConfirmLabel = isHead ? 'HEADSHOT · HITKILL' : 'ABATE CONFIRMADO';
+      playKillConfirmSound(isHead);
 
       const bot = target as YardBotEntity;
       if (engine.state.drillMode !== 'FREE_RANGE') {
@@ -152,7 +170,8 @@ export function handleTargetHit(engine: any, targetId: string, hitZone: 'HEAD' |
         engine.state.drillMode === 'HANGAR_BOMB_5V5' ||
         engine.state.drillMode === 'EASTERN_CITY_BOMB_5V5' ||
         engine.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
-        engine.state.drillMode === 'STATION_CAPTURE_5V5'
+        engine.state.drillMode === 'STATION_CAPTURE_5V5' ||
+        engine.state.drillMode === 'STATION_TDM_5V5'
       ) {
         const remaining = engine.targets.filter(
           (t: any) =>

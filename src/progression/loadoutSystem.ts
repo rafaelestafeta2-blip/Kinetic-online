@@ -89,6 +89,7 @@ export const SCOPE_PACK_CATALOG: Record<OpticType, ScopeCatalogItem> = {
       'SHOTGUN_SPAS',
       'M4_CARBINE',
       'CARBINE_AR',
+      'S_MILITARY',
       'AK47_RIFLE',
       'AK12_RIFLE',
       'L49_LMG',
@@ -116,6 +117,7 @@ export const SCOPE_PACK_CATALOG: Record<OpticType, ScopeCatalogItem> = {
       'SHOTGUN_SPAS',
       'M4_CARBINE',
       'CARBINE_AR',
+      'S_MILITARY',
       'AK47_RIFLE',
       'AK12_RIFLE',
       'L49_LMG',
@@ -138,6 +140,7 @@ export const SCOPE_PACK_CATALOG: Record<OpticType, ScopeCatalogItem> = {
       'AK12_RIFLE',
       'M4_CARBINE',
       'CARBINE_AR',
+      'S_MILITARY',
       'SMG_45',
       'SMG_MP5',
       'SHOTGUN_12',
@@ -160,6 +163,7 @@ export const SCOPE_PACK_CATALOG: Record<OpticType, ScopeCatalogItem> = {
     compatibleWeapons: [
       'M4_CARBINE',
       'CARBINE_AR',
+      'S_MILITARY',
       'AK12_RIFLE',
       'AK47_RIFLE',
       'SMG_45',
@@ -186,6 +190,7 @@ export const SCOPE_PACK_CATALOG: Record<OpticType, ScopeCatalogItem> = {
       'SNIPER_BOLT',
       'M4_CARBINE',
       'CARBINE_AR',
+      'S_MILITARY',
       'AK12_RIFLE',
       'AK47_RIFLE',
       'L49_LMG',
@@ -224,7 +229,13 @@ export const WARFACE_CLASS_LOADOUT_META: Record<
 > = {
   FUZILEIRO: {
     classId: 'FUZILEIRO',
-    allowedPrimaries: ['M4_CARBINE', 'AK12_RIFLE', 'AK47_RIFLE', 'CARBINE_AR'],
+    allowedPrimaries: [
+      'M4_CARBINE',
+      'AK12_RIFLE',
+      'S_MILITARY',
+      'AK47_RIFLE',
+      'CARBINE_AR',
+    ],
     allowedWeaponRuleLabel: 'EXCLUSIVO FUZILEIRO · APENAS RIFLES DE ASSALTO',
     defaultPrimary: 'M4_CARBINE',
     passiveTitle: 'ASSALTO VANGUARD',
@@ -345,6 +356,30 @@ export const WEAPON_INVENTORY_CATALOG: Record<WeaponId, WeaponCatalogItem> = {
     rpmPct: 70,
     aimAcc: 86,
     hipAcc: 60,
+    clipLabel: '30 / 120',
+    clipPct: 65,
+    cashPrice: 0,
+  },
+  S_MILITARY: {
+    id: 'S_MILITARY',
+    name: 'SCAR-L S-MILITARY',
+    caliber: '5.56x45mm NATO',
+    category: 'Fuzil de Assalto',
+    exclusiveLabel: 'Fuzileiro · Rifle',
+    attachmentSlots: 'Cano, Trilho, Mira',
+    description:
+      'Rifle modular S-Military 5.56x45mm com trilho superior completo, coronha ajustável e visor holográfico tático.',
+    firepower: 87,
+    accuracy: 87,
+    mobility: 79,
+    damageStat: 84,
+    damagePct: 75,
+    rangeLabel: '80m',
+    rangePct: 72,
+    rpmLabel: '750',
+    rpmPct: 75,
+    aimAcc: 87,
+    hipAcc: 65,
     clipLabel: '30 / 120',
     clipPct: 65,
     cashPrice: 0,
@@ -822,6 +857,7 @@ function createDefaultInventory(): PlayerInventoryState {
     purchasedWeaponIds: [
       'M4_CARBINE',
       'AK12_RIFLE',
+      'S_MILITARY',
       'SHOTGUN_12',
       'SMG_45',
       'SNIPER_TACTICAL',
@@ -843,6 +879,7 @@ function createDefaultInventory(): PlayerInventoryState {
       M4_CARBINE: 'red_dot',
       CARBINE_AR: 'red_dot',
       AK12_RIFLE: 'red_dot',
+      S_MILITARY: 'iron',
       AK47_RIFLE: 'iron',
       SMG_45: 'red_dot',
       SMG_MP5: 'red_dot',
@@ -1117,7 +1154,7 @@ export function getDefaultOpticForWeapon(
   if (weaponId === 'AK47_RIFLE') {
     return isOpticUnlockedAtXp('kolimator', playerXp) ? 'kolimator' : 'iron';
   }
-  if (weaponId === 'SHOTGUN_12') {
+  if (weaponId === 'SHOTGUN_12' || weaponId === 'S_MILITARY') {
     return 'iron';
   }
   return 'red_dot';

@@ -124,6 +124,9 @@ export const KNIFE_GITHUB_RAW_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/cfac55452b306860453fb3785c4c485a322faa8a/knife_animated%20(1).glb';
 export const KNIFE_LOCAL_URL = '/models/knife_animated.glb';
 
+export const S_MILITARY_GITHUB_RAW_URL = '/models/weapons/s_military_ar.glb';
+export const S_MILITARY_LOCAL_URL = '/models/weapons/s_military_ar.glb';
+
 export interface TacticalWeaponRig {
   root: THREE.Group;
   gunGroup: THREE.Group;
@@ -156,6 +159,8 @@ export interface TacticalWeaponRig {
   setTriggerPull: (pullAlpha: number) => void;
   triggerFireAnimation: (isAds?: boolean) => void;
   triggerReloadAnimation: (durationSec: number) => void;
+  triggerShotgunShellInsertAnimation: (durationSec?: number) => void;
+  triggerShotgunPumpAnimation: (durationSec?: number) => void;
   triggerBoltAnimation: () => void;
   triggerInspectAnimation: () => void;
   triggerEquipAnimation: () => void;
@@ -212,9 +217,10 @@ export const WEAPON_RAIL_MOUNTS: Record<
   SMG_45: { pos: [-0.0119, 0.096, -0.14], scale: 0.85 },
   SMG_MP5: { pos: [0.0, 0.036, -0.01], scale: 0.82 },
   SHOTGUN_12: { pos: [-0.0305, 0.088, -0.04], scale: 0.86 },
-  SHOTGUN_SPAS: { pos: [0.0, 0.006, -0.04], scale: 0.88 },
+  SHOTGUN_SPAS: { pos: [0.0, -0.016, -0.232], scale: 0.88 },
   M4_CARBINE: { pos: [-0.0153, -0.002, 0.025], scale: 0.95 },
   CARBINE_AR: { pos: [-0.0153, -0.002, 0.025], scale: 0.95 },
+  S_MILITARY: { pos: [0.0, -0.028, -0.141], scale: 0.92 },
   AK47_RIFLE: { pos: [-0.012, -0.008, 0.12], scale: 0.92 },
   AK12_RIFLE: { pos: [0.0, 0.0285, 0.035], scale: 0.92 },
   L49_LMG: { pos: [-0.009, 0.085, 0.02], scale: 0.9 },
@@ -240,6 +246,33 @@ const _ikCurWorldQuat = new THREE.Quaternion();
 const _ikNewWorldQuat = new THREE.Quaternion();
 const _ikTargetHandQuat = new THREE.Quaternion();
 const _ikHandParentQuat = new THREE.Quaternion();
+
+const _gunSpaceMat = new THREE.Matrix4();
+const _deltaBoneMat = new THREE.Matrix4();
+const _deltaBonePos = new THREE.Vector3();
+const _deltaBoneQuat = new THREE.Quaternion();
+const _deltaBoneScale = new THREE.Vector3();
+const _ancestorChain: THREE.Object3D[] = [];
+
+function computeNodeMatrixInGunSpace(
+  node: THREE.Object3D,
+  gunRoot: THREE.Object3D,
+  out: THREE.Matrix4
+): THREE.Matrix4 {
+  _ancestorChain.length = 0;
+  let cur: THREE.Object3D | null = node;
+  while (cur && cur !== gunRoot) {
+    _ancestorChain.push(cur);
+    cur = cur.parent;
+  }
+  out.identity();
+  for (let i = _ancestorChain.length - 1; i >= 0; i--) {
+    const obj = _ancestorChain[i];
+    obj.updateMatrix();
+    out.multiply(obj.matrix);
+  }
+  return out;
+}
 
 const ARMS_RIG_CANONICAL_JOINTS = [
   'root',
@@ -1323,6 +1356,7 @@ export function buildTacticalWeaponRig(
     actions: Record<string, THREE.AnimationAction>;
     mainBoneNode: THREE.Object3D | null;
     mainBoneRestPos: THREE.Vector3 | null;
+    mainBoneRestInGunInv: THREE.Matrix4 | null;
     mainBoneScale: number;
     invertZ: boolean;
     builtInOpticNodes: THREE.Object3D[];
@@ -1358,6 +1392,7 @@ export function buildTacticalWeaponRig(
       actions: {},
       mainBoneNode: null,
       mainBoneRestPos: null,
+      mainBoneRestInGunInv: null,
       mainBoneScale: opts.mainBoneScale ?? 0.01,
       invertZ: Math.abs(opts.rotY - Math.PI) < 0.2,
       builtInOpticNodes: [],
@@ -1370,7 +1405,7 @@ export function buildTacticalWeaponRig(
       const modelScene = gltf.scene;
       modelScene.traverse((child) => {
         child.frustumCulled = false;
-        if (opts.mainBoneName && child.name === opts.mainBoneName) {
+        if (opts.mainBoneName && child.name === opts.mainBoneName && !entry.mainBoneNode) {
           entry.mainBoneNode = child;
           entry.mainBoneRestPos = child.position.clone();
         }
@@ -1389,8 +1424,13 @@ export function buildTacticalWeaponRig(
               child.name === 'lense' ||
               child.name === 'lense_0')) ||
           (opts.weaponId === 'SHOTGUN_SPAS' &&
-            (child.name === 'Automatic_Shotgun_Sight_02' ||
+            (child.name === 'Automatic_Shotgun_Sight_01' ||
+              child.name === 'Automatic_Shotgun_Sight_02' ||
               child.name === 'Automatic_Shotgun_Sight_Glasses')) ||
+          (opts.weaponId === 'S_MILITARY' &&
+            (child.name === 'Holoshort001' ||
+              child.name === 'Scr010' ||
+              child.name === 'Scr003')) ||
           (opts.weaponId === 'SNIPER_BOLT' &&
             (child.name === 'scope' ||
               child.name === 'scope_sniper_0' ||
@@ -1418,6 +1458,27 @@ export function buildTacticalWeaponRig(
             }
             const matName = (std.name || '').toLowerCase();
             if (
+              opts.weaponId === 'S_MILITARY' &&
+              (matName === 'm_holoshort_opacity' ||
+                matName.includes('holoshort_opacity'))
+            ) {
+              std.transparent = true;
+              std.depthWrite = false;
+              std.blending = THREE.AdditiveBlending;
+              std.toneMapped = false;
+              std.emissive = new THREE.Color(0xff3b30);
+              std.emissiveIntensity = 2.2;
+              m.renderOrder = 15;
+            } else if (
+              opts.weaponId === 'S_MILITARY' &&
+              matName === 'm_transparent'
+            ) {
+              std.transparent = true;
+              std.opacity = 0.14;
+              std.depthWrite = false;
+              std.roughness = 0.05;
+              m.renderOrder = 12;
+            } else if (
               (opts.weaponId === 'M4_CARBINE' || opts.weaponId === 'CARBINE_AR') &&
               (matName === 'lens' || m.name.toLowerCase().includes('lens_lens'))
             ) {
@@ -1551,7 +1612,56 @@ export function buildTacticalWeaponRig(
               }
             });
           }
+
+          // For SHOTGUN_SPAS, slice dedicated per-shell insert & pump subclips out of native Reload
+          if (opts.weaponId === 'SHOTGUN_SPAS' && entry.actions['Reload']) {
+            const reloadClip = entry.actions['Reload'].getClip();
+            const dur = Math.max(0.2, reloadClip.duration || 3.33);
+            const insertSub = sliceAnimationSubclip(
+              reloadClip,
+              'ShotgunInsert',
+              Math.min(0.95, dur * 0.28),
+              Math.min(1.85, dur * 0.65)
+            );
+            const insertAct = mixer.clipAction(insertSub);
+            insertAct.setLoop(THREE.LoopOnce, 1);
+            insertAct.clampWhenFinished = true;
+            entry.actions['ShotgunInsert'] = insertAct;
+
+            const pumpSub = sliceAnimationSubclip(
+              reloadClip,
+              'ShotgunPump',
+              Math.min(2.4, dur * 0.72),
+              dur
+            );
+            const pumpAct = mixer.clipAction(pumpSub);
+            pumpAct.setLoop(THREE.LoopOnce, 1);
+            pumpAct.clampWhenFinished = true;
+            entry.actions['ShotgunPump'] = pumpAct;
+          }
+
+          // When Idle differs from bind pose (e.g. S_MILITARY UE5 A-pose -> FPS ready pose),
+          // evaluate Idle at t=0 before capturing mainBoneRestInGunInv
+          if (entry.actions['Idle']) {
+            const idleAct = entry.actions['Idle'];
+            idleAct.weight = 1;
+            idleAct.play();
+            mixer.setTime(0);
+            idleAct.stop();
+            idleAct.weight = 0;
+          }
         }
+      }
+
+      if (entry.mainBoneNode) {
+        entry.mainBoneRestPos = entry.mainBoneNode.position.clone();
+        entry.mainBoneRestInGunInv = computeNodeMatrixInGunSpace(
+          entry.mainBoneNode,
+          gunGroup,
+          _gunSpaceMat
+        )
+          .clone()
+          .invert();
       }
 
       if (activeWeapon === opts.weaponId) {
@@ -1571,7 +1681,15 @@ export function buildTacticalWeaponRig(
 
   const playWeaponPackAction = (
     entry: AnimatedWeaponPackEntry | undefined,
-    actionName: 'Draw' | 'Fire' | 'Reload' | 'Reload_Empty' | 'Holster',
+    actionName:
+      | 'Draw'
+      | 'Fire'
+      | 'Reload'
+      | 'Reload_Empty'
+      | 'Holster'
+      | 'Inspect'
+      | 'ShotgunInsert'
+      | 'ShotgunPump',
     durationOverrideSec?: number,
     timeScaleOverride = 1.0
   ) => {
@@ -1579,6 +1697,9 @@ export function buildTacticalWeaponRig(
     const action =
       entry.actions[actionName] ||
       (actionName === 'Reload_Empty' ? entry.actions['Reload'] : undefined) ||
+      (actionName === 'ShotgunInsert' ? entry.actions['Reload'] : undefined) ||
+      (actionName === 'ShotgunPump' ? entry.actions['Draw'] : undefined) ||
+      (actionName === 'Inspect' ? entry.actions['Draw'] : undefined) ||
       (actionName === 'Holster' ? entry.actions['Draw'] : undefined) ||
       entry.actions['Draw'];
     if (!action) return;
@@ -1628,6 +1749,7 @@ export function buildTacticalWeaponRig(
       actions: {},
       mainBoneNode: null,
       mainBoneRestPos: null,
+      mainBoneRestInGunInv: null,
       mainBoneScale: 1,
       invertZ: false,
       builtInOpticNodes: [],
@@ -1690,6 +1812,8 @@ export function buildTacticalWeaponRig(
         Fire: [0.0, 1.13],
         Reload: [1.17, 2.93],
         Reload_Empty: [1.17, 4.23],
+        ShotgunInsert: [1.55, 2.25],
+        ShotgunPump: [2.25, 2.93],
         Draw: [3.37, 4.23],
         Holster: [2.97, 3.37],
         Idle: [4.27, 5.3],
@@ -1703,8 +1827,8 @@ export function buildTacticalWeaponRig(
       githubUrl: SHOTGUN_SPAS_GITHUB_RAW_URL,
       scale: 0.01,
       rotY: Math.PI,
-      pos: [-0.0937, -1.585, 0.36],
-      mainBoneName: 'B_Automatic_Shotgun_Basic',
+      pos: [-0.0943, -1.615, 0.18],
+      mainBoneName: 'P_Automatic_Shotgun_Basic',
       mainBoneScale: 0.01,
       clipAliases: {
         Draw: 'Draw',
@@ -1750,6 +1874,26 @@ export function buildTacticalWeaponRig(
         Reload: [2.33, 4.47],
         Draw: [4.53, 5.9],
         Holster: [6.87, 7.4],
+      },
+    }),
+
+    // [4B] SCAR-L S-Military (`s_military_ar.glb` — Rifleman Assault Rifle)
+    S_MILITARY: createAnimatedWeaponEntry({
+      weaponId: 'S_MILITARY',
+      localUrl: S_MILITARY_LOCAL_URL,
+      githubUrl: S_MILITARY_GITHUB_RAW_URL,
+      scale: 0.01,
+      rotY: Math.PI,
+      pos: [-0.110, -1.535, 0.25],
+      mainBoneName: 'Grip',
+      mainBoneScale: 0.01,
+      clipAliases: {
+        Draw: 'Draw',
+        Fire: 'Fire',
+        Reload: 'Reload',
+        Reload_Empty: 'Reload_Empty',
+        Holster: 'Holster',
+        Inspect: 'Inspect',
       },
     }),
 
@@ -1954,14 +2098,23 @@ export function buildTacticalWeaponRig(
       peqLaserBeam.position.copy(laserOriginWorldPos.position);
       ejectionPortWorldPos.position.set(0.018, 0.02, -0.13);
     } else if (weaponId === 'SHOTGUN_SPAS') {
-      opticsContainer.position.set(0, 0.043, -0.07);
-      opticsContainer.scale.setScalar(0.84);
-      suppressorGroup.position.set(0, -0.05, -0.45);
-      muzzleWorldPos.position.set(0, -0.05, -0.42);
-      muzzleFlashGroup.position.set(0, -0.05, -0.41);
-      laserOriginWorldPos.position.set(0.022, -0.05, -0.32);
+      opticsContainer.position.set(0, -0.016, -0.232);
+      opticsContainer.scale.setScalar(0.88);
+      suppressorGroup.position.set(0, -0.056, -0.53);
+      muzzleWorldPos.position.set(0, -0.056, -0.50);
+      muzzleFlashGroup.position.set(0, -0.056, -0.49);
+      laserOriginWorldPos.position.set(0.022, -0.052, -0.34);
       peqLaserBeam.position.copy(laserOriginWorldPos.position);
-      ejectionPortWorldPos.position.set(0.025, -0.06, -0.1);
+      ejectionPortWorldPos.position.set(0.024, -0.054, -0.15);
+    } else if (weaponId === 'S_MILITARY') {
+      opticsContainer.position.set(0, -0.028, -0.141);
+      opticsContainer.scale.setScalar(0.92);
+      suppressorGroup.position.set(-0.011, -0.068, -0.786);
+      muzzleWorldPos.position.set(-0.011, -0.068, -0.74);
+      muzzleFlashGroup.position.set(-0.011, -0.068, -0.73);
+      laserOriginWorldPos.position.set(0.025, -0.045, -0.45);
+      peqLaserBeam.position.copy(laserOriginWorldPos.position);
+      ejectionPortWorldPos.position.set(0.024, -0.062, -0.08);
     } else if (weaponId === 'AK47_RIFLE') {
       rightBasePos.set(0.022, -0.054, 0.086);
       rightBaseEuler.set(-1.62, -0.08, 0.1);
@@ -2225,6 +2378,16 @@ export function buildTacticalWeaponRig(
     playWeaponPackAction(activeEntry, clipKey, durationSec);
   };
 
+  const triggerShotgunShellInsertAnimation = (durationSec = 0.45) => {
+    const activeEntry = weaponPacks[activeWeapon];
+    playWeaponPackAction(activeEntry, 'ShotgunInsert', durationSec);
+  };
+
+  const triggerShotgunPumpAnimation = (durationSec = 0.44) => {
+    const activeEntry = weaponPacks[activeWeapon];
+    playWeaponPackAction(activeEntry, 'ShotgunPump', durationSec);
+  };
+
   const triggerBoltAnimation = () => {
     const activeEntry = weaponPacks[activeWeapon];
     playWeaponPackAction(activeEntry, 'Draw', 0.75);
@@ -2232,7 +2395,11 @@ export function buildTacticalWeaponRig(
 
   const triggerInspectAnimation = () => {
     const activeEntry = weaponPacks[activeWeapon];
-    playWeaponPackAction(activeEntry, 'Draw', 1.35);
+    if (activeEntry?.actions['Inspect']) {
+      playWeaponPackAction(activeEntry, 'Inspect', 2.4);
+    } else {
+      playWeaponPackAction(activeEntry, 'Draw', 1.35);
+    }
   };
 
   const triggerEquipAnimation = () => {
@@ -2284,6 +2451,9 @@ export function buildTacticalWeaponRig(
         activeEntry.actions['Fire']?.isRunning() ||
         activeEntry.actions['Reload']?.isRunning() ||
         activeEntry.actions['Reload_Empty']?.isRunning() ||
+        activeEntry.actions['ShotgunInsert']?.isRunning() ||
+        activeEntry.actions['ShotgunPump']?.isRunning() ||
+        activeEntry.actions['Inspect']?.isRunning() ||
         activeEntry.actions['Draw']?.isRunning() ||
         activeEntry.actions['Shoot']?.isRunning()
       );
@@ -2368,7 +2538,9 @@ export function buildTacticalWeaponRig(
         reloadPhase === 'IDLE' &&
         !nativeLoco &&
         !busy &&
-        (activeWeapon === 'AK12_RIFLE' || activeWeapon === 'SHOTGUN_12') &&
+        (activeWeapon === 'AK12_RIFLE' ||
+          activeWeapon === 'SHOTGUN_12' ||
+          activeWeapon === 'SHOTGUN_SPAS') &&
         activeEntry.actions['Idle'] &&
         !useAkDonor
       ) {
@@ -2430,40 +2602,12 @@ export function buildTacticalWeaponRig(
       akLocoDonorKey = null;
     }
 
-    const applyBoneMotion = (
-      entry: AnimatedWeaponPackEntry,
-      damp = 24,
-      adsScale = 1.0
-    ): void => {
-      const b = entry.mainBoneNode!;
-      const r = entry.mainBoneRestPos!;
-      const s = entry.mainBoneScale * adsScale;
-      const sign = entry.invertZ ? -1 : 1;
-      const targetX = THREE.MathUtils.clamp(sign * (b.position.x - r.x) * s, -0.04, 0.04);
-      const targetY = THREE.MathUtils.clamp((b.position.y - r.y) * s, -0.04, 0.04);
-      const targetZ = THREE.MathUtils.clamp(sign * (b.position.z - r.z) * s, -0.04, 0.04);
-      weaponMotionAnchor.position.x = THREE.MathUtils.damp(
-        weaponMotionAnchor.position.x,
-        targetX,
-        damp,
-        dt
-      );
-      weaponMotionAnchor.position.y = THREE.MathUtils.damp(
-        weaponMotionAnchor.position.y,
-        targetY,
-        damp,
-        dt
-      );
-      weaponMotionAnchor.position.z = THREE.MathUtils.damp(
-        weaponMotionAnchor.position.z,
-        targetZ,
-        damp,
-        dt
-      );
-    };
-
-    if (activeEntry?.loaded && activeEntry.mainBoneNode && activeEntry.mainBoneRestPos) {
-      applyBoneMotion(activeEntry, 24, isAds ? 0.0 : 1.0);
+    if (activeEntry?.loaded && activeEntry.mainBoneNode && activeEntry.mainBoneRestInGunInv) {
+      computeNodeMatrixInGunSpace(activeEntry.mainBoneNode, gunGroup, _gunSpaceMat);
+      _deltaBoneMat.multiplyMatrices(_gunSpaceMat, activeEntry.mainBoneRestInGunInv);
+      _deltaBoneMat.decompose(_deltaBonePos, _deltaBoneQuat, _deltaBoneScale);
+      weaponMotionAnchor.position.copy(_deltaBonePos);
+      weaponMotionAnchor.quaternion.copy(_deltaBoneQuat);
     } else {
       weaponMotionAnchor.position.set(0, 0, 0);
       weaponMotionAnchor.quaternion.identity();
@@ -2570,6 +2714,8 @@ export function buildTacticalWeaponRig(
     setTriggerPull,
     triggerFireAnimation,
     triggerReloadAnimation,
+    triggerShotgunShellInsertAnimation,
+    triggerShotgunPumpAnimation,
     triggerBoltAnimation,
     triggerInspectAnimation,
     triggerEquipAnimation,
@@ -2668,7 +2814,13 @@ export function getOpticAdsTransform(
   }
   if (activeWeapon === 'SHOTGUN_SPAS') {
     return {
-      pos: new THREE.Vector3(0, -0.0433, -0.18),
+      pos: new THREE.Vector3(0, 0.012, -0.06),
+      rotZ: 0,
+    };
+  }
+  if (activeWeapon === 'S_MILITARY') {
+    return {
+      pos: new THREE.Vector3(0, 0.004, -0.04),
       rotZ: 0,
     };
   }

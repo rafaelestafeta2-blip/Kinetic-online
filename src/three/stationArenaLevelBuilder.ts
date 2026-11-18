@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { WeaponId } from '../types/game';
 import { Dust2TriangleCollider } from './dust2Collider';
 import { Dust2LevelBundle, runExclusiveGlbLoad } from './dust2LevelBuilder';
@@ -50,6 +51,14 @@ export function getStationArenaCalloutForPos(
   return 'PRAÇA CENTRAL (STATION ARENA)';
 }
 
+export function setStationCaptureBeaconsVisible(
+  bundle: Dust2LevelBundle,
+  visible: boolean
+): void {
+  const beacons = bundle.levelGroup.getObjectByName('StationCaptureBeaconsGroup');
+  if (beacons) beacons.visible = visible;
+}
+
 export function buildStationArenaLevel(
   isSoftwareGl: boolean
 ): Dust2LevelBundle {
@@ -60,25 +69,19 @@ export function buildStationArenaLevel(
   const targets: TacticalTargetEntity[] = [];
   const collider = new Dust2TriangleCollider();
 
-  // Crisp urban twilight / daylight bounce
-  const hemi = new THREE.HemisphereLight(0xf2f7ff, 0x7c746b, 0.95);
-  levelGroup.add(hemi);
-
-  const sun = new THREE.DirectionalLight(0xfff4e4, 1.35);
-  sun.position.set(18, 36, -22);
-  sun.target.position.set(0, 0, 0);
-  sun.castShadow = false;
-  levelGroup.add(sun);
-  levelGroup.add(sun.target);
+  const captureBeaconsGroup = new THREE.Group();
+  captureBeaconsGroup.name = 'StationCaptureBeaconsGroup';
+  captureBeaconsGroup.visible = false;
+  levelGroup.add(captureBeaconsGroup);
 
   addStationFlagBaseBeacon(
-    levelGroup,
+    captureBeaconsGroup,
     STATION_ARENA_VANGUARD_FLAG_BASE,
     'BASE VANGUARD',
     0x0ea5e9
   );
   addStationFlagBaseBeacon(
-    levelGroup,
+    captureBeaconsGroup,
     STATION_ARENA_BLACKTHORN_FLAG_BASE,
     'BASE BLACKTHORN',
     0xef4444
@@ -140,7 +143,7 @@ export async function loadStationArenaMapGeometry(
     atlasTex.flipY = true;
     atlasTex.wrapS = THREE.RepeatWrapping;
     atlasTex.wrapT = THREE.RepeatWrapping;
-    atlasTex.anisotropy = isSoftwareGl ? 1 : 8;
+    atlasTex.anisotropy = isSoftwareGl ? 1 : 4;
     atlasTex.needsUpdate = true;
 
     const sharedArenaMaterial = new THREE.MeshStandardMaterial({
@@ -166,7 +169,7 @@ export async function loadStationArenaMapGeometry(
 
       child.castShadow = false;
       child.receiveShadow = !isSoftwareGl;
-      child.frustumCulled = false;
+      child.frustumCulled = true;
       child.userData.isEnvironment = true;
 
       // Distant backdrop buildings, overhead monorail bridge & wires should not expand playable street bounds
@@ -187,12 +190,24 @@ export async function loadStationArenaMapGeometry(
       prevMats.forEach((m) => m?.dispose?.());
 
       child.material = sharedArenaMaterial;
-      if (child.geometry && !child.geometry.attributes.normal) {
-        child.geometry.computeVertexNormals();
+      if (child.geometry) {
+        if (!child.geometry.index) {
+          try {
+            const indexed = mergeVertices(child.geometry, 1e-4);
+            child.geometry.dispose();
+            child.geometry = indexed;
+          } catch {
+            // Keep non-indexed geometry if attribute layout prevents merging
+          }
+        }
+        if (!child.geometry.attributes.normal) {
+          child.geometry.computeVertexNormals();
+        }
+        child.geometry.computeBoundingBox();
+        child.geometry.computeBoundingSphere();
       }
-      if (!child.userData.ignoreCollider) {
-        bundle.shootableMeshes.push(child);
-      }
+      child.updateMatrix();
+      child.matrixAutoUpdate = false;
     });
 
     bundle.levelGroup.add(mapTransformGroup);

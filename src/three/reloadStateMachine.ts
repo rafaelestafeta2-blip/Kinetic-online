@@ -39,6 +39,94 @@ export function updateReloadStateMachine(engine: any, dt: number): void {
       return;
     }
 
+    // Realistic Shell-by-Shell Shotgun Reload (only loads the exact missing shells)
+    if (
+      engine.state.activeWeapon === 'SHOTGUN_12' ||
+      engine.state.activeWeapon === 'SHOTGUN_SPAS'
+    ) {
+      engine.reloadTimer += dt;
+      const p = Math.min(1, engine.reloadTimer / engine.reloadDuration);
+      engine.state.reloadProgress = p;
+      engine.state.reloadPhase =
+        engine.shotgunShellsInserted < engine.shotgunShellsTarget
+          ? 'MAG_IN'
+          : 'BOLT_SLAP';
+
+      const basePitch = engine.state.activeWeapon === 'SHOTGUN_12' ? 0.96 : 1.04;
+
+      if (
+        engine.shotgunShellsInserted < engine.shotgunShellsTarget &&
+        engine.reloadTimer >= engine.shotgunNextShellAt
+      ) {
+        // Deduct 1 shell from reserve magazines
+        let tookReserve = false;
+        for (let i = 0; i < engine.state.magazines.length; i++) {
+          if (engine.state.magazines[i] > 0) {
+            engine.state.magazines[i] -= 1;
+            tookReserve = true;
+            break;
+          }
+        }
+        if (tookReserve) {
+          if (engine.state.currentMagRounds < engine.state.magCapacity) {
+            engine.state.currentMagRounds += 1;
+          } else if (engine.state.chambered === 0) {
+            engine.state.chambered = 1;
+          }
+          engine.shotgunShellsInserted += 1;
+          soundEngine.playShotgunShellInsert(
+            basePitch + engine.shotgunShellsInserted * 0.015
+          );
+          mobileHardware.vibrateReloadStage('MAG_IN');
+          engine.recoilPitch += 0.008;
+          engine.state.reloadTypeLabel = `CARTUCHO ${engine.shotgunShellsInserted}/${engine.shotgunShellsTarget}`;
+
+          if (engine.shotgunShellsInserted < engine.shotgunShellsTarget) {
+            engine.weaponRig.triggerShotgunShellInsertAnimation(
+              Math.min(0.45, engine.shotgunShellInterval)
+            );
+          }
+          engine.shotgunNextShellAt += engine.shotgunShellInterval;
+          engine.emitHud();
+        } else {
+          engine.shotgunShellsInserted = engine.shotgunShellsTarget;
+        }
+      }
+
+      if (
+        engine.shotgunShellsInserted >= engine.shotgunShellsTarget &&
+        engine.shotgunNeedsPumpRack &&
+        !engine.shotgunPumpRacked &&
+        engine.reloadTimer >= engine.shotgunNextShellAt - engine.shotgunShellInterval * 0.35
+      ) {
+        engine.shotgunPumpRacked = true;
+        soundEngine.playShotgunPumpRack();
+        mobileHardware.vibrateReloadStage('BOLT_SLAP');
+        engine.weaponRig.triggerShotgunPumpAnimation(0.42);
+        if (engine.state.chambered === 0 && engine.state.currentMagRounds > 0) {
+          engine.state.currentMagRounds -= 1;
+          engine.state.chambered = 1;
+        }
+        engine.state.boltLockedBack = false;
+        engine.recoilKickZ += 0.014;
+        engine.state.reloadTypeLabel = 'CICLANDO CORREDOR DA ESCOPETA';
+        engine.emitHud();
+      }
+
+      if (p >= 1) {
+        if (engine.state.chambered === 0 && engine.state.currentMagRounds > 0) {
+          engine.state.currentMagRounds -= 1;
+          engine.state.chambered = 1;
+        }
+        engine.state.boltLockedBack = false;
+        engine.state.reloadPhase = 'IDLE';
+        engine.state.reloadProgress = 0;
+        engine.state.reloadTypeLabel = '';
+        engine.emitHud();
+      }
+      return;
+    }
+
     // Standard Tactical / Speed / Dry Staged Reload
     engine.reloadTimer += dt;
     const p = Math.min(1, engine.reloadTimer / engine.reloadDuration);
@@ -51,6 +139,7 @@ export function updateReloadStateMachine(engine: any, dt: number): void {
       engine.state.activeWeapon === 'P50_PISTOL' ||
       engine.state.activeWeapon === 'M4_CARBINE' ||
       engine.state.activeWeapon === 'CARBINE_AR' ||
+      engine.state.activeWeapon === 'S_MILITARY' ||
       engine.state.activeWeapon === 'SHOTGUN_12' ||
       engine.state.activeWeapon === 'SHOTGUN_SPAS';
 

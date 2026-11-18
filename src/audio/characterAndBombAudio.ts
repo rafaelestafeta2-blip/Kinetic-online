@@ -25,7 +25,11 @@ const SOUND_URLS: Record<CharacterSoundKey, SoundSourceUrls> = {
   C4_BEEP: { local: '/sounds/c4_beep.flac', github: `${GH_BASE}/875010__cb9382__digital-watch-beep.flac` },
   BOMB_PLANTED_VOICE: { local: '/sounds/bomb_planted_voice.mp3', github: `${GH_BASE}/ElevenLabs_2026-11-11T16_56_40_Le%C3%B3nidas%20-%20Legendary%20Spartan%20Warrior_pvc_s50_m2.mp3` },
   PLAYER_HIT_GRUNT: { local: '/sounds/player_hit_grunt.wav', github: `${GH_BASE}/90164__snaginneb__gruntsound.wav` },
-  HITMARKER: { local: '/sounds/hitmarker.wav', github: `${GH_BASE}/570335__user391915396__hitmarker-sound-effect.wav` },
+  HITMARKER: {
+    local: '/sounds/hitmarker.wav',
+    github:
+      'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/d078bf228d72500cb7ee4f4235a170bdbfc263a5/Sound/mixkit-sword-cuts-a-chainmail-2790.wav',
+  },
   GRENADE_BOUNCE: { local: '/sounds/grenade_bounce.wav', github: `${GH_BASE}/466453__patrick_corra__grenade-bouncing.wav` },
 };
 
@@ -144,8 +148,31 @@ export function playRealShellCasingBounce(panVal: number, gainVal: number, pitch
 }
 
 export function playRealHitmarkerSound(isHeadshotOrCrit = false): void {
-  const pitch = isHeadshotOrCrit ? 1.12 : 1.0 + (Math.random() - 0.5) * 0.04;
-  playBufferOneShot('HITMARKER', isHeadshotOrCrit ? 0.88 : 0.72, pitch, 0, 0);
+  const pitch = isHeadshotOrCrit ? 1.06 : 1.0 + (Math.random() - 0.5) * 0.03;
+  const played = playBufferOneShot('HITMARKER', isHeadshotOrCrit ? 0.92 : 0.78, pitch, 0, 0);
+  if (!played && !soundEngine.muted) {
+    try {
+      const audio = new Audio(SOUND_URLS.HITMARKER.local);
+      audio.volume = isHeadshotOrCrit ? 0.85 : 0.72;
+      void audio.play().catch(() => {});
+    } catch {
+      // Ignore fallback audio errors
+    }
+  }
+}
+
+export function playKillConfirmSound(isHeadshot = false): void {
+  const pitch = isHeadshot ? 1.08 : 1.02;
+  const played = playBufferOneShot('HITMARKER', isHeadshot ? 1.0 : 0.94, pitch, 0, 0);
+  if (!played && !soundEngine.muted) {
+    try {
+      const audio = new Audio(SOUND_URLS.HITMARKER.local);
+      audio.volume = 0.92;
+      void audio.play().catch(() => {});
+    } catch {
+      // Ignore fallback audio errors
+    }
+  }
 }
 
 export function playRealPlayerHitGrunt(isCritical = false): void {

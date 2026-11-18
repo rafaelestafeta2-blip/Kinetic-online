@@ -38,6 +38,11 @@ export const MENU_MUSIC_LOCAL_URL =
 export const MENU_MUSIC_GITHUB_RAW_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/956355e99d304990fce90aa7bdbc7e704314f130/videoplayback.m4a';
 
+export const MATCH_LOADING_AMBIENT_LOCAL_URL =
+  '/sounds/match_loading_ambient.mp3';
+export const MATCH_LOADING_AMBIENT_GITHUB_RAW_URL =
+  'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/d078bf228d72500cb7ee4f4235a170bdbfc263a5/Sound/018.%20Brasil%20-%20Ambient.mp3';
+
 export const DRY_FIRE_WAV_LOCAL_URL =
   '/sounds/a_rifle_being_dry_fired_once.wav';
 export const DRY_FIRE_WAV_GITHUB_RAW_URL =
@@ -306,9 +311,11 @@ class TacticalSoundEngine {
   private footstepRunPool: HTMLAudioElement[] = [];
   private footstepRunPoolIdx = 0;
 
-  // Main Menu Background Music
+  // Main Menu Background Music & Match Loading Ambient
   private menuMusicAudio: HTMLAudioElement | null = null;
   private isMenuMusicPlaying = false;
+  private matchLoadingAmbientAudio: HTMLAudioElement | null = null;
+  private isMatchLoadingAmbientPlaying = false;
 
   private _muted: boolean = false;
 
@@ -322,6 +329,11 @@ class TacticalSoundEngine {
       this.menuMusicAudio.pause();
     } else if (!val && this.isMenuMusicPlaying) {
       this.playMenuMusic();
+    }
+    if (val && this.matchLoadingAmbientAudio) {
+      this.matchLoadingAmbientAudio.pause();
+    } else if (!val && this.isMatchLoadingAmbientPlaying) {
+      this.playMatchLoadingAmbient();
     }
   }
 
@@ -1271,8 +1283,12 @@ class TacticalSoundEngine {
       return;
     }
 
-    // 2. REAL M4A1 5.56MM ASSAULT RIFLE WAV SAMPLE FOR M4A1 SOPMOD & CARABINA TÁTICA
-    if (weaponId === 'M4_CARBINE' || weaponId === 'CARBINE_AR') {
+    // 2. REAL M4A1 5.56MM ASSAULT RIFLE WAV SAMPLE FOR M4A1 SOPMOD, CARABINA TÁTICA & SCAR-L S-MILITARY
+    if (
+      weaponId === 'M4_CARBINE' ||
+      weaponId === 'CARBINE_AR' ||
+      weaponId === 'S_MILITARY'
+    ) {
       if (this.m4a1ShotBuffer) {
         const src = ctx.createBufferSource();
         src.buffer = this.m4a1ShotBuffer;
@@ -1743,34 +1759,116 @@ class TacticalSoundEngine {
   public playShotgunShellInsert(pitchRate = 1.0): void {
     if (this.muted) return;
     const ctx = this.ensureContext();
+    let samplePlayed = false;
 
-    if (ctx && this.shotgunReloadBuffer) {
-      const src = ctx.createBufferSource();
-      src.buffer = this.shotgunReloadBuffer;
-      src.playbackRate.setValueAtTime(
-        pitchRate + (Math.random() - 0.5) * 0.05,
-        ctx.currentTime
-      );
-      const gain = ctx.createGain();
-      gain.gain.setValueAtTime(0.96, ctx.currentTime);
-      src.connect(gain);
-      gain.connect(ctx.destination);
-      src.start();
-      return;
+    if (ctx) {
+      this.tryDecodeShotgunSamples(ctx);
+      if (this.shotgunReloadBuffer) {
+        const now = ctx.currentTime;
+        const src = ctx.createBufferSource();
+        src.buffer = this.shotgunReloadBuffer;
+        src.playbackRate.setValueAtTime(
+          pitchRate + (Math.random() - 0.5) * 0.05,
+          now
+        );
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(1.0, now);
+        src.connect(gain);
+        gain.connect(ctx.destination);
+        src.start(now);
+        samplePlayed = true;
+      }
     }
 
-    if (this.shotgunReloadAudioPool.length > 0) {
+    if (!samplePlayed && this.shotgunReloadAudioPool.length > 0) {
       const el = this.shotgunReloadAudioPool[this.shotgunReloadPoolIdx];
       this.shotgunReloadPoolIdx =
         (this.shotgunReloadPoolIdx + 1) % this.shotgunReloadAudioPool.length;
       el.currentTime = 0;
       el.playbackRate = pitchRate;
-      el.volume = 0.96;
+      el.volume = 1.0;
       el.play().catch(() => {});
-      return;
+      samplePlayed = true;
     }
 
-    this.playReloadStage('MAG_IN');
+    // Crisp layered procedural shell-rim metallic click + follower spring snap
+    if (ctx) {
+      const now = ctx.currentTime;
+      const thumpOsc = ctx.createOscillator();
+      const thumpGain = ctx.createGain();
+      thumpOsc.type = 'triangle';
+      thumpOsc.frequency.setValueAtTime(240 * pitchRate, now);
+      thumpOsc.frequency.exponentialRampToValueAtTime(95, now + 0.055);
+      thumpGain.gain.setValueAtTime(samplePlayed ? 0.18 : 0.36, now);
+      thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+      thumpOsc.connect(thumpGain);
+      thumpGain.connect(ctx.destination);
+      thumpOsc.start(now);
+      thumpOsc.stop(now + 0.065);
+
+      const latchOsc = ctx.createOscillator();
+      const latchGain = ctx.createGain();
+      latchOsc.type = 'square';
+      latchOsc.frequency.setValueAtTime(1950 * pitchRate, now + 0.035);
+      latchOsc.frequency.exponentialRampToValueAtTime(1120 * pitchRate, now + 0.075);
+      latchGain.gain.setValueAtTime(samplePlayed ? 0.12 : 0.28, now + 0.035);
+      latchGain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+      latchOsc.connect(latchGain);
+      latchGain.connect(ctx.destination);
+      latchOsc.start(now + 0.035);
+      latchOsc.stop(now + 0.085);
+    } else if (!samplePlayed) {
+      this.playReloadStage('MAG_IN');
+    }
+  }
+
+  public playShotgunPumpRack(): void {
+    if (this.muted) return;
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+
+    // Two-stroke tactical pump slide: crisp pull back + solid forward lockup
+    const pullOsc = ctx.createOscillator();
+    const pullGain = ctx.createGain();
+    pullOsc.type = 'sawtooth';
+    pullOsc.frequency.setValueAtTime(520, now);
+    pullOsc.frequency.linearRampToValueAtTime(1180, now + 0.095);
+    pullGain.gain.setValueAtTime(0.24, now);
+    pullGain.gain.exponentialRampToValueAtTime(0.001, now + 0.11);
+    pullOsc.connect(pullGain);
+    pullGain.connect(ctx.destination);
+    pullOsc.start(now);
+    pullOsc.stop(now + 0.115);
+
+    const lockOsc = ctx.createOscillator();
+    const lockGain = ctx.createGain();
+    lockOsc.type = 'sawtooth';
+    lockOsc.frequency.setValueAtTime(1420, now + 0.145);
+    lockOsc.frequency.exponentialRampToValueAtTime(360, now + 0.24);
+    lockGain.gain.setValueAtTime(0.32, now + 0.145);
+    lockGain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+    lockOsc.connect(lockGain);
+    lockGain.connect(ctx.destination);
+    lockOsc.start(now + 0.145);
+    lockOsc.stop(now + 0.26);
+
+    if (this.noiseBuffer) {
+      const n = ctx.createBufferSource();
+      n.buffer = this.noiseBuffer;
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.setValueAtTime(1500, now);
+      bp.Q.value = 2.2;
+      const ng = ctx.createGain();
+      ng.gain.setValueAtTime(0.2, now);
+      ng.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+      n.connect(bp);
+      bp.connect(ng);
+      ng.connect(ctx.destination);
+      n.start(now);
+      n.stop(now + 0.23);
+    }
   }
 
   public playShotgunFullReload(weaponId: WeaponId, isDry = false): void {
@@ -2906,6 +3004,60 @@ class TacticalSoundEngine {
         this.plantBombTutorialAudio.pause();
         this.plantBombTutorialAudio.currentTime = 0;
       } catch {}
+    }
+  }
+
+  public playMatchLoadingAmbient(): void {
+    if (typeof window === 'undefined') return;
+    this.isMatchLoadingAmbientPlaying = true;
+    if (this._muted) return;
+
+    if (!this.matchLoadingAmbientAudio) {
+      const audio = new Audio(MATCH_LOADING_AMBIENT_LOCAL_URL);
+      audio.preload = 'auto';
+      audio.loop = true;
+      audio.volume = 0.55;
+      audio.onerror = () => {
+        if (
+          this.matchLoadingAmbientAudio &&
+          this.matchLoadingAmbientAudio.src !== MATCH_LOADING_AMBIENT_GITHUB_RAW_URL
+        ) {
+          this.matchLoadingAmbientAudio.src = MATCH_LOADING_AMBIENT_GITHUB_RAW_URL;
+        }
+      };
+      this.matchLoadingAmbientAudio = audio;
+    }
+
+    this.matchLoadingAmbientAudio.loop = true;
+    this.matchLoadingAmbientAudio.volume = 0.55;
+    this.matchLoadingAmbientAudio.currentTime = 0;
+
+    this.matchLoadingAmbientAudio.play().catch(() => {
+      const onInteraction = () => {
+        if (
+          this.isMatchLoadingAmbientPlaying &&
+          this.matchLoadingAmbientAudio &&
+          !this._muted
+        ) {
+          this.matchLoadingAmbientAudio.play().catch(() => {});
+        }
+        window.removeEventListener('pointerdown', onInteraction);
+        window.removeEventListener('keydown', onInteraction);
+      };
+      window.addEventListener('pointerdown', onInteraction, { once: true });
+      window.addEventListener('keydown', onInteraction, { once: true });
+    });
+  }
+
+  public stopMatchLoadingAmbient(): void {
+    this.isMatchLoadingAmbientPlaying = false;
+    if (this.matchLoadingAmbientAudio) {
+      try {
+        this.matchLoadingAmbientAudio.pause();
+        this.matchLoadingAmbientAudio.currentTime = 0;
+      } catch {
+        // Ignore pause error
+      }
     }
   }
 

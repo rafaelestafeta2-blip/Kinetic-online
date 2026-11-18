@@ -26,6 +26,10 @@ import {
 import { YardBotEntity } from './yardPropsBuilder';
 import { applyPlayerCombatDamage } from './classSupportSystem';
 import { getActiveGlbCollider } from './activeGlbCollider';
+import {
+  STATION_ARENA_ATTACKER_SPAWN,
+  STATION_ARENA_DEFENDER_SPAWN,
+} from './stationArenaLevelBuilder';
 
 
 /**
@@ -69,6 +73,38 @@ export function updateTargetsAndCombatAI(engine: any, dt: number): void {
             if (t.armorMesh) t.armorMesh.visible = true;
             soundEngine.playMechanicalSwitch(0.85);
           }
+        } else if (engine.state.drillMode === 'STATION_TDM_5V5' && !isOnlineMatchActive()) {
+          t.downTimer -= dt;
+          if (t.downTimer <= 0) {
+            const isAlly = Boolean((t as YardBotEntity).isAlly);
+            const anchor = isAlly ? STATION_ARENA_ATTACKER_SPAWN : STATION_ARENA_DEFENDER_SPAWN;
+            const rx = anchor.x + (Math.random() - 0.5) * 7.5;
+            const rz = anchor.z + (Math.random() - 0.5) * 4.5;
+            const col = engine.stationArenaLevelData?.collider;
+            const p = col?.ready
+              ? col.findPlayableSpawn(rx, rz, anchor.y)
+              : { x: rx, y: anchor.y, z: rz };
+            t.root.position.set(p.x, p.y, p.z);
+            t.basePosition.set(p.x, p.y, p.z);
+            t.isDown = false;
+            t.health = t.maxHealth;
+            t.armorHealth = t.armorMesh ? 60 : 0;
+            if (t.armorMesh) t.armorMesh.visible = true;
+            t.root.visible = true;
+            t.pivotGroup.position.y = 0;
+            t.pivotGroup.rotation.x = 0;
+            t.hitTiltAngle = 0;
+            t.hitTiltVelocity = 0;
+            t.isTelegraphing = false;
+            t.cooldownTimer = 1.0 + Math.random();
+            t.reviveUntilSec = 0;
+            t.reviveExpired = false;
+            if (t.root.userData) {
+              t.root.userData.navData = undefined;
+              t.root.userData.prevPos = undefined;
+              t.root.userData.magRounds = 30;
+            }
+          }
         }
         continue;
       }
@@ -83,6 +119,7 @@ export function updateTargetsAndCombatAI(engine: any, dt: number): void {
     }
 
     // 3. Sistema Tático de Navegação, Ronda e Perseguição Implacável (5v5 Bomb, Tactical Wave e Killhouse)
+    const isTdmMode = engine.state.drillMode === 'STATION_TDM_5V5';
     const isBombMode =
       engine.state.drillMode === 'YARD_BOMB_5V5' ||
       engine.state.drillMode === 'DUST2_BOMB_5V5' ||
@@ -125,7 +162,7 @@ export function updateTargetsAndCombatAI(engine: any, dt: number): void {
           isBombMode,
           getGroundHeight: (x, y, z) => engine.getCurrentGroundHeight(x, y, z),
         });
-        if (isBombMode) {
+        if (isBombMode || isTdmMode) {
           engine.state.yardBomb = { ...engine.yardBombSystem.info };
         }
       } else {
@@ -207,6 +244,12 @@ export function updateTargetsAndCombatAI(engine: any, dt: number): void {
                 'BLACKTHORN',
                 bot.weaponId || 'AK47_RIFLE',
                 () => {
+                  if (isTdmMode) {
+                    if (engine.yardBombSystem?.info?.roundState === 'PLAYING') {
+                      engine.respawnLocalPlayerTdm();
+                    }
+                    return;
+                  }
                   if (!isBombMode) {
                     engine.state.screen = 'GAME_OVER';
                     engine.emitHud();

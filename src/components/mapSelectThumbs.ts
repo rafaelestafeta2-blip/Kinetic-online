@@ -34,6 +34,7 @@ export function thumbForDrillMode(mode: DrillMode | string): string {
     case 'MIRAGE_ANUBIS_BOMB_5V5':
       return MAP_SELECT_THUMBS.mirageAnubis;
     case 'STATION_CAPTURE_5V5':
+    case 'STATION_TDM_5V5':
       return MAP_SELECT_THUMBS.stationArena;
     case 'YARD_BOMB_5V5':
       return MAP_SELECT_THUMBS.yard;
@@ -48,6 +49,7 @@ export function thumbForDrillMode(mode: DrillMode | string): string {
 
 export function thumbForPlayMode(modeId: MainMenuPlayModeId | string): string {
   switch (modeId) {
+    case 'TDM':
     case 'CAPTURE':
       return MAP_SELECT_THUMBS.stationArena;
     case 'CASUAL':

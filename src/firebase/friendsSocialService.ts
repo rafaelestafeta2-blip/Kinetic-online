@@ -2,6 +2,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import {
   doc,
   getDoc,
+  getDocFromCache,
   onSnapshot,
   setDoc,
   Unsubscribe,
@@ -11,6 +12,7 @@ import {
   auth,
   db,
   handleFirestoreError,
+  isFirestoreOfflineError,
   OperationType,
 } from './firebaseClient';
 import { getCloudSyncState, PlayerCloudProfile } from './playerCloudSync';
@@ -80,10 +82,6 @@ function emitInbox(): void {
 
 async function ensureSocialInboxDoc(uid: string): Promise<SocialInboxState> {
   const ref = doc(db, 'social_inboxes', uid);
-  const snap = await getDoc(ref);
-  if (snap.exists()) {
-    return snap.data() as SocialInboxState;
-  }
   const initial: SocialInboxState = {
     uid,
     friends: {},
@@ -91,8 +89,25 @@ async function ensureSocialInboxDoc(uid: string): Promise<SocialInboxState> {
     invites: {},
     updatedAtMs: Date.now(),
   };
-  await setDoc(ref, initial);
-  return initial;
+  try {
+    const snap = await getDoc(ref).catch(async (err) => {
+      if (isFirestoreOfflineError(err)) {
+        return getDocFromCache(ref).catch(() => null);
+      }
+      throw err;
+    });
+    if (!snap) {
+      return initial;
+    }
+    if (snap.exists()) {
+      return snap.data() as SocialInboxState;
+    }
+    await setDoc(ref, initial);
+    return initial;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.GET, `social_inboxes/${uid}`);
+    return initial;
+  }
 }
 
 onAuthStateChanged(auth, (user) => {
@@ -111,7 +126,7 @@ onAuthStateChanged(auth, (user) => {
     ref,
     (snap) => {
       if (!snap.exists()) {
-        void ensureSocialInboxDoc(user.uid);
+        void ensureSocialInboxDoc(user.uid).catch(() => {});
         return;
       }
       currentInbox = snap.data() as SocialInboxState;

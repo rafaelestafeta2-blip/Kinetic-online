@@ -232,7 +232,9 @@ export class YardBombSystem {
     const isHangar = this.activeMode === 'HANGAR_BOMB_5V5';
     const isEasternCity = this.activeMode === 'EASTERN_CITY_BOMB_5V5';
     const isMirageAnubis = this.activeMode === 'MIRAGE_ANUBIS_BOMB_5V5';
-    const isStationCapture = this.activeMode === 'STATION_CAPTURE_5V5';
+    const isStationArena =
+      this.activeMode === 'STATION_CAPTURE_5V5' ||
+      this.activeMode === 'STATION_TDM_5V5';
     const siteA = isDust2
       ? DUST2_BOMB_SITE_A
       : isAssault
@@ -245,7 +247,7 @@ export class YardBombSystem {
               ? EASTERN_CITY_BOMB_SITE_A
               : isMirageAnubis
                 ? MIRAGE_ANUBIS_BOMB_SITE_A
-                : isStationCapture
+                : isStationArena
                   ? STATION_ARENA_VANGUARD_FLAG_BASE
                   : YARD_BOMB_SITE_A;
     const siteB = isDust2
@@ -260,7 +262,7 @@ export class YardBombSystem {
               ? EASTERN_CITY_BOMB_SITE_B
               : isMirageAnubis
                 ? MIRAGE_ANUBIS_BOMB_SITE_B
-                : isStationCapture
+                : isStationArena
                   ? STATION_ARENA_BLACKTHORN_FLAG_BASE
                   : YARD_BOMB_SITE_B;
     return { siteA, siteB };
@@ -311,6 +313,7 @@ export class YardBombSystem {
   public resetRound(mode: DrillMode = 'YARD_BOMB_5V5', keepMatchScore = false): void {
     this.activeMode = mode;
     const isCapture = mode === 'STATION_CAPTURE_5V5';
+    const isTdm = mode === 'STATION_TDM_5V5';
     this.isPlantingHeld = false;
     this.lastKeypadDigitIdx = -1;
     this.beepAccum = 0;
@@ -343,7 +346,7 @@ export class YardBombSystem {
 
     this.info = {
       bombStatus: 'CARRIED', plantedSite: null, nearSite: null, plantProgress: 0,
-      roundTimerSec: 125, c4TimerSec: 40, alliesAlive: 5, enemiesAlive: 5,
+      roundTimerSec: isTdm ? 300 : 125, c4TimerSec: 40, alliesAlive: 5, enemiesAlive: 5,
       calloutLabel:
         mode === 'DUST2_BOMB_5V5'
           ? 'BASE VANGUARD (TR SPAWN · SUL)'
@@ -359,11 +362,13 @@ export class YardBombSystem {
                   ? 'BASE VANGUARD (ENTRADA SUL · MIRAGE ANUBIS)'
                 : mode === 'STATION_CAPTURE_5V5'
                   ? 'BASE VANGUARD (TERMINAL SUL · BANDEIRA ALIADA)'
+                : mode === 'STATION_TDM_5V5'
+                  ? 'BASE VANGUARD (TERMINAL SUL · MATA-MATA)'
                 : 'BASE VANGUARD (SUL · RUA DO HOTEL)',
-      currentRound: prevRound, maxRounds: 6, vanguardScore: prevVg, blackthornScore: prevBt,
+      currentRound: prevRound, maxRounds: isTdm ? 1 : 6, vanguardScore: prevVg, blackthornScore: prevBt,
       // Warface-style equip window before every round (including first).
       roundState: 'EQUIP',
-      equipTimerSec: 7,
+      equipTimerSec: isTdm ? 5 : 7,
       roundWinner: null, roundWinReason: '', roundTransitionSec: 0,
       matchWinner: null, lastRoundXp: 0, lastRoundCash: 0,
       totalMatchXp: prevTotalXp, totalMatchCash: prevTotalCash,
@@ -372,6 +377,8 @@ export class YardBombSystem {
       isSpectating: false, spectatedCallsign: undefined, spectatedWeapon: undefined, spectatedHealth: undefined,
       squadStats: prevStats,
       isCaptureMode: isCapture,
+      isTdmMode: isTdm,
+      tdmTargetKills: isTdm ? 40 : undefined,
       vanguardFlagStatus: 'AT_BASE',
       blackthornFlagStatus: 'AT_BASE',
       vanguardFlagCarrier: null,
@@ -388,9 +395,11 @@ export class YardBombSystem {
       },
       captureAlertText: isCapture
         ? '⚑ MODO CAPTURA: ROUBE A BANDEIRA INIMIGA E TRAGA PARA A SUA BASE!'
-        : null,
-      captureAlertTeam: isCapture ? 'NEUTRAL' : null,
-      captureAlertUntilMs: isCapture ? Date.now() + 6000 : 0,
+        : isTdm
+          ? '⚔ MATA-MATA EM EQUIPE (TDM): PRIMEIRO TIME A 40 ABATES VENCE!'
+          : null,
+      captureAlertTeam: isCapture || isTdm ? 'NEUTRAL' : null,
+      captureAlertUntilMs: isCapture || isTdm ? Date.now() + 5500 : 0,
     };
 
     if (!keepMatchScore) {
@@ -406,6 +415,11 @@ export class YardBombSystem {
     isHeadshot: boolean,
     playerPrimaryWeapon?: WeaponId
   ): void {
+    if (this.activeMode === 'STATION_TDM_5V5' && this.info.roundState === 'PLAYING') {
+      if (killerTeam === 'VANGUARD') this.info.vanguardScore += 1;
+      else this.info.blackthornScore += 1;
+    }
+
     const stats = this.info.squadStats || createInitialSquadStats();
     if (playerPrimaryWeapon) {
       const playerOp = stats.find((s) => s.isPlayer);
@@ -574,8 +588,11 @@ export class YardBombSystem {
   ): void {
     if (this.info.roundState !== 'PLAYING') return;
 
-    if (winner === 'VANGUARD') this.info.vanguardScore += 1;
-    else this.info.blackthornScore += 1;
+    const isTdm = this.activeMode === 'STATION_TDM_5V5';
+    if (!isTdm) {
+      if (winner === 'VANGUARD') this.info.vanguardScore += 1;
+      else this.info.blackthornScore += 1;
+    }
 
     const progressionOk = canGrantMatchProgressionRewards();
     let roundXp = progressionOk ? (winner === 'VANGUARD' ? 180 : 75) : 0;
@@ -586,11 +603,16 @@ export class YardBombSystem {
     const completedSixDecisiveRounds =
       roundsPlayed >= this.info.maxRounds && this.info.vanguardScore !== this.info.blackthornScore;
 
-    if (hasMajorityClinch || completedSixDecisiveRounds) {
-      const matchWinner: 'VANGUARD' | 'BLACKTHORN' =
-        this.info.vanguardScore > this.info.blackthornScore ? 'VANGUARD' : 'BLACKTHORN';
+    if (isTdm || hasMajorityClinch || completedSixDecisiveRounds) {
+      const matchWinner: 'VANGUARD' | 'BLACKTHORN' = isTdm
+        ? this.info.vanguardScore >= this.info.blackthornScore
+          ? 'VANGUARD'
+          : 'BLACKTHORN'
+        : this.info.vanguardScore > this.info.blackthornScore
+          ? 'VANGUARD'
+          : 'BLACKTHORN';
       this.info.matchWinner = matchWinner;
-      this.info.roundWinner = winner;
+      this.info.roundWinner = isTdm ? matchWinner : winner;
       this.info.roundWinReason = reason;
       this.info.roundState = 'MATCH_OVER';
       this.info.isSpectating = false;
@@ -690,6 +712,7 @@ export class YardBombSystem {
     const isEasternCity = this.activeMode === 'EASTERN_CITY_BOMB_5V5';
     const isMirageAnubis = this.activeMode === 'MIRAGE_ANUBIS_BOMB_5V5';
     const isStationCapture = this.activeMode === 'STATION_CAPTURE_5V5';
+    const isStationTdm = this.activeMode === 'STATION_TDM_5V5';
     const { siteA, siteB } = this.getActiveBombSites();
 
     this.info.calloutLabel = isDust2
@@ -704,7 +727,7 @@ export class YardBombSystem {
               ? getEasternCityCalloutForPos(playerPos.x, playerPos.y, playerPos.z)
             : isMirageAnubis
               ? getMirageAnubisCalloutForPos(playerPos.x, playerPos.y, playerPos.z)
-            : isStationCapture
+            : isStationCapture || isStationTdm
               ? getStationArenaCalloutForPos(playerPos.x, playerPos.y, playerPos.z)
             : getYardCalloutForPos(playerPos.x, playerPos.y, playerPos.z);
 
@@ -720,6 +743,7 @@ export class YardBombSystem {
       if (this.isOnlineMatch && !bot.root.userData?.remotePlayerUid) continue;
       if (bot.isDown) {
         if (
+          !isStationTdm &&
           bot.isAlly &&
           !bot.reviveExpired &&
           (bot.reviveUntilSec || 0) > nowSec &&
@@ -745,7 +769,7 @@ export class YardBombSystem {
       this.info.alliesAlive = vanguardAlive;
       this.info.enemiesAlive = blackthornAlive;
 
-      if (this.onlineVanguardCount >= 1 && this.onlineBlackthornCount >= 1) {
+      if (!isStationTdm && this.onlineVanguardCount >= 1 && this.onlineBlackthornCount >= 1) {
         if (blackthornAlive === 0) {
           this.finishCurrentRound('VANGUARD', 'ESQUADRÃO BLACKTHORN ELIMINADO EM COMBATE!', onReward);
           return;
@@ -759,23 +783,61 @@ export class YardBombSystem {
       this.info.enemiesAlive = enemies;
       this.info.alliesAlive = allies;
 
-      if (enemies === 0 && targets.length > 0) {
-        this.finishCurrentRound('VANGUARD', 'ESQUADRÃO BLACKTHORN ELIMINADO EM COMBATE!', onReward);
-        return;
-      }
+      if (!isStationTdm) {
+        if (enemies === 0 && targets.length > 0) {
+          this.finishCurrentRound('VANGUARD', 'ESQUADRÃO BLACKTHORN ELIMINADO EM COMBATE!', onReward);
+          return;
+        }
 
-      if (
-        allies === 0 &&
-        alliesPendingRevive === 0 &&
-        targets.length > 0 &&
-        this.info.bombStatus !== 'PLANTED'
-      ) {
-        this.finishCurrentRound('BLACKTHORN', 'ESQUADRÃO VANGUARD ELIMINADO EM COMBATE!', onReward);
-        return;
+        if (
+          allies === 0 &&
+          alliesPendingRevive === 0 &&
+          targets.length > 0 &&
+          this.info.bombStatus !== 'PLANTED'
+        ) {
+          this.finishCurrentRound('BLACKTHORN', 'ESQUADRÃO VANGUARD ELIMINADO EM COMBATE!', onReward);
+          return;
+        }
       }
     }
 
-    if (isStationCapture) {
+    if (isStationTdm) {
+      this.vanguardFlagGroup.visible = false;
+      this.blackthornFlagGroup.visible = false;
+      this.c4MeshGroup.visible = false;
+
+      const targetKills = this.info.tdmTargetKills || 40;
+      if (this.info.vanguardScore >= targetKills) {
+        this.finishCurrentRound(
+          'VANGUARD',
+          `META DE ${targetKills} ABATES ATINGIDA PELA VANGUARD!`,
+          onReward
+        );
+        return;
+      }
+      if (this.info.blackthornScore >= targetKills) {
+        this.finishCurrentRound(
+          'BLACKTHORN',
+          `META DE ${targetKills} ABATES ATINGIDA PELA BLACKTHORN!`,
+          onReward
+        );
+        return;
+      }
+
+      this.info.roundTimerSec = Math.max(0, this.info.roundTimerSec - dt);
+      if (this.info.roundTimerSec <= 0) {
+        const winner: 'VANGUARD' | 'BLACKTHORN' =
+          this.info.vanguardScore >= this.info.blackthornScore ? 'VANGUARD' : 'BLACKTHORN';
+        this.finishCurrentRound(
+          winner,
+          winner === 'VANGUARD'
+            ? 'TEMPO ESGOTADO — VANGUARD VENCE NO PLACAR DE ABATES!'
+            : 'TEMPO ESGOTADO — BLACKTHORN VENCE NO PLACAR DE ABATES!',
+          onReward
+        );
+        return;
+      }
+    } else if (isStationCapture) {
       this.vanguardFlagGroup.visible = true;
       this.blackthornFlagGroup.visible = true;
 
@@ -1276,7 +1338,7 @@ export class YardBombSystem {
               enemy.isDown = true;
               enemy.lastDeathWasHeadshot = hs;
               if (hs) enemy.hitTiltVelocity = -18.0;
-              enemy.downTimer = 9999;
+              enemy.downTimer = isStationTdm ? 3.2 : 9999;
               onRegisterKill?.(ally.callsign || 'RECON-02', 'VANGUARD', enemy.callsign || 'KRAKEN-BT', 'BLACKTHORN', ally.weaponId || 'M4_CARBINE', hs);
             }
           } else if (Math.random() < (playerAlive ? 0.18 : 0.36) && !ally.isDown) {
@@ -1290,11 +1352,13 @@ export class YardBombSystem {
               ally.isDown = true;
               ally.lastDeathWasHeadshot = hs;
               if (hs) ally.hitTiltVelocity = -18.0;
-              ally.downTimer = 9999;
-              const now = performance.now() / 1000;
-              ally.reviveUntilSec = now + 40;
-              ally.reviveExpired = false;
-              ally.root.visible = true;
+              ally.downTimer = isStationTdm ? 3.2 : 9999;
+              if (!isStationTdm) {
+                const now = performance.now() / 1000;
+                ally.reviveUntilSec = now + 40;
+                ally.reviveExpired = false;
+                ally.root.visible = true;
+              }
               onRegisterKill?.(enemy.callsign || 'KRAKEN-BT', 'BLACKTHORN', ally.callsign || 'RECON-02', 'VANGUARD', enemy.weaponId || 'AK47_RIFLE', hs);
             }
           }

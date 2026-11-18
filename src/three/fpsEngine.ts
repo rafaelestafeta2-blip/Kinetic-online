@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import {
+  playKillConfirmSound,
   playRealHitmarkerSound,
   playRealPlayerHitGrunt,
   preloadCharacterAndBombAudio,
@@ -104,6 +105,7 @@ import {
   STATION_ARENA_SPAWN_YAW,
   buildStationArenaLevel,
   loadStationArenaMapGeometry,
+  setStationCaptureBeaconsVisible,
 } from './stationArenaLevelBuilder';
 import {
   buildDust2Level,
@@ -119,6 +121,7 @@ import {
   prepareMatchArena,
 } from './matchAssetManager';
 import {
+  setBotEnemyOutline,
   triggerBotFireAnimation,
   triggerBotGrenadeAnimation,
   triggerBotHitAnimation,
@@ -302,6 +305,8 @@ export class TacticalFPSEngine {
   private aimRaycastTimer = 0;
   private aimRaycastInitialized = false;
   private cachedAimHits: THREE.Intersection[] = [];
+  private outlinedEnemyBotId: string | null = null;
+  private enemyOutlineTimer = 0;
   private isWindowFocused = true;
   private shadowBudget: ShadowBudgetState = createShadowBudgetState();
   private readonly combatRayHit: CombatRayHit = {
@@ -408,6 +413,12 @@ export class TacticalFPSEngine {
     boltSlap: false,
   };
   private magCheckTimer = 0;
+  private shotgunShellsTarget = 0;
+  private shotgunShellsInserted = 0;
+  private shotgunNextShellAt = 0;
+  private shotgunShellInterval = 0.46;
+  private shotgunNeedsPumpRack = false;
+  private shotgunPumpRacked = false;
 
   private primaryWeapon: WeaponId = 'M4_CARBINE';
   private secondaryWeapon: WeaponId = 'P50_PISTOL';
@@ -484,6 +495,9 @@ export class TacticalFPSEngine {
     shotHistory: [],
     hitMarkerAlpha: 0,
     hitMarkerIsCrit: false,
+    hitMarkerIsKill: false,
+    killConfirmAlpha: 0,
+    killConfirmLabel: '',
     damageFlashAlpha: 0,
     killfeed: [],
 
@@ -906,6 +920,13 @@ export class TacticalFPSEngine {
             hit.attackerTeam,
             hit.weaponId,
             () => {
+              if (this.state.drillMode === 'STATION_TDM_5V5') {
+                if (this.yardBombSystem?.info.roundState === 'PLAYING') {
+                  this.respawnLocalPlayerTdm();
+                }
+                this.emitHud();
+                return;
+              }
               const bomb =
                 this.state.drillMode === 'YARD_BOMB_5V5' ||
                 this.state.drillMode === 'DUST2_BOMB_5V5' ||
@@ -1055,8 +1076,17 @@ export class TacticalFPSEngine {
     }
   }
 
+  private clearEnemyAimOutline(): void {
+    if (this.outlinedEnemyBotId) {
+      const prev = this.targetMap.get(this.outlinedEnemyBotId);
+      if (prev) setBotEnemyOutline(prev, false);
+      this.outlinedEnemyBotId = null;
+    }
+  }
+
   public returnToMainMenu(): void {
     stopMatchEndFanfare();
+    this.clearEnemyAimOutline();
     if (isOnlineMatchActive()) {
       void leaveActiveRoom();
     }
@@ -1081,7 +1111,9 @@ export class TacticalFPSEngine {
     if (mode === 'HANGAR_BOMB_5V5') return this.hangarLevelData.collider;
     if (mode === 'EASTERN_CITY_BOMB_5V5') return this.easternCityLevelData.collider;
     if (mode === 'MIRAGE_ANUBIS_BOMB_5V5') return this.mirageAnubisLevelData.collider;
-    if (mode === 'STATION_CAPTURE_5V5') return this.stationArenaLevelData.collider;
+    if (mode === 'STATION_CAPTURE_5V5' || mode === 'STATION_TDM_5V5') {
+      return this.stationArenaLevelData.collider;
+    }
     return null;
   }
 
@@ -1217,7 +1249,7 @@ export class TacticalFPSEngine {
     if (mode === 'MIRAGE_ANUBIS_BOMB_5V5') {
       return this.mirageAnubisLevelData.collider.getGroundHeight(x, y, z);
     }
-    if (mode === 'STATION_CAPTURE_5V5') {
+    if (mode === 'STATION_CAPTURE_5V5' || mode === 'STATION_TDM_5V5') {
       return this.stationArenaLevelData.collider.getGroundHeight(x, y, z);
     }
     let groundHeight = 0;
@@ -1288,6 +1320,70 @@ export class TacticalFPSEngine {
     }
   }
 
+  public respawnLocalPlayerTdm(): void {
+    if (this.state.drillMode !== 'STATION_TDM_5V5') return;
+    if (this.yardBombSystem?.info.roundState === 'MATCH_OVER') return;
+
+    this.isPlayerDying = false;
+    this.deathAnimElapsed = 0;
+    this.deathOnFinish = null;
+    if (this.weaponRig?.root) {
+      this.playerDeathTp?.stop(this.camera, this.weaponRig.root);
+      this.weaponRig.root.visible = true;
+    }
+
+    const loadoutMod = getClassCombatModifiers();
+    this.state.health = 100;
+    this.state.maxArmor = Math.max(0, loadoutMod.armorBonus);
+    this.state.armor = this.state.maxArmor;
+    this.state.stamina = 100;
+    this.state.damageFlashAlpha = 0;
+    this.state.isCrouchingToggled = false;
+    this.state.isProneToggled = false;
+    this.currentEyeHeight = 1.68;
+    this.camera.rotation.z = 0;
+    this.playerVel.set(0, 0, 0);
+
+    if (this.state.currentMagRounds === 0 && this.state.chambered === 0) {
+      this.state.currentMagRounds = Math.max(0, this.state.magCapacity - 1);
+      this.state.chambered = this.state.magCapacity > 0 ? 1 : 0;
+      this.state.boltLockedBack = false;
+      this.state.reloadPhase = 'IDLE';
+    }
+
+    if (isOnlineMatchActive()) {
+      resetLocalOnlinePlayerForNextRound(this.state.drillMode);
+      const col = this.stationArenaLevelData.collider;
+      const onlineSpawn = applyOnlineTeamSpawnToLocalPlayer(
+        this.state.drillMode,
+        this.playerPos,
+        (x, y, z) => this.getCurrentGroundHeight(x, y, z),
+        col.ready ? (hx, hz, hy) => col.findPlayableSpawn(hx, hz, hy) : undefined
+      );
+      if (onlineSpawn) {
+        this.yaw = onlineSpawn.yaw;
+        this.pitch = 0;
+      }
+      this.snapLocalPlayerToPlayableFloor(this.playerPos.x, this.playerPos.z, this.playerPos.y);
+    } else {
+      const col = this.stationArenaLevelData.collider;
+      const offsetX = (Math.random() - 0.5) * 3.0;
+      const offsetZ = (Math.random() - 0.5) * 2.2;
+      const hint = new THREE.Vector3(
+        STATION_ARENA_ATTACKER_SPAWN.x + offsetX,
+        STATION_ARENA_ATTACKER_SPAWN.y,
+        STATION_ARENA_ATTACKER_SPAWN.z + offsetZ
+      );
+      this.placePlayerOnPlayableSpawn(col, hint, true);
+      this.yaw = STATION_ARENA_SPAWN_YAW;
+      this.pitch = 0;
+    }
+
+    this.state.reloadTypeLabel = 'REENTROU EM COMBATE · MATA-MATA';
+    this.magCheckTimer = 1.6;
+    this.emitHud(true);
+  }
+
   public registerKill(
     killerName: string,
     killerTeam: 'VANGUARD' | 'BLACKTHORN',
@@ -1319,7 +1415,8 @@ export class TacticalFPSEngine {
       this.state.drillMode === 'HANGAR_BOMB_5V5' ||
       this.state.drillMode === 'EASTERN_CITY_BOMB_5V5' ||
       this.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
-      this.state.drillMode === 'STATION_CAPTURE_5V5'
+      this.state.drillMode === 'STATION_CAPTURE_5V5' ||
+      this.state.drillMode === 'STATION_TDM_5V5'
     ) {
       this.yardBombSystem?.recordKillEvent(
         killerName,
@@ -1344,6 +1441,7 @@ export class TacticalFPSEngine {
     killerPos?: THREE.Vector3 | null
   ): void {
     if (this.isPlayerDying) return;
+    this.clearEnemyAimOutline();
     this.isPlayerDying = true;
     this.deathAnimElapsed = 0;
     this.deathSequenceDuration = 2.85;
@@ -1686,6 +1784,14 @@ export class TacticalFPSEngine {
         this.setOptic(savedOptic, false);
         this.state.reloadTypeLabel = 'EQUIPADO: CARABINA TÁTICA (5.56MM)';
         break;
+      case 'S_MILITARY':
+        this.state.magCapacity = 30;
+        this.state.currentMagRounds = 30;
+        this.state.magazines = [30, 30, 30, 30];
+        this.state.fireMode = 'AUTO';
+        this.setOptic(savedOptic, false);
+        this.state.reloadTypeLabel = 'EQUIPADO: SCAR-L S-MILITARY (5.56MM)';
+        break;
       case 'AK47_RIFLE':
         this.state.magCapacity = 30;
         this.state.currentMagRounds = 30;
@@ -1780,6 +1886,7 @@ export class TacticalFPSEngine {
       SHOTGUN_SPAS: 'INSPECIONANDO SPAS-12 TÁTICA (CALIBRE 12GA)',
       M4_CARBINE: 'INSPECIONANDO M4A1 SOPMOD (5.56MM)',
       CARBINE_AR: 'INSPECIONANDO CARABINA TÁTICA (5.56MM)',
+      S_MILITARY: 'INSPECIONANDO SCAR-L S-MILITARY (5.56MM)',
       AK47_RIFLE: 'INSPECIONANDO AK-47 COMANDO (7.62MM)',
       AK12_RIFLE: 'INSPECIONANDO AK-12 SPETSNAZ (5.45MM)',
       L49_LMG: 'INSPECIONANDO LMG PESADA (5.56MM)',
@@ -1934,7 +2041,12 @@ export class TacticalFPSEngine {
         killsCount++;
         t.isDown = true;
         t.lastDeathWasHeadshot = false;
-        t.downTimer = this.state.drillMode === 'FREE_RANGE' ? 2.6 : 9999;
+        t.downTimer =
+          this.state.drillMode === 'FREE_RANGE'
+            ? 2.6
+            : this.state.drillMode === 'STATION_TDM_5V5'
+              ? 3.2
+              : 9999;
         t.isTelegraphing = false;
         if (t.laserLine) t.laserLine.visible = false;
         this.state.score += 150;
@@ -1960,7 +2072,15 @@ export class TacticalFPSEngine {
     if (targetsHitCount > 0) {
       this.state.hitMarkerAlpha = 1.0;
       this.state.hitMarkerIsCrit = killsCount > 0;
-      playRealHitmarkerSound(killsCount > 0);
+      this.state.hitMarkerIsKill = killsCount > 0;
+      if (killsCount > 0) {
+        this.state.killConfirmAlpha = 1.0;
+        this.state.killConfirmLabel =
+          killsCount > 1 ? `${killsCount}x HITKILL!` : 'ABATE CONFIRMADO';
+        playKillConfirmSound(false);
+      } else {
+        playRealHitmarkerSound(false);
+      }
       this.state.reloadTypeLabel =
         killsCount > 0
           ? `EXPLOSÃO FRAG! ${killsCount} ALVO(S) ELIMINADO(S) (+${killsCount * 120} XP)`
@@ -1975,9 +2095,10 @@ export class TacticalFPSEngine {
         this.state.drillMode === 'ASSAULT_BOMB_5V5' ||
         this.state.drillMode === 'INDUSTRIA_BOMB_5V5' ||
         this.state.drillMode === 'HANGAR_BOMB_5V5' ||
-      this.state.drillMode === 'EASTERN_CITY_BOMB_5V5' ||
-      this.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
-      this.state.drillMode === 'STATION_CAPTURE_5V5'
+        this.state.drillMode === 'EASTERN_CITY_BOMB_5V5' ||
+        this.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
+        this.state.drillMode === 'STATION_CAPTURE_5V5' ||
+        this.state.drillMode === 'STATION_TDM_5V5'
       ) {
         const remaining = this.targets.filter(
           (t) =>
@@ -2344,6 +2465,12 @@ export class TacticalFPSEngine {
       /* optional */
     }
     this.state.stamina = 100;
+    this.clearEnemyAimOutline();
+    this.state.hitMarkerAlpha = 0;
+    this.state.hitMarkerIsCrit = false;
+    this.state.hitMarkerIsKill = false;
+    this.state.killConfirmAlpha = 0;
+    this.state.killConfirmLabel = '';
     this.isPlayerDying = false;
     this.deathAnimElapsed = 0;
     this.deathOnFinish = null;
@@ -2390,7 +2517,8 @@ export class TacticalFPSEngine {
     const isHangar = assetMode === 'HANGAR_BOMB_5V5';
     const isEasternCity = assetMode === 'EASTERN_CITY_BOMB_5V5';
     const isMirageAnubis = assetMode === 'MIRAGE_ANUBIS_BOMB_5V5';
-    const isStationArena = assetMode === 'STATION_CAPTURE_5V5';
+    const isStationArena =
+      assetMode === 'STATION_CAPTURE_5V5' || assetMode === 'STATION_TDM_5V5';
     const isFreeRange = assetMode === 'FREE_RANGE';
     const isBombMode =
       !harness &&
@@ -2607,6 +2735,12 @@ export class TacticalFPSEngine {
         this.state.yardBomb = { ...this.yardBombSystem.info };
       }
     } else if (isStationArena) {
+      const stationMode: DrillMode =
+        mode === 'STATION_TDM_5V5' ? 'STATION_TDM_5V5' : 'STATION_CAPTURE_5V5';
+      setStationCaptureBeaconsVisible(
+        this.stationArenaLevelData,
+        stationMode === 'STATION_CAPTURE_5V5'
+      );
       this.ensureGlbMapThenPlace(
         this.stationArenaLevelData,
         () =>
@@ -2615,14 +2749,14 @@ export class TacticalFPSEngine {
             this.isSoftwareGl,
             new THREE.LoadingManager()
           ),
-        'STATION_CAPTURE_5V5',
+        stationMode,
         STATION_ARENA_ATTACKER_SPAWN
       );
       this.yaw = STATION_ARENA_SPAWN_YAW;
       this.pitch = 0;
       this.scheduleFloorResnap(STATION_ARENA_ATTACKER_SPAWN.y);
       if (!harness) {
-        this.yardBombSystem.resetRound('STATION_CAPTURE_5V5', keepMatchScore);
+        this.yardBombSystem.resetRound(stationMode, keepMatchScore);
         this.state.yardBomb = { ...this.yardBombSystem.info };
       }
     } else if (isYard) {
@@ -3173,6 +3307,66 @@ export class TacticalFPSEngine {
       return;
     }
 
+    // Realistic Shell-by-Shell Reload for 12-Gauge Shotguns
+    if (
+      this.state.activeWeapon === 'SHOTGUN_12' ||
+      this.state.activeWeapon === 'SHOTGUN_SPAS'
+    ) {
+      const maxTotal = this.state.magCapacity + 1;
+      const currentLoaded = this.state.currentMagRounds + this.state.chambered;
+      const missing = Math.max(0, maxTotal - currentLoaded);
+      if (missing <= 0) {
+        soundEngine.playMechanicalSwitch(0.85);
+        this.state.reloadTypeLabel = 'CARREGADOR JÁ ESTÁ CHEIO';
+        this.magCheckTimer = 1.4;
+        this.emitHud();
+        return;
+      }
+
+      let totalReserve = this.state.magazines.reduce((acc, r) => acc + r, 0);
+      if (totalReserve <= 0) {
+        const cap = this.state.magCapacity;
+        this.state.magazines = [cap, cap, cap, cap];
+        totalReserve = cap * 4;
+      }
+
+      const shellsToLoad = Math.min(missing, totalReserve);
+      const dryReload = this.state.chambered === 0;
+      const reloadMult = Math.max(1, getClassCombatModifiers().reloadSpeedMult);
+      const shellInterval = 0.46 / reloadMult;
+      const firstInsertDelay = Math.min(0.24 / reloadMult, shellInterval * 0.55);
+      const pumpTime = dryReload ? 0.44 / reloadMult : 0;
+
+      this.shotgunShellsTarget = shellsToLoad;
+      this.shotgunShellsInserted = 0;
+      this.shotgunShellInterval = shellInterval;
+      this.shotgunNextShellAt = firstInsertDelay;
+      this.shotgunNeedsPumpRack = dryReload;
+      this.shotgunPumpRacked = false;
+
+      this.isSpeedReload = false;
+      this.needsBoltReleaseStage = dryReload;
+      this.reloadTimer = 0;
+      this.reloadDuration = Math.max(
+        0.55,
+        firstInsertDelay +
+          Math.max(0, shellsToLoad - 1) * shellInterval +
+          (dryReload ? pumpTime + 0.14 : 0.18)
+      );
+      this.sniperChamberTimer = 0;
+      this.sniperReturnToScopeAfterBolt = false;
+      this.state.isAds = false;
+      this.state.reloadPhase = 'MAG_IN';
+      this.state.reloadProgress = 0;
+      this.state.reloadTypeLabel = `RECARREGANDO ${shellsToLoad} CARTUCHO${shellsToLoad > 1 ? 'S' : ''}...`;
+      this.stageSoundFlags = { magOut: false, magIn: false, boltSlap: false };
+      this.weaponRig.triggerShotgunShellInsertAnimation(
+        Math.min(0.45, shellInterval)
+      );
+      this.emitHud();
+      return;
+    }
+
     // Check if we have any magazine with rounds in our chest rig
     let bestMagIdx = this.findFullestMagazineIndex();
     if (bestMagIdx === -1 || this.state.magazines[bestMagIdx] <= 0) {
@@ -3204,9 +3398,10 @@ export class TacticalFPSEngine {
       soundEngine.playPistolFullReload();
     } else if (
       this.state.activeWeapon === 'M4_CARBINE' ||
-      this.state.activeWeapon === 'CARBINE_AR'
+      this.state.activeWeapon === 'CARBINE_AR' ||
+      this.state.activeWeapon === 'S_MILITARY'
     ) {
-      this.reloadDuration = 2.75;
+      this.reloadDuration = this.state.activeWeapon === 'S_MILITARY' ? 2.5 : 2.75;
       soundEngine.playM4a1FullReload();
     } else if (
       this.state.activeWeapon === 'AK47_RIFLE' ||
@@ -3214,12 +3409,6 @@ export class TacticalFPSEngine {
     ) {
       this.reloadDuration = dryReload ? 2.5 : 2.0;
       soundEngine.playAk47FullReload(dryReload);
-    } else if (
-      this.state.activeWeapon === 'SHOTGUN_12' ||
-      this.state.activeWeapon === 'SHOTGUN_SPAS'
-    ) {
-      this.reloadDuration = dryReload ? 2.15 : 1.75;
-      soundEngine.playShotgunFullReload(this.state.activeWeapon, dryReload);
     } else if (
       this.state.activeWeapon === 'SNIPER_BOLT' ||
       this.state.activeWeapon === 'SNIPER_TACTICAL'
@@ -3507,7 +3696,8 @@ export class TacticalFPSEngine {
       this.state.drillMode === 'HANGAR_BOMB_5V5' ||
       this.state.drillMode === 'EASTERN_CITY_BOMB_5V5' ||
       this.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
-      this.state.drillMode === 'STATION_CAPTURE_5V5'
+      this.state.drillMode === 'STATION_CAPTURE_5V5' ||
+      this.state.drillMode === 'STATION_TDM_5V5'
     ) {
       this.state.courseTimerSec += dt;
     }
@@ -3520,7 +3710,8 @@ export class TacticalFPSEngine {
       this.state.drillMode === 'HANGAR_BOMB_5V5' ||
       this.state.drillMode === 'EASTERN_CITY_BOMB_5V5' ||
       this.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
-      this.state.drillMode === 'STATION_CAPTURE_5V5'
+      this.state.drillMode === 'STATION_CAPTURE_5V5' ||
+      this.state.drillMode === 'STATION_TDM_5V5'
     ) {
       const playerAlive =
         this.state.health > 0 &&
@@ -3665,7 +3856,17 @@ export class TacticalFPSEngine {
     }
 
     if (this.state.hitMarkerAlpha > 0) {
-      this.state.hitMarkerAlpha = Math.max(0, this.state.hitMarkerAlpha - dt * 3.8);
+      const decayRate = this.state.hitMarkerIsKill ? 2.5 : 3.8;
+      this.state.hitMarkerAlpha = Math.max(0, this.state.hitMarkerAlpha - dt * decayRate);
+      if (this.state.hitMarkerAlpha <= 0) {
+        this.state.hitMarkerIsKill = false;
+      }
+    }
+    if (this.state.killConfirmAlpha > 0) {
+      this.state.killConfirmAlpha = Math.max(0, this.state.killConfirmAlpha - dt * 1.05);
+      if (this.state.killConfirmAlpha <= 0) {
+        this.state.killConfirmLabel = '';
+      }
     }
     if (this.state.damageFlashAlpha > 0) {
       this.state.damageFlashAlpha = Math.max(0, this.state.damageFlashAlpha - dt * 2.5);
@@ -3782,6 +3983,56 @@ export class TacticalFPSEngine {
       this.yardBombSystem?.info.bombStatus === 'PLANTING';
     this.c4PlantView?.setPlanting(Boolean(planting));
     this.c4PlantView?.update(dt);
+
+    // 6c. Red outline highlight when aiming directly at a living enemy operator
+    this.enemyOutlineTimer += dt;
+    const isPlayerAliveForOutline =
+      this.state.health > 0 &&
+      !this.isPlayerDying &&
+      !this.playerDeathTp?.isActive();
+    if (!isPlayerAliveForOutline) {
+      this.clearEnemyAimOutline();
+    } else if (this.enemyOutlineTimer >= 0.035) {
+      this.enemyOutlineTimer = 0;
+      this.camera.getWorldPosition(_rayOrigin);
+      this.camera.getWorldDirection(_rayDir);
+      const prevFar = this.raycaster.far;
+      this.raycaster.set(_rayOrigin, _rayDir);
+      this.raycaster.far = 95;
+      const aimHit = raycastCombatShot(
+        this.raycaster,
+        this.shootableMeshes,
+        this.getActiveGlbCollider(),
+        this.combatRayHit
+      );
+      this.raycaster.far = prevFar;
+      let nextHoveredEnemyId: string | null = null;
+      if (aimHit && !aimHit.isEnvironment && aimHit.object) {
+        const tId = aimHit.object.userData?.targetId as string | undefined;
+        if (tId) {
+          const target = this.targetMap.get(tId);
+          if (
+            target &&
+            target.type === 'COMBAT_BOT' &&
+            !target.isDown &&
+            !(target as YardBotEntity).isAlly
+          ) {
+            nextHoveredEnemyId = tId;
+          }
+        }
+      }
+      if (nextHoveredEnemyId !== this.outlinedEnemyBotId) {
+        if (this.outlinedEnemyBotId) {
+          const oldTarget = this.targetMap.get(this.outlinedEnemyBotId);
+          if (oldTarget) setBotEnemyOutline(oldTarget, false);
+        }
+        if (nextHoveredEnemyId) {
+          const newTarget = this.targetMap.get(nextHoveredEnemyId);
+          if (newTarget) setBotEnemyOutline(newTarget, true);
+        }
+        this.outlinedEnemyBotId = nextHoveredEnemyId;
+      }
+    }
 
     // 7. Update Pooled Brass Casings, Dropped Magazines, Sparks, Tracers & 3D Grenades
     this.fxPool.update(dt);

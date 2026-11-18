@@ -127,7 +127,8 @@ export async function prepareMatchArena(
   const isHangar = assetMode === 'HANGAR_BOMB_5V5';
   const isEasternCity = assetMode === 'EASTERN_CITY_BOMB_5V5';
   const isMirageAnubis = assetMode === 'MIRAGE_ANUBIS_BOMB_5V5';
-  const isStationArena = assetMode === 'STATION_CAPTURE_5V5';
+  const isStationArena =
+    assetMode === 'STATION_CAPTURE_5V5' || assetMode === 'STATION_TDM_5V5';
   const isYard = assetMode === 'YARD_BOMB_5V5';
   const isFreeRange = assetMode === 'FREE_RANGE';
 
@@ -342,7 +343,12 @@ export async function prepareMatchArena(
       `COLISORES BOX3 (${mirageAnubisLevelData.collider.boundingBoxes.length}) E ${mirageAnubisLevelData.collider.triangleCount} TRIÂNGULOS PRONTOS!`
     );
   } else if (isStationArena) {
-    reportProgress(8, 'ABRINDO STATION ARENA (CAPTURA 5V5) NA GPU...');
+    reportProgress(
+      8,
+      assetMode === 'STATION_TDM_5V5'
+        ? 'ABRINDO STATION ARENA (MATA-MATA 5V5) NA GPU...'
+        : 'ABRINDO STATION ARENA (CAPTURA 5V5) NA GPU...'
+    );
     await loadStationArenaMapGeometry(
       stationArenaLevelData,
       isSoftwareGl,

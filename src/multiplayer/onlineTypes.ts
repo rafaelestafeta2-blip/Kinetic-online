@@ -146,7 +146,7 @@ export function getTeamSpawnForArena(
     return { x: -20.0 + offsetX, y: 7.59, z: 0.0 - offsetZ, yaw: Math.PI };
   }
 
-  if (mode === 'STATION_CAPTURE_5V5') {
+  if (mode === 'STATION_CAPTURE_5V5' || mode === 'STATION_TDM_5V5') {
     if (team === 'VANGUARD') {
       return { x: -14.0 + offsetX, y: 0.15, z: -18.0 + offsetZ, yaw: Math.PI };
     }

@@ -63,7 +63,8 @@ export function updatePlayerMovementAndCollision(engine: any, dt: number): void 
                   ? engine.easternCityLevelData.collider
                 : engine.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5'
                   ? engine.mirageAnubisLevelData.collider
-                : engine.state.drillMode === 'STATION_CAPTURE_5V5'
+                : engine.state.drillMode === 'STATION_CAPTURE_5V5' ||
+                    engine.state.drillMode === 'STATION_TDM_5V5'
                   ? engine.stationArenaLevelData.collider
                 : null;
 
@@ -136,7 +137,10 @@ export function updatePlayerMovementAndCollision(engine: any, dt: number): void 
         engine.playerPos.y,
         engine.playerPos.z
       );
-    } else if (engine.state.drillMode === 'STATION_CAPTURE_5V5') {
+    } else if (
+      engine.state.drillMode === 'STATION_CAPTURE_5V5' ||
+      engine.state.drillMode === 'STATION_TDM_5V5'
+    ) {
       lowCeilingAbove = engine.stationArenaLevelData.collider.hasLowCeiling(
         engine.playerPos.x,
         engine.playerPos.y,
@@ -393,7 +397,9 @@ export function updatePlayerMovementAndCollision(engine: any, dt: number): void 
     const isHangar = engine.state.drillMode === 'HANGAR_BOMB_5V5';
     const isEasternCity = engine.state.drillMode === 'EASTERN_CITY_BOMB_5V5';
     const isMirageAnubis = engine.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5';
-    const isStationArena = engine.state.drillMode === 'STATION_CAPTURE_5V5';
+    const isStationArena =
+      engine.state.drillMode === 'STATION_CAPTURE_5V5' ||
+      engine.state.drillMode === 'STATION_TDM_5V5';
     const activeGlbCollider = isDust2
       ? engine.dust2LevelData.collider
       : isAssault

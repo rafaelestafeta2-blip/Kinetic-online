@@ -64,6 +64,8 @@ const HIDDEN_ARM_MATS = new Set([
   'dmc5_soldier_shirt_mat',
   'scopereticle',
   'hands_04',
+  'mi_manny_01',
+  'mi_manny_02',
 ]);
 
 const HIDDEN_EXTRA_NODES = new Set([
@@ -120,7 +122,8 @@ function isExcludedMesh(
     mLow.includes('glove') ||
     mLow.includes('watch') ||
     mLow.includes('shirt') ||
-    mLow.includes('ch22')
+    mLow.includes('ch22') ||
+    mLow.includes('manny')
   ) {
     return true;
   }
@@ -131,6 +134,7 @@ function isExcludedMesh(
       low.includes('glove') ||
       low.includes('shirt') ||
       low.includes('hand') ||
+      low.includes('manny') ||
       low === 'arms'
     ) {
       return true;
@@ -160,6 +164,17 @@ const WEAPON_GLB_SPECS: RealGlbWeaponSpec[] = [
     },
     offset: [0.354, -3.794, -0.476],
     scale: 0.45,
+    rotX: 0.2,
+    rotY: 0,
+  },
+  {
+    id: 'S_MILITARY',
+    url: '/models/weapons/s_military_ar.glb',
+    clipName: 'Idle',
+    clipTime: 0.05,
+    filter: (m, n, mats) => !isExcludedMesh(m, n, mats),
+    offset: [11.27, -138.0, -36.0],
+    scale: 0.0105,
     rotX: 0.2,
     rotY: 0,
   },

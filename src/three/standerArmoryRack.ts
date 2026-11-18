@@ -11,6 +11,7 @@ export const ARMORY_WEAPONS: WeaponPlaqueMeta[] = [
   { id: 'M4_CARBINE', label: 'M4A1 SOPMOD', cal: '5.56x45MM' },
   { id: 'AK47_RIFLE', label: 'AK-47 COMANDO', cal: '7.62x39MM' },
   { id: 'AK12_RIFLE', label: 'AK-12 SPETSNAZ', cal: '5.45x39MM' },
+  { id: 'S_MILITARY', label: 'SCAR-L S-MILITARY', cal: '5.56x45MM' },
   { id: 'SMG_45', label: 'SMG .45 SUB', cal: '.45 ACP' },
   { id: 'SMG_MP5', label: 'MP5A3 9MM', cal: '9x19MM' },
   { id: 'SHOTGUN_12', label: 'M870 BREACHER', cal: '12 GAUGE' },
@@ -125,8 +126,9 @@ function createWall3DWeaponModel(weaponId: WeaponId): THREE.Group {
       break;
     }
     case 'M4_CARBINE':
-    case 'CARBINE_AR': {
-      const isCarbine = weaponId === 'CARBINE_AR';
+    case 'CARBINE_AR':
+    case 'S_MILITARY': {
+      const isCarbine = weaponId === 'CARBINE_AR' || weaponId === 'S_MILITARY';
       addPart(0.22, 0.052, 0.035, 0, 0, 0, metal); // Receptor Superior/Inferior
       addPart(0.24, 0.022, 0.022, 0.22, 0.005, 0, dark); // Cano com muzzle
       addPart(0.15, 0.04, 0.036, 0.15, 0.005, 0, dark); // Guarda-mão Picatinny

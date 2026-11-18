@@ -24,7 +24,9 @@ export const PreRoundEquipOverlay: React.FC<PreRoundEquipOverlayProps> = ({
           {sec}s
         </div>
         <div className="text-xs sm:text-sm font-display font-black tracking-wider text-sky-200 uppercase">
-          Rodada {yardBomb.currentRound} · {waitingPeers ? 'Aguardando Sala Carregar' : 'Prepare-se'}
+          {yardBomb.isTdmMode
+            ? `Mata-Mata em Equipe · Alvo ${yardBomb.tdmTargetKills || 40} Abates`
+            : `Rodada ${yardBomb.currentRound} · ${waitingPeers ? 'Aguardando Sala Carregar' : 'Prepare-se'}`}
         </div>
         <div className="w-40 h-1.5 rounded-full bg-slate-800 overflow-hidden border border-white/10 mt-0.5">
           <div

@@ -9,11 +9,12 @@ export const RANKS_PART_1A: RankDefinition[] = [
     category: 'INICIANTE',
     requiredXp: 0,
     unlockRewardLabel:
-      'Equipamentos Iniciais: Mark 23, M4A1, AK-12, Escopeta M870 12GA, SMG .45, Sniper S&B, Faca',
+      'Equipamentos Iniciais: Mark 23, M4A1, AK-12, SCAR-L S-Military, Escopeta M870 12GA, SMG .45, Sniper S&B, Faca',
     unlockedWeapons: [
       'P50_PISTOL',
       'M4_CARBINE',
       'AK12_RIFLE',
+      'S_MILITARY',
       'SHOTGUN_12',
       'SMG_45',
       'SNIPER_TACTICAL',

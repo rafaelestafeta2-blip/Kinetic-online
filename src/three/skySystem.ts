@@ -55,7 +55,7 @@ export class TacticalSkySystem {
       mode === 'EASTERN_CITY_BOMB_5V5' || mode === 'MAP_TEST_EASTERN';
     const isMirageAnubis =
       mode === 'MIRAGE_ANUBIS_BOMB_5V5' || mode === 'MAP_TEST_MIRAGE';
-    const isStationArena = mode === 'STATION_CAPTURE_5V5';
+    const isStationArena = mode === 'STATION_CAPTURE_5V5' || mode === 'STATION_TDM_5V5';
     const isYard = mode === 'YARD_BOMB_5V5';
     this.isOutdoor = isDust2 || isAssault || isIndustria || isHangar || isEasternCity || isMirageAnubis || isStationArena || isYard;
 

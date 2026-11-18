@@ -471,7 +471,8 @@ export function buildPreProductionLevel(
         g.add(rec, rail, barrel, mag, grip, stock, holo);
         break;
       }
-      case 'CARBINE_AR': {
+      case 'CARBINE_AR':
+      case 'S_MILITARY': {
         const rec = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.07, 0.032), matMetal);
         const rail = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.05, 0.032), matMetal);
         rail.position.set(0.19, 0.01, 0);

@@ -72,8 +72,9 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
       const isEasternCity = drillMode === 'EASTERN_CITY_BOMB_5V5';
       const isMirageAnubis = drillMode === 'MIRAGE_ANUBIS_BOMB_5V5';
       const isStationCapture = drillMode === 'STATION_CAPTURE_5V5';
+      const isStationTdm = drillMode === 'STATION_TDM_5V5';
       const isBombMode = isYard || isDust2 || isAssault || isIndustria || isHangar || isEasternCity || isMirageAnubis;
-      const scale = isStationCapture ? 1.35 : isDust2 || isAssault || isIndustria || isHangar || isEasternCity || isMirageAnubis ? 0.88 : isYard ? 1.38 : 2.0;
+      const scale = isStationCapture || isStationTdm ? 1.35 : isDust2 || isAssault || isIndustria || isHangar || isEasternCity || isMirageAnubis ? 0.88 : isYard ? 1.38 : 2.0;
       const maxRange = center - 7;
 
       ctx.clearRect(0, 0, size, size);
@@ -140,7 +141,7 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
       } else if (isMirageAnubis) {
         drawSectorRect(-32.5, -31.5, 110, 112, '#6c5844');
         drawSectorRect(-33, -40, 22, 18, '#826b53');
-      } else if (isStationCapture) {
+      } else if (isStationCapture || isStationTdm) {
         drawSectorRect(0, 0, 56, 48, '#243042');
         drawSectorRect(-10, -16, 16, 12, '#12355b', 'rgba(56,189,248,0.75)');
         drawSectorRect(10, 16, 16, 12, '#4c141d', 'rgba(239,68,68,0.75)');

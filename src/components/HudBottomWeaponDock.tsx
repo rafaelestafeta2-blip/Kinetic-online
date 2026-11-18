@@ -33,6 +33,7 @@ const SHORT_WEAPON_TAG: Record<WeaponId, string> = {
   SHOTGUN_SPAS: 'SPAS-12',
   AK47_RIFLE: 'AK-47',
   AK12_RIFLE: 'AK-12',
+  S_MILITARY: 'SCAR-L',
   CARBINE_AR: 'CARBINE',
   L49_LMG: 'LMG 100',
   SNIPER_TACTICAL: 'SNIPER S&B',
@@ -49,6 +50,7 @@ const PRIMARY_CYCLE_ORDER: WeaponId[] = [
   'SHOTGUN_SPAS',
   'AK47_RIFLE',
   'AK12_RIFLE',
+  'S_MILITARY',
   'CARBINE_AR',
   'L49_LMG',
   'SNIPER_TACTICAL',
@@ -237,7 +239,7 @@ export const HudBottomWeaponDock: React.FC<HudBottomWeaponDockProps> = ({
       {/* BOTTOM-RIGHT: ANGLED ACTIVE WEAPON PLATE + DISCREET POPUP ARSENAL & CLASS KIT MENU */}
       <div
         onPointerDown={(e) => e.stopPropagation()}
-        className="fixed bottom-2 right-2.5 z-40 pointer-events-auto select-none font-mono flex flex-col items-end"
+        className="fixed bottom-0.5 right-1.5 z-40 pointer-events-auto select-none font-mono flex flex-col items-end"
         style={{ touchAction: 'manipulation' }}
       >
         {/* Discreet Popup Menu Above Active Weapon Plate */}
@@ -413,13 +415,13 @@ export const HudBottomWeaponDock: React.FC<HudBottomWeaponDockProps> = ({
           </div>
         )}
 
-        {/* Active Weapon Angled Plate (Matches Bottom-Right of Reference Screenshot) */}
+        {/* Active Weapon Angled Plate (Compact so Jump/Crouch/Fire touch buttons stay unobstructed) */}
         <button
           type="button"
           {...bindTap(() => setArsenalOpen((prev) => !prev))}
           aria-label="Abrir menu de armas, granadas e kit da classe"
           title="Toque para abrir Arsenal (Pistola, Faca, Kit da Classe e Granadas)"
-          className={`relative w-52 sm:w-58 h-12 px-4 bg-gradient-to-l from-[#23282e]/92 via-[#2c333b]/90 to-[#1d2228]/92 border-t border-b transition-all active:scale-95 cursor-pointer flex items-center justify-between gap-2 shadow-[0_6px_20px_rgba(0,0,0,0.75)] ${
+          className={`relative w-36 sm:w-44 h-9 sm:h-10 px-2.5 sm:px-3 bg-gradient-to-l from-[#23282e]/92 via-[#2c333b]/90 to-[#1d2228]/92 border-t border-b transition-all active:scale-95 cursor-pointer flex items-center justify-between gap-1.5 shadow-[0_6px_18px_rgba(0,0,0,0.75)] ${
             arsenalOpen ? 'border-sky-400' : 'border-white/30 hover:border-sky-300/60'
           }`}
           style={{
@@ -427,34 +429,34 @@ export const HudBottomWeaponDock: React.FC<HudBottomWeaponDockProps> = ({
           }}
         >
           {/* Subtle top cyan accent line */}
-          <div className="absolute top-0 left-5 right-3 h-[1.5px] bg-gradient-to-l from-sky-400/70 via-cyan-300/80 to-transparent" />
+          <div className="absolute top-0 left-4 right-2.5 h-[1.5px] bg-gradient-to-l from-sky-400/70 via-cyan-300/80 to-transparent" />
 
           {/* Left side: Active Weapon Silhouette + discreet upward expand indicator */}
-          <div className="flex items-center gap-1.5 pl-1">
-            <span className="text-[9px] text-sky-300/90 font-bold leading-none">
+          <div className="flex items-center gap-1 pl-0.5">
+            <span className="text-[8px] text-sky-300/90 font-bold leading-none">
               {arsenalOpen ? '▼' : '▲'}
             </span>
             <WeaponSilhouette
               weaponId={hud.activeWeapon}
-              className="w-18 sm:w-20 h-6 text-white drop-shadow"
+              className="w-12 sm:w-14 h-4 sm:h-5 text-white drop-shadow"
             />
           </div>
 
           {/* Right side: 30 / 120 Ammo Counter */}
-          <div className="flex items-baseline gap-1 pr-1">
+          <div className="flex items-baseline gap-0.5 pr-1">
             {isKnifeActive ? (
-              <span className="text-sm font-display font-black text-white tracking-wider">
+              <span className="text-xs font-display font-black text-white tracking-wider">
                 FACA
               </span>
             ) : (
               <>
-                <span className="text-base sm:text-lg font-display font-black tabular-nums text-white leading-none">
+                <span className="text-sm sm:text-base font-display font-black tabular-nums text-white leading-none">
                   {currentTotalLoaded}
                 </span>
-                <span className="text-xs font-display font-bold text-white/70 leading-none">
+                <span className="text-[10px] font-display font-bold text-white/70 leading-none">
                   /
                 </span>
-                <span className="text-xs sm:text-sm font-display font-bold tabular-nums text-white/90 leading-none">
+                <span className="text-[10px] sm:text-xs font-display font-bold tabular-nums text-white/90 leading-none">
                   {reserveAmmo}
                 </span>
               </>
@@ -463,7 +465,7 @@ export const HudBottomWeaponDock: React.FC<HudBottomWeaponDockProps> = ({
 
           {/* Reload progress bar along bottom edge when reloading */}
           {hud.reloadPhase !== 'IDLE' && (
-            <div className="absolute bottom-0 left-2 right-2 h-1 bg-amber-500/25 overflow-hidden">
+            <div className="absolute bottom-0 left-2 right-2 h-0.5 bg-amber-500/25 overflow-hidden">
               <div
                 className="h-full bg-amber-400 transition-all duration-75"
                 style={{ width: `${Math.round(hud.reloadProgress * 100)}%` }}

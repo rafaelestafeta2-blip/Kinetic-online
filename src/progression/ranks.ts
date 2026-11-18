@@ -152,6 +152,7 @@ export function getRequiredXpForWeapon(weaponId: WeaponId): {
     weaponId === 'KNIFE_TACTICAL' ||
     weaponId === 'AK12_RIFLE' ||
     weaponId === 'M4_CARBINE' ||
+    weaponId === 'S_MILITARY' ||
     weaponId === 'SHOTGUN_12' ||
     weaponId === 'SMG_45' ||
     weaponId === 'SNIPER_TACTICAL' ||
@@ -216,6 +217,7 @@ export function isWeaponUnlockedAtXp(weaponId: WeaponId, xp: number): boolean {
     weaponId === 'KNIFE_TACTICAL' ||
     weaponId === 'AK12_RIFLE' ||
     weaponId === 'M4_CARBINE' ||
+    weaponId === 'S_MILITARY' ||
     weaponId === 'SHOTGUN_12' ||
     weaponId === 'SMG_45' ||
     weaponId === 'SNIPER_TACTICAL' ||

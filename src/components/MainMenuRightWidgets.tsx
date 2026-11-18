@@ -12,6 +12,7 @@ import {
 } from './RankedInsigniasSvg';
 
 export type MainMenuPlayModeId =
+  | 'TDM'
   | 'CAPTURE'
   | 'RANKED'
   | 'CASUAL'
@@ -28,11 +29,11 @@ export const PLAY_MODE_OPTIONS: Array<{
   arena?: DrillMode;
 }> = [
   {
-    id: 'CAPTURE',
-    label: 'CAPTURA 5V5 · STATION ARENA',
-    subtitle: '2 Bandeiras nas Bases · 6 Rodadas Sem Respawn · Drop no Chão',
+    id: 'TDM',
+    label: 'MATA-MATA 5V5 · STATION ARENA',
+    subtitle: 'Team Deathmatch · Respawn Imediato · Alvo 40 Abates',
     badge: 'NOVO MODO',
-    arena: 'STATION_CAPTURE_5V5',
+    arena: 'STATION_TDM_5V5',
   },
   {
     id: 'RANKED',
@@ -46,14 +47,14 @@ export const PLAY_MODE_OPTIONS: Array<{
     label: 'PARTIDA CASUAL 5V5',
     subtitle: 'Sala de Partida · Escolha o Mapa Dentro da Sala Antes de Iniciar',
     badge: 'ESCOLHER NA SALA',
-    arena: 'STATION_CAPTURE_5V5',
+    arena: 'STATION_TDM_5V5',
   },
   {
     id: 'PRIVATE_ROOM',
     label: 'SALA PRIVADA (X1 / CLÃ)',
     subtitle: 'Crie ou Entre por Código · Menu Focado de Escolha de Mapa na Sala',
     badge: 'CÓDIGO 6 DÍGITOS',
-    arena: 'STATION_CAPTURE_5V5',
+    arena: 'STATION_TDM_5V5',
   },
   {
     id: 'RANGE',
@@ -258,7 +259,7 @@ export const MainMenuRightWidgets: React.FC<MainMenuRightWidgetsProps> = ({
             <div className="grid grid-cols-4 gap-1">
               {(
                 [
-                  { id: 'CAPTURE', short: 'CAPTURE' },
+                  { id: 'TDM', short: 'MATA-MATA' },
                   { id: 'RANKED', short: 'RANKED' },
                   { id: 'CASUAL', short: 'CASUAL' },
                   { id: 'PRIVATE_ROOM', short: 'PRIVADA' },

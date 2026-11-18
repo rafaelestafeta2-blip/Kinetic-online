@@ -154,6 +154,16 @@ const FEEL: Record<WeaponId, WeaponFeelDef> = {
     sprayPattern: AR_SPRAY,
     hapticMs: 18,
   },
+  S_MILITARY: {
+    kickPitch: 0.0105,
+    kickYaw: 0.0038,
+    kickZ: 0.029,
+    shake: 0.0038,
+    recovery: 1.12,
+    flinchScale: 0.96,
+    sprayPattern: AR_SPRAY,
+    hapticMs: 16,
+  },
   L49_LMG: {
     kickPitch: 0.015,
     kickYaw: 0.007,

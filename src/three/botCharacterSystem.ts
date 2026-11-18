@@ -60,7 +60,112 @@ let loadPromise: Promise<void> | null = null;
 let medicLoadAttempts = 0;
 let medicHasNativeClips = false;
 let sharedInvisibleHitMat: THREE.MeshBasicMaterial | null = null;
+let enemyOutlineMat: THREE.MeshBasicMaterial | null = null;
 const pistolClipVariantCache = new Map<string, BotClipMap>();
+
+function getEnemyOutlineMaterial(): THREE.MeshBasicMaterial {
+  if (enemyOutlineMat) return enemyOutlineMat;
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xff1e2d,
+    side: THREE.BackSide,
+    transparent: true,
+    opacity: 0.94,
+    depthTest: true,
+    depthWrite: false,
+    toneMapped: false,
+    fog: false,
+  });
+  mat.customProgramCacheKey = () => 'kinetic_enemy_outline_v1';
+  mat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <project_vertex>',
+      'transformed += normalize(objectNormal) * 0.024;\n#include <project_vertex>'
+    );
+  };
+  enemyOutlineMat = mat;
+  return mat;
+}
+
+function ensureBotOutlineMeshes(
+  bot: TacticalTargetEntity,
+  ctrl: BotAnimController
+): THREE.Mesh[] {
+  const existing = bot.root.userData?.outlineMeshes as THREE.Mesh[] | undefined;
+  if (existing && existing.length > 0) return existing;
+
+  const mat = getEnemyOutlineMaterial();
+  const list: THREE.Mesh[] = [];
+  const sourceMeshes: THREE.Mesh[] = [];
+  ctrl.modelRoot.traverse((child) => {
+    const m = child as THREE.Mesh;
+    if (!m.isMesh) return;
+    if (m.userData?.isOutlineMesh) return;
+    if (m.material === sharedInvisibleHitMat) return;
+    sourceMeshes.push(m);
+  });
+
+  for (let i = 0; i < sourceMeshes.length; i++) {
+    const src = sourceMeshes[i];
+    let outline: THREE.Mesh;
+    if ((src as THREE.SkinnedMesh).isSkinnedMesh) {
+      const sk = src as THREE.SkinnedMesh;
+      const outSk = new THREE.SkinnedMesh(sk.geometry, mat);
+      outSk.bind(sk.skeleton, sk.bindMatrix);
+      outline = outSk;
+    } else {
+      outline = new THREE.Mesh(src.geometry, mat);
+    }
+    outline.position.copy(src.position);
+    outline.rotation.copy(src.rotation);
+    outline.scale.copy(src.scale);
+    outline.castShadow = false;
+    outline.receiveShadow = false;
+    outline.frustumCulled = false;
+    outline.renderOrder = 2;
+    outline.visible = false;
+    outline.userData = {
+      isOutlineMesh: true,
+      ignoreCollider: true,
+      keepMatrixAutoUpdate: true,
+    };
+    (src.parent || ctrl.modelRoot).add(outline);
+    list.push(outline);
+  }
+
+  bot.root.userData = bot.root.userData || {};
+  bot.root.userData.outlineMeshes = list;
+  return list;
+}
+
+export function setBotEnemyOutline(
+  bot: TacticalTargetEntity | undefined | null,
+  active: boolean
+): void {
+  if (!bot) return;
+  const ctrl = bot.root.userData?.botAnimCtrl as BotAnimController | undefined;
+  if (!ctrl) return;
+
+  const shouldShow =
+    Boolean(active) &&
+    !bot.isDown &&
+    !(bot as YardBotEntity).isAlly &&
+    bot.type === 'COMBAT_BOT';
+
+  if (!shouldShow) {
+    const existing = bot.root.userData?.outlineMeshes as THREE.Mesh[] | undefined;
+    if (existing) {
+      for (let i = 0; i < existing.length; i++) {
+        existing[i].visible = false;
+      }
+    }
+    return;
+  }
+
+  const meshes = ensureBotOutlineMeshes(bot, ctrl);
+  for (let i = 0; i < meshes.length; i++) {
+    meshes[i].visible = true;
+  }
+}
 
 export function isSniperWeaponId(weaponId?: WeaponId | null): boolean {
   return weaponId === 'SNIPER_BOLT' || weaponId === 'SNIPER_TACTICAL';
@@ -74,6 +179,7 @@ export function isRiflemanWeaponId(weaponId?: WeaponId | null): boolean {
   return (
     weaponId === 'M4_CARBINE' ||
     weaponId === 'CARBINE_AR' ||
+    weaponId === 'S_MILITARY' ||
     weaponId === 'AK47_RIFLE' ||
     weaponId === 'AK12_RIFLE' ||
     weaponId === 'L49_LMG'
@@ -879,6 +985,7 @@ export function syncBotCharacterAppearance(
     }
     delete bot.root.userData.botAnimCtrl;
     delete bot.root.userData.hasSkeletalCharacter;
+    delete bot.root.userData.outlineMeshes;
     attachProRifleCharacterToBot(bot, isSoftwareGl);
     return;
   }
@@ -1053,6 +1160,7 @@ export function updateAllBotCharacters(
     ctrl.tacticalTimer += dt;
 
     if (t.isDown) {
+      setBotEnemyOutline(t, false);
       t.pivotGroup.rotation.x = 0;
       if (!ctrl.currentState.startsWith('RIFLE_DEATH')) {
         ctrl.deathElapsed = 0;

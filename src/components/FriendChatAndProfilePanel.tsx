@@ -209,6 +209,7 @@ export const FriendChatAndProfilePanel: React.FC<FriendChatAndProfilePanelProps>
                 [
                   'M4_CARBINE',
                   'AK12_RIFLE',
+                  'S_MILITARY',
                   'SMG_45',
                   'AK47_RIFLE',
                   'CARBINE_AR',

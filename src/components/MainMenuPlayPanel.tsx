@@ -46,7 +46,7 @@ export const MainMenuPlayPanel: React.FC<MainMenuPlayPanelProps> = ({
   onHover,
 }) => {
   const [selectedPlayMode, setSelectedPlayMode] =
-    useState<MainMenuPlayModeId>('CAPTURE');
+    useState<MainMenuPlayModeId>('TDM');
   const [activeSidebarId, setActiveSidebarId] =
     useState<LeftSidebarButtonId>('INICIO');
 
@@ -84,6 +84,9 @@ export const MainMenuPlayPanel: React.FC<MainMenuPlayPanelProps> = ({
       PLAY_MODE_OPTIONS.find((m) => m.id === selectedPlayMode) ||
       PLAY_MODE_OPTIONS[0];
     switch (selectedPlayMode) {
+      case 'TDM':
+        onStartDrill('STATION_TDM_5V5');
+        break;
       case 'CAPTURE':
         onStartDrill('STATION_CAPTURE_5V5');
         break;
@@ -91,7 +94,7 @@ export const MainMenuPlayPanel: React.FC<MainMenuPlayPanelProps> = ({
         onOpenRankedScreen(modeObj.arena || 'DUST2_BOMB_5V5');
         break;
       case 'CASUAL':
-        onStartMatchmaking(modeObj.arena || 'STATION_CAPTURE_5V5');
+        onStartMatchmaking(modeObj.arena || 'STATION_TDM_5V5');
         break;
       case 'PRIVATE_ROOM':
         onOpenOnlineLobby(modeObj.arena || 'DUST2_BOMB_5V5');

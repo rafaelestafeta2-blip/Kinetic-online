@@ -54,6 +54,7 @@ const ALL_WEAPONS: WeaponId[] = [
   'SHOTGUN_SPAS',
   'M4_CARBINE',
   'CARBINE_AR',
+  'S_MILITARY',
   'AK47_RIFLE',
   'AK12_RIFLE',
   'L49_LMG',
@@ -70,6 +71,7 @@ export function computeUnlockedWeaponsForXp(
   const set = new Set<WeaponId>([
     'M4_CARBINE',
     'AK12_RIFLE',
+    'S_MILITARY',
     'SHOTGUN_12',
     'SMG_45',
     'SNIPER_TACTICAL',

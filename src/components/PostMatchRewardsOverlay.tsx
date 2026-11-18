@@ -14,6 +14,7 @@ const WEAPON_LABELS: Partial<Record<WeaponId, string>> = {
   M4_CARBINE: 'M4A1 Carbine',
   AK47_RIFLE: 'AK-47',
   AK12_RIFLE: 'AK-12',
+  S_MILITARY: 'SCAR-L S-Military',
   SMG_45: 'SMG .45',
   SMG_MP5: 'MP5A3',
   SHOTGUN_12: 'M870',

@@ -156,24 +156,110 @@ export const TacticalHudOverlay: React.FC<TacticalHudOverlayProps> = ({
 
         {hud.hitMarkerAlpha > 0.02 && (
           <svg
-            width="36"
-            height="36"
-            viewBox="0 0 36 36"
-            className="absolute"
-            style={{ opacity: hud.hitMarkerAlpha }}
+            width={hud.hitMarkerIsKill ? '48' : '36'}
+            height={hud.hitMarkerIsKill ? '48' : '36'}
+            viewBox="0 0 48 48"
+            className="absolute transition-transform duration-75"
+            style={{
+              opacity: hud.hitMarkerAlpha,
+              transform: hud.hitMarkerIsKill
+                ? `scale(${(1 + hud.hitMarkerAlpha * 0.2).toFixed(3)})`
+                : undefined,
+              filter: hud.hitMarkerIsKill
+                ? 'drop-shadow(0 0 8px rgba(239,68,68,0.9))'
+                : undefined,
+            }}
           >
-            <line x1="7" y1="7" x2="14" y2="14" stroke={hud.hitMarkerIsCrit ? '#ef4444' : '#f8fafc'} strokeWidth="2.2" />
-            <line x1="29" y1="7" x2="22" y2="14" stroke={hud.hitMarkerIsCrit ? '#ef4444' : '#f8fafc'} strokeWidth="2.2" />
-            <line x1="7" y1="29" x2="14" y2="22" stroke={hud.hitMarkerIsCrit ? '#ef4444' : '#f8fafc'} strokeWidth="2.2" />
-            <line x1="29" y1="29" x2="22" y2="22" stroke={hud.hitMarkerIsCrit ? '#ef4444' : '#f8fafc'} strokeWidth="2.2" />
+            {/* Primary inner X */}
+            <line
+              x1="10"
+              y1="10"
+              x2="19"
+              y2="19"
+              stroke={
+                hud.hitMarkerIsKill
+                  ? '#ef4444'
+                  : hud.hitMarkerIsCrit
+                    ? '#ef4444'
+                    : '#f8fafc'
+              }
+              strokeWidth={hud.hitMarkerIsKill ? '3.0' : '2.2'}
+              strokeLinecap="round"
+            />
+            <line
+              x1="38"
+              y1="10"
+              x2="29"
+              y2="19"
+              stroke={
+                hud.hitMarkerIsKill
+                  ? '#ef4444'
+                  : hud.hitMarkerIsCrit
+                    ? '#ef4444'
+                    : '#f8fafc'
+              }
+              strokeWidth={hud.hitMarkerIsKill ? '3.0' : '2.2'}
+              strokeLinecap="round"
+            />
+            <line
+              x1="10"
+              y1="38"
+              x2="19"
+              y2="29"
+              stroke={
+                hud.hitMarkerIsKill
+                  ? '#ef4444'
+                  : hud.hitMarkerIsCrit
+                    ? '#ef4444'
+                    : '#f8fafc'
+              }
+              strokeWidth={hud.hitMarkerIsKill ? '3.0' : '2.2'}
+              strokeLinecap="round"
+            />
+            <line
+              x1="38"
+              y1="38"
+              x2="29"
+              y2="29"
+              stroke={
+                hud.hitMarkerIsKill
+                  ? '#ef4444'
+                  : hud.hitMarkerIsCrit
+                    ? '#ef4444'
+                    : '#f8fafc'
+              }
+              strokeWidth={hud.hitMarkerIsKill ? '3.0' : '2.2'}
+              strokeLinecap="round"
+            />
+            {/* Warface-style double-X golden outer ticks on kill */}
+            {hud.hitMarkerIsKill && (
+              <>
+                <line x1="4" y1="4" x2="10" y2="10" stroke="#fbbf24" strokeWidth="2.4" strokeLinecap="round" />
+                <line x1="44" y1="4" x2="38" y2="10" stroke="#fbbf24" strokeWidth="2.4" strokeLinecap="round" />
+                <line x1="4" y1="44" x2="10" y2="38" stroke="#fbbf24" strokeWidth="2.4" strokeLinecap="round" />
+                <line x1="44" y1="44" x2="38" y2="38" stroke="#fbbf24" strokeWidth="2.4" strokeLinecap="round" />
+              </>
+            )}
           </svg>
+        )}
+
+        {!isSpectating && !isMatchOver && hud.killConfirmAlpha > 0.03 && hud.killConfirmLabel && (
+          <div
+            className="absolute translate-y-10 px-2.5 py-0.5 rounded bg-red-950/85 border border-red-400/70 shadow-[0_0_16px_rgba(239,68,68,0.6)] flex items-center gap-1.5"
+            style={{ opacity: Math.min(1, hud.killConfirmAlpha) }}
+          >
+            <span className="text-amber-300 text-[11px] leading-none">☠</span>
+            <span className="text-[10px] font-display font-black tracking-widest text-white uppercase">
+              {hud.killConfirmLabel}
+            </span>
+          </div>
         )}
       </div>
 
       {/* WARFACE TACTICAL 5V5 KILLFEED (Canto superior direito abaixo do radar) */}
       <WarfaceKillfeed entries={hud.killfeed} />
 
-      {/* TOP-CENTER: 5v5 PLANT THE BOMB HUD BAR (YARD, DE_DUST2 & CS_ASSAULT) */}
+      {/* TOP-CENTER: 5v5 BOMB / CAPTURE / TDM SCOREBOARD BAR */}
       {(hud.drillMode === 'YARD_BOMB_5V5' ||
         hud.drillMode === 'DUST2_BOMB_5V5' ||
         hud.drillMode === 'ASSAULT_BOMB_5V5' ||
@@ -181,7 +267,8 @@ export const TacticalHudOverlay: React.FC<TacticalHudOverlayProps> = ({
         hud.drillMode === 'HANGAR_BOMB_5V5' ||
         hud.drillMode === 'EASTERN_CITY_BOMB_5V5' ||
         hud.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
-        hud.drillMode === 'STATION_CAPTURE_5V5') &&
+        hud.drillMode === 'STATION_CAPTURE_5V5' ||
+        hud.drillMode === 'STATION_TDM_5V5') &&
         hud.yardBomb && (
           <YardBombHudBar
             yardBomb={hud.yardBomb}

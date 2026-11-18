@@ -37,7 +37,11 @@ import {
 } from '../progression/ranks';
 import { OpticType, WeaponId } from '../types/game';
 import { RankedOperator3DCanvas } from './RankedOperator3DCanvas';
-import { preloadAllWeaponThumbnails3D } from '../three/weaponThumbnail3D';
+import {
+  preloadAllScopeThumbnails3D,
+  preloadAllWeaponThumbnails3D,
+  useScopeThumbnail3D,
+} from '../three/weaponThumbnail3D';
 import {
   VanguardTeamEmblem,
   WARFACE_CLASS_META,
@@ -46,6 +50,76 @@ import {
 } from './WarfaceClassIcons';
 import { GrenadePreview3D, WeaponPreview3D } from './WeaponVisualCard';
 import { preloadGrenadeThumbnails3D } from '../three/grenadeThumbnail3D';
+
+const InventoryScopeOpticCard: React.FC<{
+  opticId: OpticType;
+  shortLabel: string;
+  magnification: string;
+  title: string;
+  active: boolean;
+  unlocked: boolean;
+  requiredLevel: number;
+  onClick: () => void;
+}> = ({
+  opticId,
+  shortLabel,
+  magnification,
+  title,
+  active,
+  unlocked,
+  requiredLevel,
+  onClick,
+}) => {
+  const thumbUrl = useScopeThumbnail3D(opticId);
+  return (
+    <button
+      type="button"
+      disabled={!unlocked}
+      title={title}
+      onClick={onClick}
+      className={`rounded-[2px] border px-1 py-1 flex flex-col items-center justify-between gap-0.5 text-center transition-colors ${
+        active
+          ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200 cursor-pointer shadow-[0_0_8px_rgba(34,211,238,0.22)]'
+          : unlocked
+            ? 'bg-[#11151e] border-white/12 hover:border-cyan-400/50 text-slate-200 cursor-pointer'
+            : 'bg-[#0e1118] border-white/5 text-slate-500 opacity-60 cursor-not-allowed'
+      }`}
+    >
+      <div className="w-full h-7 flex items-center justify-center overflow-hidden">
+        {thumbUrl ? (
+          <img
+            src={thumbUrl}
+            alt={shortLabel}
+            draggable={false}
+            className={`w-full h-7 object-contain select-none ${
+              unlocked
+                ? 'drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]'
+                : 'grayscale opacity-50'
+            }`}
+          />
+        ) : (
+          <div className="w-4 h-3 rounded-sm border border-white/20 bg-white/5" />
+        )}
+      </div>
+      <span
+        className={`text-[7px] font-mono font-bold truncate w-full ${
+          active ? 'text-cyan-300' : 'text-slate-200'
+        }`}
+      >
+        {shortLabel}
+      </span>
+      <div className="flex items-center justify-center gap-0.5 text-[7px] font-mono leading-tight">
+        {unlocked ? (
+          <span className={active ? 'text-emerald-300 font-bold' : 'text-slate-400'}>
+            {active ? '✓' : magnification}
+          </span>
+        ) : (
+          <span className="text-amber-400 font-bold">🔒NV.{requiredLevel}</span>
+        )}
+      </div>
+    </button>
+  );
+};
 
 interface InventoryLoadoutModalProps {
   playerXp: number;
@@ -201,6 +275,7 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
       preloadAllWeaponThumbnails3D([
         ...(Object.keys(WEAPON_INVENTORY_CATALOG) as WeaponId[]),
       ]);
+      preloadAllScopeThumbnails3D();
       preloadGrenadeThumbnails3D();
     }, 280);
     const unsub = subscribePlayerInventory((next) => setInventory(next));
@@ -1172,50 +1247,22 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
                         const unlocked = isOpticUnlockedAtXp(opticId, playerXp);
                         const reqOptic = getRequiredXpForOptic(opticId);
                         return (
-                          <button
+                          <InventoryScopeOpticCard
                             key={opticId}
-                            type="button"
-                            disabled={!unlocked}
+                            opticId={opticId}
+                            shortLabel={scopeSpec.shortLabel}
+                            magnification={scopeSpec.magnification}
                             title={`${scopeSpec.name} (${scopeSpec.magnification}) — ${scopeSpec.description} · Desbloqueia no Nível ${reqOptic.requiredLevel}`}
+                            active={active}
+                            unlocked={unlocked}
+                            requiredLevel={reqOptic.requiredLevel}
                             onClick={() =>
                               handleSelectWeaponOptic(
                                 inspectedWeaponSpec.id,
                                 opticId
                               )
                             }
-                            className={`rounded-[2px] border px-1 py-1 flex flex-col items-center justify-between gap-0.5 text-center transition-colors ${
-                              active
-                                ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200 cursor-pointer shadow-[0_0_8px_rgba(34,211,238,0.22)]'
-                                : unlocked
-                                  ? 'bg-[#11151e] border-white/12 hover:border-cyan-400/50 text-slate-200 cursor-pointer'
-                                  : 'bg-[#0e1118] border-white/5 text-slate-500 opacity-60 cursor-not-allowed'
-                            }`}
-                          >
-                            <span
-                              className={`text-[7px] font-mono font-bold truncate w-full ${
-                                active ? 'text-cyan-300' : 'text-slate-200'
-                              }`}
-                            >
-                              {scopeSpec.shortLabel}
-                            </span>
-                            <div className="flex items-center justify-center gap-0.5 text-[7px] font-mono leading-tight">
-                              {unlocked ? (
-                                <span
-                                  className={
-                                    active
-                                      ? 'text-emerald-300 font-bold'
-                                      : 'text-slate-400'
-                                  }
-                                >
-                                  {active ? '✓' : scopeSpec.magnification}
-                                </span>
-                              ) : (
-                                <span className="text-amber-400 font-bold">
-                                  🔒NV.{reqOptic.requiredLevel}
-                                </span>
-                              )}
-                            </div>
-                          </button>
+                          />
                         );
                       })}
                     </div>

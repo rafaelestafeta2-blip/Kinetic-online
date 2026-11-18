@@ -22,6 +22,7 @@ export type WeaponId =
   | 'CARBINE_AR'
   | 'AK47_RIFLE'
   | 'AK12_RIFLE'
+  | 'S_MILITARY'
   | 'L49_LMG'
   | 'SNIPER_BOLT'
   | 'SNIPER_TACTICAL'
@@ -49,6 +50,7 @@ export type DrillMode =
   | 'EASTERN_CITY_BOMB_5V5'
   | 'MIRAGE_ANUBIS_BOMB_5V5'
   | 'STATION_CAPTURE_5V5'
+  | 'STATION_TDM_5V5'
   /** Isolated GLB+floor harness (no online / bomb / bots). */
   | 'MAP_TEST_INDUSTRIA'
   | 'MAP_TEST_HANGAR'
@@ -126,6 +128,9 @@ export interface YardBombHudInfo {
   captureAlertText?: string | null;
   captureAlertTeam?: 'VANGUARD' | 'BLACKTHORN' | 'NEUTRAL' | null;
   captureAlertUntilMs?: number;
+  /** Warface Team Deathmatch (STATION_TDM_5V5) telemetry. */
+  isTdmMode?: boolean;
+  tdmTargetKills?: number;
 }
 
 export interface BallisticShotTelemetry {
@@ -257,6 +262,9 @@ export interface HudState {
   shotHistory: BallisticShotTelemetry[];
   hitMarkerAlpha: number;
   hitMarkerIsCrit: boolean;
+  hitMarkerIsKill: boolean;
+  killConfirmAlpha: number;
+  killConfirmLabel: string;
   damageFlashAlpha: number;
   killfeed: KillfeedEntry[];
 

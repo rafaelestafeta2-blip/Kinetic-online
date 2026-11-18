@@ -34,8 +34,9 @@ export const YardBombHudBar: React.FC<YardBombHudBarProps> = ({
         <PreRoundEquipOverlay yardBomb={yardBomb} />
         <div className="fixed top-2 left-1/2 -translate-x-1/2 z-45 pointer-events-none select-none">
           <div className="flex items-center gap-2 bg-[#070b12]/92 border border-amber-400/40 rounded-xl px-3 py-1 shadow-xl font-mono text-[10px] text-amber-200">
-            EQUIP · RODADA {yardBomb.currentRound}/{yardBomb.maxRounds} ·{' '}
-            {yardBomb.vanguardScore}–{yardBomb.blackthornScore}
+            {yardBomb.isTdmMode
+              ? `EQUIP · MATA-MATA · ALVO ${yardBomb.tdmTargetKills || 40} ABATES`
+              : `EQUIP · RODADA ${yardBomb.currentRound}/${yardBomb.maxRounds} · ${yardBomb.vanguardScore}–${yardBomb.blackthornScore}`}
           </div>
         </div>
       </>
@@ -65,24 +66,30 @@ export const YardBombHudBar: React.FC<YardBombHudBarProps> = ({
           <span className="text-[10px] sm:text-xs font-display font-black text-sky-300 tracking-wider uppercase">
             VANGUARD
           </span>
-          <div className="flex items-center gap-1">
-            {[0, 1, 2, 3].map((i) => (
-              <span
-                key={`ally-${i}`}
-                className={`w-2.5 h-2.5 rounded-full ${
-                  i < yardBomb.alliesAlive
-                    ? 'bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.9)]'
-                    : 'bg-slate-800/90 border border-white/15'
-                }`}
-              />
-            ))}
-          </div>
+          {yardBomb.isTdmMode ? (
+            <span className="px-1.5 py-0.5 rounded bg-sky-500/20 border border-sky-400/35 text-[8px] font-mono font-bold text-sky-200 uppercase">
+              ABATES
+            </span>
+          ) : (
+            <div className="flex items-center gap-1">
+              {[0, 1, 2, 3].map((i) => (
+                <span
+                  key={`ally-${i}`}
+                  className={`w-2.5 h-2.5 rounded-full ${
+                    i < yardBomb.alliesAlive
+                      ? 'bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.9)]'
+                      : 'bg-slate-800/90 border border-white/15'
+                  }`}
+                />
+              ))}
+            </div>
+          )}
           <span className="ml-1 text-lg sm:text-xl font-display font-black text-cyan-300 tabular-nums leading-none">
             {yardBomb.vanguardScore}
           </span>
         </div>
 
-        {/* Center Wing: RODADA + TIMER (Dark Metallic Inverted Trapezoid) */}
+        {/* Center Wing: RODADA / MATA-MATA + TIMER (Dark Metallic Inverted Trapezoid) */}
         <div
           className={`flex flex-col items-center justify-center px-5 py-0.5 border-t border-b ${
             isPlanted
@@ -94,11 +101,13 @@ export const YardBombHudBar: React.FC<YardBombHudBarProps> = ({
           }}
         >
           <span className="text-[8px] sm:text-[9px] font-display font-bold text-slate-300 tracking-widest uppercase leading-none">
-            {yardBomb.isCaptureMode
-              ? `CAPTURA · R${yardBomb.currentRound}/${yardBomb.maxRounds}`
-              : isPlanted
-                ? `BOMBA C4 [${yardBomb.plantedSite}]`
-                : 'RODADA'}
+            {yardBomb.isTdmMode
+              ? `MATA-MATA · ALVO ${yardBomb.tdmTargetKills || 40}`
+              : yardBomb.isCaptureMode
+                ? `CAPTURA · R${yardBomb.currentRound}/${yardBomb.maxRounds}`
+                : isPlanted
+                  ? `BOMBA C4 [${yardBomb.plantedSite}]`
+                  : 'RODADA'}
           </span>
           <span className="text-sm sm:text-base font-display font-black text-white tabular-nums leading-tight">
             {timeStr}
@@ -115,18 +124,24 @@ export const YardBombHudBar: React.FC<YardBombHudBarProps> = ({
           <span className="mr-1 text-lg sm:text-xl font-display font-black text-red-500 tabular-nums leading-none">
             {yardBomb.blackthornScore}
           </span>
-          <div className="flex items-center gap-1">
-            {[0, 1, 2, 3].map((i) => (
-              <span
-                key={`enemy-${i}`}
-                className={`w-2.5 h-2.5 rounded-full ${
-                  i < yardBomb.enemiesAlive
-                    ? 'bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.9)]'
-                    : 'bg-slate-800/90 border border-white/15'
-                }`}
-              />
-            ))}
-          </div>
+          {yardBomb.isTdmMode ? (
+            <span className="px-1.5 py-0.5 rounded bg-red-500/20 border border-red-400/35 text-[8px] font-mono font-bold text-red-200 uppercase">
+              ABATES
+            </span>
+          ) : (
+            <div className="flex items-center gap-1">
+              {[0, 1, 2, 3].map((i) => (
+                <span
+                  key={`enemy-${i}`}
+                  className={`w-2.5 h-2.5 rounded-full ${
+                    i < yardBomb.enemiesAlive
+                      ? 'bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.9)]'
+                      : 'bg-slate-800/90 border border-white/15'
+                  }`}
+                />
+              ))}
+            </div>
+          )}
           <span className="text-[10px] sm:text-xs font-display font-black text-red-500 tracking-wider uppercase">
             BLACKTHORN
           </span>

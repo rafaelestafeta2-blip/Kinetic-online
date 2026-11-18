@@ -1130,17 +1130,21 @@ export function updateSmartBotNavigation(
               victimNav.tacticalState = 'INVESTIGATE';
             }
             if (visibleEnemyBot.health <= 0) {
+              const isTdm = mode === 'STATION_TDM_5V5';
               visibleEnemyBot.isDown = true;
               visibleEnemyBot.lastDeathWasHeadshot = isHeadshot;
               if (isHeadshot) visibleEnemyBot.hitTiltVelocity = -18.0;
-              visibleEnemyBot.downTimer = 9999;
-              if (visibleEnemyBot.isAlly) {
+              visibleEnemyBot.downTimer = isTdm ? 3.2 : 9999;
+              if (visibleEnemyBot.isAlly && !isTdm) {
                 const now = performance.now() / 1000;
                 visibleEnemyBot.reviveUntilSec = now + 40;
                 visibleEnemyBot.reviveExpired = false;
                 visibleEnemyBot.root.visible = true;
                 bot.root.userData = bot.root.userData || {};
                 bot.root.userData.radarRevealedUntilMs = performance.now() + 4500;
+              } else {
+                bot.root.userData = bot.root.userData || {};
+                bot.root.userData.radarRevealedUntilMs = performance.now() + 3500;
               }
               onRegisterKill?.(bot.callsign || (bot.isAlly ? 'RECON-02' : 'KRAKEN-BT'), bot.isAlly ? 'VANGUARD' : 'BLACKTHORN', visibleEnemyBot.callsign || (visibleEnemyBot.isAlly ? 'RECON-02' : 'KRAKEN-BT'), visibleEnemyBot.isAlly ? 'VANGUARD' : 'BLACKTHORN', weapon, isHeadshot);
             }

@@ -241,7 +241,7 @@ export function getMapRoutes(mode: DrillMode): TacticalMapRoutes {
     };
   }
 
-  if (mode === 'STATION_CAPTURE_5V5') {
+  if (mode === 'STATION_CAPTURE_5V5' || mode === 'STATION_TDM_5V5') {
     return {
       vgA: [v(-10, 0.1, -16), v(-12, 0.1, -6), v(-8, 0.1, 6), v(10, 0.1, 16)],
       vgB: [v(-10, 0.1, -16), v(4, 0.1, -8), v(12, 0.1, 4), v(10, 0.1, 16)],
