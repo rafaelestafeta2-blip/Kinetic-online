@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { getInstalledOtaState } from '../ota/otaUpdateManager';
-import { hasExternalAssetCdn } from '../utils/assetUrl';
+import { getOtaAssetConfig, hasExternalAssetCdn } from '../utils/assetUrl';
 
 const loadingArtwork = '/assets/images/tactical_loading_art_1794056561341.jpg';
 
@@ -92,7 +92,11 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
           <div className="flex items-center gap-2">
             <span className="text-slate-400">CDN / STORAGE:</span>
             <span className="text-emerald-400 font-semibold">
-              {cdnActive ? 'FIREBASE STORAGE CDN ATIVO' : 'SYNC HÍBRIDO OTA ATIVO'}
+              {cdnActive
+                ? getOtaAssetConfig().cdnBaseUrl.includes('firebase')
+                  ? 'FIREBASE STORAGE CDN ATIVO'
+                  : 'CLOUDFLARE R2 CDN ATIVO'
+                : 'SYNC HÍBRIDO OTA ATIVO'}
             </span>
           </div>
           <div className="flex items-center gap-2">

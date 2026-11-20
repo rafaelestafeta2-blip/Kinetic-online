@@ -1,4 +1,9 @@
-import { resolveAssetUrl, setOtaAssetConfig } from '../utils/assetUrl';
+import {
+  getOtaAssetConfig,
+  hasExternalAssetCdn,
+  resolveAssetUrl,
+  setOtaAssetConfig,
+} from '../utils/assetUrl';
 
 export interface OtaManifest {
   version: string;
@@ -22,24 +27,47 @@ export interface InstalledOtaState {
 const OTA_STORAGE_KEY = 'kinetic_ota_installed_state_v1';
 
 const FALLBACK_MANIFEST: OtaManifest = {
-  version: '2.4.0-WARBOX',
-  assetRevision: '2026.11.19-wbx1',
+  version: '2.5.0-R2',
+  assetRevision: '2026.11.20-v18',
   cdnBaseUrl: '',
-  publishedAt: '2026-11-19T10:30:00.000Z',
-  patchTitle: 'ATUALIZAÇÃO 2.4 · LOJA WARFACE & OPERADORES 3D',
+  publishedAt: '2026-11-20T18:30:00.000Z',
+  patchTitle: 'ATUALIZAÇÃO 2.5 · LOJA PREMIUM, AEMONDIR & V18 SPECTRE',
   patchNotes: [
-    'Loja Warface de Diamantes & 3 Caixas Aleatórias com tabela oficial (%)',
-    '6 Novos Operadores 3D com inspeção 360° e blindagem customizada',
-    '4 Novas Skins 3D Procedurais (Ouro Anubis 24K, Cobalto Cyber, Víbora, Geada)',
-    'Arsenal completo de 18 Armas + 7 Arenas 5v5 sincronizados via CDN',
+    'Nova Loja Premium com Vitrine 3D, Baús Warface e Passe VIP',
+    'Primeira Skin 3D de Shotgun: Aemondir Bucky Legion com baioneta',
+    'Nova Arma de Engenheiro: V18 Spectre Silenciada + Chat de Voz da Equipe',
+    'Assets 3D otimizados via Cloudflare R2 CDN com barra de download',
   ],
   criticalAssets: [
-    '/models/character.glb',
-    '/models/weapons/m4a1_sopmod.glb',
-    '/models/weapons/ak47_rifle.glb',
-    '/models/weapons/p50_pistol.glb',
+    '/models/characters/vanguard_rifleman.glb',
+    '/models/characters/pro_rifle_pack.glb',
+    '/models/weapons/v18_engineer_smg.glb',
+    '/models/weapons/shotgun_aemondir_lv1.glb',
   ],
 };
+
+function resolveOtaManifestEndpoint(): string {
+  // On Capacitor native Android (https://localhost), resolve backend HTTP URL from VITE_WS_SERVER_URL
+  const isLocalNativeOrigin =
+    typeof window !== 'undefined' &&
+    (window.location.hostname === 'localhost' ||
+      window.location.protocol === 'capacitor:');
+  const wsUrl =
+    typeof import.meta !== 'undefined'
+      ? (import.meta as unknown as { env?: Record<string, string | undefined> })
+          .env?.VITE_WS_SERVER_URL
+      : undefined;
+
+  if (isLocalNativeOrigin && wsUrl && /^wss?:\/\//i.test(wsUrl.trim())) {
+    try {
+      const parsed = new URL(wsUrl.trim().replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:'));
+      return `${parsed.origin}/api/ota/manifest?_t=${Date.now()}`;
+    } catch {
+      // fall back to relative path
+    }
+  }
+  return `/api/ota/manifest?_t=${Date.now()}`;
+}
 
 function loadStoredOtaState(): InstalledOtaState | null {
   try {
@@ -71,7 +99,6 @@ let currentOtaState: InstalledOtaState = loadStoredOtaState() || {
   patchNotes: FALLBACK_MANIFEST.patchNotes,
 };
 
-// Apply stored asset revision immediately on module load
 setOtaAssetConfig({
   assetRevision: currentOtaState.assetRevision,
 });
@@ -97,11 +124,11 @@ async function purgeOutdatedCacheStorage(): Promise<void> {
   }
 }
 
-async function fetchRemoteOtaManifest(timeoutMs = 3200): Promise<OtaManifest> {
+async function fetchRemoteOtaManifest(timeoutMs = 3500): Promise<OtaManifest> {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(`/api/ota/manifest?_t=${Date.now()}`, {
+    const res = await fetch(resolveOtaManifestEndpoint(), {
       method: 'GET',
       headers: { Accept: 'application/json' },
       signal: controller.signal,
@@ -146,8 +173,55 @@ async function fetchRemoteOtaManifest(timeoutMs = 3200): Promise<OtaManifest> {
 }
 
 /**
+ * Downloads a critical asset with real byte progress into HTTP cache so
+ * the player sees exact MB downloaded and the Lobby 3D Operator appears immediately.
+ */
+async function warmAssetWithProgress(
+  resolvedUrl: string,
+  onByteProgress: (loadedBytes: number, totalBytes: number) => void,
+  timeoutMs = 18000
+): Promise<void> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(resolvedUrl, {
+      method: 'GET',
+      cache: 'force-cache',
+      signal: controller.signal,
+    });
+    if (!res.ok) return;
+    const total = Number(res.headers.get('content-length') || 0);
+    if (!res.body) {
+      const buf = await res.arrayBuffer();
+      onByteProgress(buf.byteLength, total || buf.byteLength);
+      return;
+    }
+    const reader = res.body.getReader();
+    let loaded = 0;
+    let lastReportAt = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        loaded += value.byteLength;
+        const now = performance.now();
+        if (now - lastReportAt > 90) {
+          lastReportAt = now;
+          onByteProgress(loaded, total);
+        }
+      }
+    }
+    onByteProgress(loaded, total || loaded);
+  } catch {
+    // Non-blocking: GLTFLoader will retry when needed
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+/**
  * Checks `/api/ota/manifest`, configures CDN revision cache-busting,
- * and downloads/verifies updated critical assets when a new patch revision is published.
+ * and downloads/verifies updated critical assets with live MB progress.
  */
 export async function runOtaUpdateCheck(
   onStep?: (progressPct: number, statusLabel: string, manifest: OtaManifest) => void
@@ -158,43 +232,59 @@ export async function runOtaUpdateCheck(
   const manifest = await fetchRemoteOtaManifest();
   setOtaAssetConfig({
     assetRevision: manifest.assetRevision,
-    cdnBaseUrl: manifest.cdnBaseUrl,
+    cdnBaseUrl: manifest.cdnBaseUrl || getOtaAssetConfig().cdnBaseUrl,
   });
 
   const isNewPatch =
     !stored ||
     stored.version !== manifest.version ||
     stored.assetRevision !== manifest.assetRevision;
+  const shouldDownloadCore = isNewPatch || hasExternalAssetCdn();
 
   if (isNewPatch) {
     onStep?.(
-      10,
-      `NOVA ATUALIZAÇÃO OTA DETECTADA (v${manifest.version}) · LIMPANDO CACHE ANTIGO...`,
+      8,
+      `NOVA ATUALIZAÇÃO v${manifest.version} · LIMPANDO CACHE ANTIGO...`,
       manifest
     );
     await purgeOutdatedCacheStorage();
+  }
 
+  if (shouldDownloadCore) {
     const assets = manifest.criticalAssets;
     for (let i = 0; i < assets.length; i++) {
       const assetPath = assets[i];
-      const pct = 12 + Math.round(((i + 1) / Math.max(1, assets.length)) * 16);
-      const shortName = assetPath.split('/').pop() || assetPath;
+      const basePct = 10 + Math.round((i / Math.max(1, assets.length)) * 18);
+      const stepSpan = Math.max(1, Math.round(18 / Math.max(1, assets.length)));
+      const shortName = (assetPath.split('/').pop() || assetPath)
+        .replace(/\.glb$/i, '')
+        .replace(/_/g, ' ')
+        .toUpperCase();
+      const resolvedUrl = resolveAssetUrl(assetPath);
+
       onStep?.(
-        pct,
-        `BAIXANDO PATCH OTA v${manifest.version} (${i + 1}/${assets.length}: ${shortName})...`,
+        basePct,
+        `BAIXANDO CDN (${i + 1}/${assets.length}): ${shortName}...`,
         manifest
       );
-      try {
-        const resolvedUrl = resolveAssetUrl(assetPath);
-        await fetch(resolvedUrl, { method: 'HEAD', cache: 'reload' }).catch(() => null);
-      } catch {
-        // Non-blocking asset check
-      }
+
+      await warmAssetWithProgress(resolvedUrl, (loaded, total) => {
+        const frac = total > 0 ? Math.min(1, loaded / total) : 0.5;
+        const pct = Math.min(28, basePct + Math.round(frac * stepSpan));
+        const loadedMb = (loaded / (1024 * 1024)).toFixed(1);
+        const totalLabel =
+          total > 0 ? ` / ${(total / (1024 * 1024)).toFixed(1)} MB` : ' MB';
+        onStep?.(
+          pct,
+          `BAIXANDO ${shortName} (${i + 1}/${assets.length}) · ${loadedMb}${totalLabel}`,
+          manifest
+        );
+      });
     }
   } else {
     onStep?.(
       24,
-      `CLIENTE ATUALIZADO · VERSÃO OTA v${manifest.version} (${manifest.assetRevision})`,
+      `CLIENTE ATUALIZADO · VERSÃO OTA v${manifest.version}`,
       manifest
     );
   }
@@ -218,8 +308,8 @@ export async function runOtaUpdateCheck(
   onStep?.(
     30,
     isNewPatch
-      ? `PATCH OTA v${manifest.version} APLICADO COM SUCESSO!`
-      : `VERSÃO OTA v${manifest.version} VERIFICADA`,
+      ? `ATUALIZAÇÃO v${manifest.version} APLICADA COM SUCESSO!`
+      : `RECURSOS CDN PRONTOS · v${manifest.version}`,
     manifest
   );
 

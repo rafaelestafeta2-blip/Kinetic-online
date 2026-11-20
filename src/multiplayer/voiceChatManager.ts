@@ -167,11 +167,20 @@ class TacticalVoiceChatManager {
 
   public async setMicMode(mode: VoiceMicMode): Promise<void> {
     this.state.micPermissionError = null;
+    if (mode === 'MUTED') {
+      this.state.micMode = 'MUTED';
+      this.state.pttHeld = false;
+      this.releaseMicrophone();
+      this.playRadioClick(false);
+      this.broadcastVoiceState(true);
+      this.emit();
+      return;
+    }
     if (mode === 'OPEN' || mode === 'PTT') {
       const ok = await this.ensureMicrophoneStream();
       if (!ok && mode === 'OPEN') {
         this.state.micMode = 'MUTED';
-        this.updateLocalTrackEnabled();
+        this.releaseMicrophone();
         this.emit();
         return;
       }
@@ -180,7 +189,7 @@ class TacticalVoiceChatManager {
     if (mode !== 'PTT') {
       this.state.pttHeld = false;
     }
-    this.playRadioClick(mode !== 'MUTED');
+    this.playRadioClick(true);
     this.updateLocalTrackEnabled();
     this.broadcastVoiceState(true);
     this.emit();
@@ -467,6 +476,7 @@ class TacticalVoiceChatManager {
   private handleRoomUpdate(room: OnlineRoomState | null): void {
     if (!room) {
       this.cleanupAllPeers();
+      this.releaseMicrophone();
       this.currentRoomId = null;
       this.emit();
       return;
@@ -747,6 +757,97 @@ class TacticalVoiceChatManager {
       entry.pc.close();
     } catch {}
     this.peerConnections.delete(uid);
+  }
+
+  private restoreNativeMediaAudioMode(): void {
+    try {
+      const bridge = (
+        window as unknown as {
+          KineticNativeAuth?: { restoreMediaAudioMode?: () => void };
+        }
+      ).KineticNativeAuth;
+      if (bridge && typeof bridge.restoreMediaAudioMode === 'function') {
+        bridge.restoreMediaAudioMode();
+      }
+    } catch {
+      // ignore on web browsers without native bridge
+    }
+  }
+
+  /**
+   * Fully stops the hardware microphone MediaStream and closes the voice AudioContext
+   * so Android exits MODE_IN_COMMUNICATION (muffled/low call volume) and restores
+   * full stereo media loudspeaker output immediately.
+   */
+  public releaseMicrophone(): void {
+    const hadStream = Boolean(this.localStream);
+    if (this.localStream) {
+      try {
+        this.localStream.getTracks().forEach((track) => {
+          track.enabled = false;
+          track.stop();
+        });
+      } catch {
+        // ignore stop errors
+      }
+      this.localStream = null;
+    }
+
+    // Detach local track from any open peer senders so WebRTC stops capturing audio
+    this.peerConnections.forEach((entry) => {
+      try {
+        entry.pc.getSenders().forEach((sender) => {
+          if (sender.track && sender.track.kind === 'audio') {
+            void sender.replaceTrack(null).catch(() => {});
+          }
+        });
+      } catch {
+        // ignore
+      }
+    });
+
+    this.localAnalyser = null;
+    this.localFreqData = null;
+    this.state.pttHeld = false;
+    this.state.isTransmitting = false;
+    this.state.localAudioLevel = 0;
+
+    if (this.audioCtx && this.peerConnections.size === 0) {
+      try {
+        void this.audioCtx.close().catch(() => {});
+      } catch {
+        // ignore
+      }
+      this.audioCtx = null;
+    }
+
+    if (hadStream || this.peerConnections.size === 0) {
+      this.restoreNativeMediaAudioMode();
+    }
+  }
+
+  /**
+   * Called automatically whenever the player exits a match (returns to Main Menu,
+   * match victory/defeat, or disconnect). Shuts down mic hardware, closes peers,
+   * and restores normal full-volume Android media audio.
+   */
+  public endMatchVoiceSession(): void {
+    const wasActive =
+      Boolean(this.localStream) ||
+      this.peerConnections.size > 0 ||
+      this.state.micMode === 'OPEN' ||
+      this.state.pttHeld ||
+      this.state.isTransmitting;
+
+    this.cleanupAllPeers();
+    if (this.state.micMode === 'OPEN') {
+      this.state.micMode = 'PTT';
+    }
+    this.releaseMicrophone();
+    this.restoreNativeMediaAudioMode();
+    if (wasActive) {
+      this.emit();
+    }
   }
 
   private cleanupAllPeers(): void {

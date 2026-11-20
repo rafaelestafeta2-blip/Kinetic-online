@@ -19,6 +19,8 @@ import { ControlSettings, loadControlSettings, saveControlSettings } from './con
 import { applyGraphicsToEngine } from './graphics/applyGraphicsToEngine';
 import { FpsLimit, GameSettings, getDefaultSettings, loadGameSettings, saveGameSettings } from './graphics/graphicsSettings';
 import { mobileHardware } from './mobile/nativeHardware';
+import { AssetDownloadProgressToast } from './components/AssetDownloadProgressToast';
+import { voiceChatManager } from './multiplayer/voiceChatManager';
 import { runOtaUpdateCheck } from './ota/otaUpdateManager';
 import { getClassCombatModifiers } from './progression/loadoutSystem';
 import { TacticalFPSEngine } from './three/fpsEngine';
@@ -262,6 +264,13 @@ export default function App() {
     }
   }, [hud.screen]);
 
+  // Shut down microphone & restore normal media audio volume whenever outside an active match
+  useEffect(() => {
+    if (hud.screen !== 'PLAYING') {
+      voiceChatManager.endMatchVoiceSession();
+    }
+  }, [hud.screen]);
+
   return (
     <main
       className="relative w-screen h-screen overflow-hidden bg-[#090b0e]"
@@ -474,6 +483,9 @@ export default function App() {
           onSetFpsLimit={(fps: number) => handleUpdateSettings({ ...gameSettingsRef.current, fpsLimit: fps as FpsLimit, preset: 'CUSTOM' })}
         />
       )}
+      <AssetDownloadProgressToast
+        hidden={hud.screen === 'LOADING' || hud.screen === 'INTRO' || hud.screen === 'VIDEO_INTRO'}
+      />
     </main>
   );
 }

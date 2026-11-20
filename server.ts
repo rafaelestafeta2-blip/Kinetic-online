@@ -59,23 +59,23 @@ async function startServer(): Promise<void> {
   });
 
   const OTA_MANIFEST = {
-    version: process.env.KINETIC_OTA_VERSION?.trim() || '2.4.0-WARBOX',
+    version: process.env.KINETIC_OTA_VERSION?.trim() || '2.5.0-R2',
     assetRevision:
-      process.env.KINETIC_ASSET_REVISION?.trim() || '2026.11.19-wbx1',
+      process.env.KINETIC_ASSET_REVISION?.trim() || '2026.11.20-v18',
     cdnBaseUrl: process.env.VITE_ASSET_CDN_URL?.trim() || '',
-    publishedAt: '2026-11-19T10:30:00.000Z',
-    patchTitle: 'ATUALIZAÇÃO 2.4 · LOJA WARFACE & OPERADORES 3D',
+    publishedAt: '2026-11-20T18:30:00.000Z',
+    patchTitle: 'ATUALIZAÇÃO 2.5 · LOJA PREMIUM, AEMONDIR & V18 SPECTRE',
     patchNotes: [
-      'Loja Warface de Diamantes & 3 Caixas Aleatórias com tabela oficial (%)',
-      '6 Novos Operadores 3D com inspeção 360° e blindagem customizada',
-      '4 Novas Skins 3D Procedurais (Ouro Anubis 24K, Cobalto Cyber, Víbora, Geada)',
-      'Arsenal completo de 18 Armas + 7 Arenas 5v5 sincronizados via CDN',
+      'Nova Loja Premium com Vitrine 3D, Baús Warface e Passe VIP',
+      'Primeira Skin 3D de Shotgun: Aemondir Bucky Legion com baioneta',
+      'Nova Arma de Engenheiro: V18 Spectre Silenciada + Chat de Voz da Equipe',
+      'Assets 3D servidos via Cloudflare R2 CDN com barra de download',
     ],
     criticalAssets: [
-      '/models/character.glb',
-      '/models/weapons/m4a1_sopmod.glb',
-      '/models/weapons/ak47_rifle.glb',
-      '/models/weapons/p50_pistol.glb',
+      '/models/characters/vanguard_rifleman.glb',
+      '/models/characters/pro_rifle_pack.glb',
+      '/models/weapons/v18_engineer_smg.glb',
+      '/models/weapons/shotgun_aemondir_lv1.glb',
     ],
   };
 

@@ -23,6 +23,12 @@ import {
   subscribeOperatorOwnership,
 } from '../progression/operatorSkinsSystem';
 import { applyWeaponSkinToObject3D } from '../three/weaponSkinMaterial';
+import {
+  AssetDownloadSnapshot,
+  formatMegabytes,
+  getAssetDownloadSnapshot,
+  subscribeAssetDownloads,
+} from '../utils/assetDownloadTracker';
 import { WeaponId } from '../types/game';
 import { WarfaceClassId } from './WarfaceClassIcons';
 
@@ -548,14 +554,50 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
         className="w-full h-full cursor-grab active:cursor-grabbing"
         title="Arraste para girar o Operador 3D (.glb)"
       />
-      {!isLoaded && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-          <div className="w-8 h-8 rounded-full border-2 border-sky-400 border-t-transparent animate-spin mb-2" />
-          <span className="text-[10px] font-mono uppercase tracking-wider text-sky-300">
-            CARREGANDO OPERADOR 3D (.GLB)...
+      {!isLoaded && <OperatorDownloadProgressOverlay />}
+    </div>
+  );
+};
+
+const OperatorDownloadProgressOverlay: React.FC = () => {
+  const [snap, setSnap] = useState<AssetDownloadSnapshot>(() =>
+    getAssetDownloadSnapshot()
+  );
+
+  useEffect(() => {
+    return subscribeAssetDownloads(setSnap);
+  }, []);
+
+  const hasProgress = snap.activeCount > 0 && !snap.indeterminate;
+  const pct = hasProgress ? Math.max(5, snap.progressPct) : 28;
+
+  return (
+    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none px-4">
+      <div className="w-full max-w-[230px] rounded-xl bg-black/70 border border-sky-400/40 px-3.5 py-2.5 backdrop-blur-sm shadow-[0_8px_28px_rgba(0,0,0,0.75)] flex flex-col items-center gap-1.5">
+        <div className="flex items-center justify-between w-full text-[9px] font-mono">
+          <span className="text-sky-300 font-bold uppercase tracking-wider truncate pr-2">
+            {snap.currentLabel || 'BAIXANDO OPERADOR 3D'}
+          </span>
+          <span className="text-amber-300 font-black tabular-nums shrink-0">
+            {hasProgress ? `${snap.progressPct}%` : '...'}
           </span>
         </div>
-      )}
+        <div className="w-full h-1.5 rounded-full bg-slate-900 border border-white/15 overflow-hidden">
+          <div
+            className={`h-full rounded-full bg-gradient-to-r from-sky-500 via-cyan-300 to-amber-400 transition-all duration-150 ${
+              hasProgress ? '' : 'animate-pulse'
+            }`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <span className="text-[9px] font-mono text-slate-300 tabular-nums">
+          {snap.totalBytes > 0
+            ? `${formatMegabytes(snap.loadedBytes)} / ${formatMegabytes(snap.totalBytes)}`
+            : snap.loadedBytes > 0
+              ? `${formatMegabytes(snap.loadedBytes)} BAIXADOS...`
+              : 'CONECTANDO AO CDN 3D...'}
+        </span>
+      </div>
     </div>
   );
 };

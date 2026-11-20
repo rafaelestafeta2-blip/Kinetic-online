@@ -166,9 +166,11 @@ if (mainActivityPath) {
 
 import android.Manifest;
 import android.annotation.SuppressLint;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -392,6 +394,26 @@ public class MainActivity extends BridgeActivity {
                 .remove(KEY_PENDING_CANCEL)
                 .putBoolean(KEY_IN_PROGRESS, false)
                 .apply();
+        }
+
+        /**
+         * Restores Android AudioManager from MODE_IN_COMMUNICATION (low-volume voice call
+         * routing triggered by WebRTC getUserMedia) back to MODE_NORMAL full media volume.
+         */
+        @JavascriptInterface
+        public void restoreMediaAudioMode() {
+            runOnUiThread(() -> {
+                try {
+                    AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+                    if (am != null) {
+                        am.setMode(AudioManager.MODE_NORMAL);
+                        am.setSpeakerphoneOn(false);
+                        am.stopBluetoothSco();
+                        am.setBluetoothScoOn(false);
+                    }
+                } catch (Exception ignored) {
+                }
+            });
         }
     }
 

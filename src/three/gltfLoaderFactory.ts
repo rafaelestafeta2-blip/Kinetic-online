@@ -11,6 +11,12 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 
+import {
+  beginAssetDownload,
+  endAssetDownload,
+  updateAssetDownloadProgress,
+} from '../utils/assetDownloadTracker';
+
 const DRACO_DECODER_PATH = '/draco/';
 const KTX2_TRANSCODER_PATH = '/basis/';
 
@@ -61,6 +67,34 @@ export function createGameGltfLoader(loadingManager?: THREE.LoadingManager): GLT
     loader.setDRACOLoader(getSharedDracoLoader());
     loader.__ownsDraco = false;
   }
+
+  // Track real byte-level download progress for every GLB fetched from CDN/local
+  const rawLoad = loader.load.bind(loader);
+  loader.load = (url, onLoad, onProgress, onError) => {
+    beginAssetDownload(url);
+    rawLoad(
+      url,
+      (gltf) => {
+        endAssetDownload(url);
+        onLoad(gltf);
+      },
+      (ev) => {
+        if (ev && typeof ev.loaded === 'number') {
+          updateAssetDownloadProgress(
+            url,
+            ev.loaded,
+            ev.lengthComputable ? ev.total : 0
+          );
+        }
+        onProgress?.(ev);
+      },
+      (err) => {
+        endAssetDownload(url);
+        onError?.(err);
+      }
+    );
+  };
+
   return loader;
 }
 
