@@ -82,8 +82,19 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: 10. Compilar Release Assinado (APK + AAB Google Play) se Keystore configurada
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+      - name: 10. Verificar se Keystore Release da Play Store está configurada
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "HAS_RELEASE_KEYSTORE=true" >> "$GITHUB_ENV"
+          else
+            echo "HAS_RELEASE_KEYSTORE=false" >> "$GITHUB_ENV"
+            echo "ℹ️ Keystore Release não configurada — mantendo apenas APK Debug."
+          fi
+
+      - name: 11. Compilar Release Assinado (APK + AAB Google Play) se Keystore configurada
+        if: env.HAS_RELEASE_KEYSTORE == 'true'
         working-directory: ./android
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -96,8 +107,8 @@ jobs:
           ./gradlew assembleRelease bundleRelease --no-daemon --stacktrace
           rm -f app/release-keystore.jks
 
-      - name: 11. Publicar Release Assinado (Play Store AAB + APK)
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+      - name: 12. Publicar Release Assinado (Play Store AAB + APK)
+        if: env.HAS_RELEASE_KEYSTORE == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: KINETIC-Tactical-FPS-PlayStore-Release
