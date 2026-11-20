@@ -791,27 +791,28 @@ const appBuildGradlePath = path.resolve('android/app/build.gradle');
 if (fs.existsSync(appBuildGradlePath)) {
   let appGradle = fs.readFileSync(appBuildGradlePath, 'utf8');
   if (!appGradle.includes('KINETIC_KEYSTORE_PATH')) {
-    const signingBlock = `
-    signingConfigs {
+    const patched = appGradle.replace(
+      /buildTypes\s*\{\s*release\s*\{/,
+      `signingConfigs {
         release {
-            def ksPath = System.getenv("KINETIC_KEYSTORE_PATH")
-            if (ksPath != null && !ksPath.isEmpty() && file(ksPath).exists()) {
-                storeFile file(ksPath)
+            def kineticSignKs = System.getenv("KINETIC_KEYSTORE_PATH")
+            if (kineticSignKs != null && !kineticSignKs.isEmpty() && file(kineticSignKs).exists()) {
+                storeFile file(kineticSignKs)
                 storePassword System.getenv("KINETIC_KEYSTORE_PASSWORD")
                 keyAlias System.getenv("KINETIC_KEY_ALIAS")
                 keyPassword System.getenv("KINETIC_KEY_PASSWORD")
             }
         }
     }
-    buildTypes {`;
-
-    if (appGradle.includes('buildTypes {')) {
-      appGradle = appGradle.replace('buildTypes {', signingBlock.trimStart());
-      appGradle = appGradle.replace(
-        /release\s*\{/,
-        `release {\n            def ksPath = System.getenv("KINETIC_KEYSTORE_PATH")\n            if (ksPath != null && !ksPath.isEmpty() && file(ksPath).exists()) {\n                signingConfig signingConfigs.release\n            }`
-      );
-      fs.writeFileSync(appBuildGradlePath, appGradle, 'utf8');
+    buildTypes {
+        release {
+            def kineticBuildKs = System.getenv("KINETIC_KEYSTORE_PATH")
+            if (kineticBuildKs != null && !kineticBuildKs.isEmpty() && file(kineticBuildKs).exists()) {
+                signingConfig signingConfigs.release
+            }`
+    );
+    if (patched !== appGradle) {
+      fs.writeFileSync(appBuildGradlePath, patched, 'utf8');
       console.log('[patch-manifest] Patched android/app/build.gradle with optional Release signingConfigs');
     }
   }
