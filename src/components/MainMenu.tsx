@@ -264,7 +264,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     >
       {/* 1. BACKGROUND (Soldado 3D .glb centralizado + Bandeira 3D Blackthorn atrás) */}
       <MenuBackground
-        showHero={activeTab === 'PLAY' && !showRankedScreen}
+        showHero={activeTab === 'PLAY' && !showRankedScreen && !showSquadRoom}
         activeWeapon={heroEquippedWeapon}
         selectedClass={inventoryState.selectedClass}
       />

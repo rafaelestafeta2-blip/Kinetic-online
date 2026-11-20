@@ -83,7 +83,7 @@ export const MainMenuTopNav: React.FC<MainMenuTopNavProps> = ({
   );
 
   return (
-    <header className="relative z-30 w-full h-9 lg:h-12 px-2 sm:px-4 bg-gradient-to-b from-[#0b0d13]/96 via-[#07090e]/95 to-[#05060a]/92 border-b border-red-500/45 flex items-center justify-between gap-2 shrink-0 backdrop-blur-md shadow-[0_4px_24px_rgba(0,0,0,0.8)]">
+    <header className="relative z-[60] w-full h-9 lg:h-12 px-2 sm:px-4 bg-gradient-to-b from-[#0b0d13]/96 via-[#07090e]/95 to-[#05060a]/92 border-b border-red-500/45 flex items-center justify-between gap-2 shrink-0 backdrop-blur-md shadow-[0_4px_24px_rgba(0,0,0,0.8)]">
       {/* Esquerda: Moldura Chamfered do Avatar + Callsign + Lv + Barra XP Vermelha */}
       <button
         type="button"

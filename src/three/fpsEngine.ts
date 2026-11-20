@@ -51,6 +51,7 @@ import {
   getWeaponGunsmithModifiers,
   isOpticCompatibleWithWeapon,
   subscribePlayerInventory,
+  syncEquippedWeaponToInventory,
 } from '../progression/loadoutSystem';
 import { BallisticsFXPool } from './ballisticsPool';
 import { TacticalGrenadeSystem } from './grenadeSystem';
@@ -1789,7 +1790,12 @@ export class TacticalFPSEngine {
       this.state.rankBadgeColor = rankInfo.badgeColor;
       this.state.nextRankXp = nextRank ? nextRank.requiredXp : rankInfo.requiredXp;
     }
-    if (activeWeapon && activeWeapon !== this.state.activeWeapon) {
+    if (
+      activeWeapon &&
+      activeWeapon !== this.state.activeWeapon &&
+      this.state.screen !== 'PLAYING' &&
+      this.state.screen !== 'PAUSED'
+    ) {
       this.selectWeapon(activeWeapon);
     }
     this.emitHud();
@@ -1956,6 +1962,9 @@ export class TacticalFPSEngine {
       this.secondaryWeapon = weaponId;
     } else if (weaponId !== 'KNIFE_TACTICAL') {
       this.primaryWeapon = weaponId;
+      if (this.state.screen === 'PLAYING' || this.state.screen === 'MAIN_MENU') {
+        syncEquippedWeaponToInventory(weaponId);
+      }
     }
     this.state.primaryWeapon = this.primaryWeapon;
     this.state.secondaryWeapon = this.secondaryWeapon || 'P50_PISTOL';

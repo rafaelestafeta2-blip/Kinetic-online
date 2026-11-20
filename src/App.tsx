@@ -27,7 +27,10 @@ import {
 } from './multiplayer/onlineRoomService';
 import { voiceChatManager } from './multiplayer/voiceChatManager';
 import { runOtaUpdateCheck } from './ota/otaUpdateManager';
-import { getClassCombatModifiers } from './progression/loadoutSystem';
+import {
+  getClassCombatModifiers,
+  syncEquippedWeaponToInventory,
+} from './progression/loadoutSystem';
 import { TacticalFPSEngine } from './three/fpsEngine';
 import { prefetchMapAssetsForMode } from './three/mapAssetCatalog';
 import { DrillMode, GyroMode, HudState, OpticType, WeaponId } from './types/game';
@@ -166,6 +169,7 @@ export default function App() {
 
   const handleSelectWeapon = (weaponId: WeaponId) => {
     if (!engineRef.current) return;
+    syncEquippedWeaponToInventory(weaponId);
     engineRef.current.selectWeapon(weaponId);
     applyGraphicsToEngine(engineRef.current, gameSettingsRef.current);
   };

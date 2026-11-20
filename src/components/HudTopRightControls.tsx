@@ -49,6 +49,7 @@ export const HudTopRightControls: React.FC<HudTopRightControlsProps> = ({
       {/* TOP-LEFT: CIRCULAR PAUSE BUTTON (||) + DISCREET SCOREBOARD TOGGLE (MOBILE/PC) */}
       <div
         onPointerDown={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
         className="fixed top-2.5 left-3 z-40 pointer-events-auto select-none flex items-center gap-2"
         style={{ touchAction: 'manipulation' }}
       >
@@ -92,6 +93,7 @@ export const HudTopRightControls: React.FC<HudTopRightControlsProps> = ({
       {/* TOP-RIGHT: SINGLE GEAR BUTTON + ROUNDED SQUARE MINIMAP MATCHING REFERENCE SCREENSHOT */}
       <div
         onPointerDown={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
         className="fixed top-2 right-2.5 flex items-start gap-2 z-40 pointer-events-auto select-none font-mono"
         style={{ touchAction: 'manipulation' }}
       >
@@ -110,7 +112,7 @@ export const HudTopRightControls: React.FC<HudTopRightControlsProps> = ({
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
             <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2.2" />
             <path
-              d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+              d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
               stroke="currentColor"
               strokeWidth="1.9"
             />
@@ -133,6 +135,7 @@ export const HudTopRightControls: React.FC<HudTopRightControlsProps> = ({
       {!hud.dockCollapsed && (
         <div
           onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
           className="fixed top-13 right-28 z-40 pointer-events-auto select-none font-mono bg-[#080e16]/95 border border-sky-400/50 rounded-xl p-2.5 flex flex-col gap-2 shadow-2xl w-[310px]"
         >
           <div className="flex items-center justify-between border-b border-white/10 pb-1.5">
