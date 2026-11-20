@@ -385,6 +385,107 @@
         }
       },
       "required": ["chatId", "participants", "messages", "updatedAtMs"]
+    },
+    "Clan": {
+      "title": "Clan",
+      "description": "Tactical Clan with globally unique name/clanId, pre-configured emblem, level/XP progression, daily clan missions, and up to 7 members.",
+      "type": "object",
+      "properties": {
+        "clanId": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 24,
+          "pattern": "^[a-z0-9_\\-]+$",
+          "description": "Normalized lowercase unique clan identifier."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 18,
+          "description": "Unique display name of the clan."
+        },
+        "tag": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 4,
+          "pattern": "^[A-Z0-9]+$",
+          "description": "2 to 4 uppercase alphanumeric clan tag."
+        },
+        "emblemId": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 32,
+          "description": "Pre-configured premium clan emblem ID."
+        },
+        "motto": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "Clan tactical motto or recruitment message."
+        },
+        "ownerUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the clan founder/leader."
+        },
+        "ownerCallsign": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "description": "Callsign of the clan owner."
+        },
+        "clanXp": {
+          "type": "number",
+          "description": "Accumulated clan XP (0 to 50000000)."
+        },
+        "clanLevel": {
+          "type": "number",
+          "description": "Current clan level (1 to 50)."
+        },
+        "memberUids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Array of member UIDs (1 to 7 members maximum)."
+        },
+        "members": {
+          "type": "object",
+          "description": "Map of ClanMemberEntry objects keyed by UID (1 to 7 entries maximum)."
+        },
+        "dailyState": {
+          "type": "object",
+          "description": "Daily clan missions progress and claimed member UIDs keyed by mission ID."
+        },
+        "updatedAtMs": {
+          "type": "number",
+          "description": "Epoch milliseconds of last clan update."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "minLength": 10,
+          "maxLength": 40,
+          "description": "ISO timestamp when clan was created."
+        }
+      },
+      "required": [
+        "clanId",
+        "name",
+        "tag",
+        "emblemId",
+        "motto",
+        "ownerUid",
+        "ownerCallsign",
+        "clanXp",
+        "clanLevel",
+        "memberUids",
+        "members",
+        "dailyState",
+        "updatedAtMs",
+        "createdAt"
+      ]
     }
   },
   "firestore": {
@@ -417,6 +518,12 @@
         "$ref": "#/entities/DirectChat"
       },
       "description": "Real-time direct messages between two friends."
+    },
+    "/clans/{clanId}": {
+      "schema": {
+        "$ref": "#/entities/Clan"
+      },
+      "description": "Tactical clans with unique normalized clanId, max 7 members, level progression, and daily missions."
     }
   }
 }

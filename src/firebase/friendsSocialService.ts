@@ -389,3 +389,54 @@ export async function sendDirectChatMessage(
     handleFirestoreError(err, OperationType.WRITE, `direct_chats/${chatId}`);
   }
 }
+
+const FRIEND_ONLINE_WINDOW_MS = 90 * 1000;
+
+export function subscribeFriendsOnlineStatus(
+  friendUids: string[],
+  onUpdate: (onlineMap: Record<string, boolean>) => void
+): () => void {
+  const uniqueUids = Array.from(new Set(friendUids.filter(Boolean))).slice(0, 20);
+  if (uniqueUids.length === 0) {
+    onUpdate({});
+    return () => {};
+  }
+
+  const lastUpdatedMsByUid: Record<string, number> = {};
+  const recompute = () => {
+    const now = Date.now();
+    const nextMap: Record<string, boolean> = {};
+    for (const uid of uniqueUids) {
+      const updatedMs = lastUpdatedMsByUid[uid] || 0;
+      nextMap[uid] = updatedMs > 0 && now - updatedMs <= FRIEND_ONLINE_WINDOW_MS;
+    }
+    onUpdate(nextMap);
+  };
+
+  const unsubs: Unsubscribe[] = uniqueUids.map((uid) =>
+    onSnapshot(
+      doc(db, 'players', uid),
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data() as Partial<PlayerCloudProfile>;
+          const parsed = data.updatedAt ? Date.parse(data.updatedAt) : 0;
+          lastUpdatedMsByUid[uid] = Number.isFinite(parsed) ? parsed : 0;
+        } else {
+          lastUpdatedMsByUid[uid] = 0;
+        }
+        recompute();
+      },
+      () => {
+        lastUpdatedMsByUid[uid] = 0;
+        recompute();
+      }
+    )
+  );
+
+  const timerId = window.setInterval(recompute, 15000);
+  return () => {
+    window.clearInterval(timerId);
+    unsubs.forEach((u) => u());
+  };
+}
+

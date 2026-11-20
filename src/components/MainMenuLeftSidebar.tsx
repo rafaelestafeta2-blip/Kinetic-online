@@ -5,6 +5,7 @@ export type LeftSidebarButtonId =
   | 'INICIO'
   | 'LOJA'
   | 'RANKED'
+  | 'CLAN'
   | 'INVENTARIO'
   | 'ARSENAL'
   | 'CONTRATOS'
@@ -41,6 +42,13 @@ const SIDEBAR_ITEMS: Array<{
     label: 'RANKED',
     icon: (
       <path d="M19 5h-2V3H7v2H5c-1.1 0-2 .9-2 2v1c0 2.55 1.92 4.63 4.39 4.94.63 1.5 1.98 2.63 3.61 2.96V19H7v2h10v-2h-4v-3.1c1.63-.33 2.98-1.46 3.61-2.96C19.08 12.63 21 10.55 21 8V7c0-1.1-.9-2-2-2z" />
+    ),
+  },
+  {
+    id: 'CLAN',
+    label: 'CLÃ TÁTICO',
+    icon: (
+      <path d="M12 2L4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5l-8-3zm0 4.5l2.12 4.3 4.74.69-3.43 3.34.81 4.72L12 17.32l-4.24 2.23.81-4.72-3.43-3.34 4.74-.69L12 6.5z" />
     ),
   },
   {

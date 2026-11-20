@@ -382,6 +382,7 @@ export const SquadFormation3DCanvas: React.FC<SquadFormation3DCanvasProps> = ({
       pivot.updateMatrixWorld(true);
       alignWeaponPropToMixamoHands(weaponProp, pivot, rHandBone, lHandBone);
 
+      const isLiveArrival = activeRuntimes.size > 0;
       activeRuntimes.set(slotIdx, {
         slotIndex: slotIdx,
         uid: spec.uid,
@@ -395,7 +396,7 @@ export const SquadFormation3DCanvas: React.FC<SquadFormation3DCanvasProps> = ({
         idleAction,
         isWalkingIn: true,
         entryElapsedSec: 0,
-        walkDelaySec: slotCfg.walkDelaySec,
+        walkDelaySec: isLiveArrival ? 0 : slotCfg.walkDelaySec,
         walkDurationSec: slotCfg.walkDurationSec,
         startZ: slotCfg.startZ,
         targetX: slotCfg.x,
@@ -406,9 +407,9 @@ export const SquadFormation3DCanvas: React.FC<SquadFormation3DCanvasProps> = ({
 
     const syncAllSlots = (list: SquadFormationMemberSpec[]) => {
       if (disposed || !assetsReady) return;
-      const desiredCount = Math.min(FORMATION_SLOTS.length, Math.max(1, list.length));
+      const desiredCount = Math.min(FORMATION_SLOTS.length, list.length);
 
-      // Remove slots that left the squad
+      // Remove slots for players who left the squad
       for (const [slotIdx, rt] of activeRuntimes.entries()) {
         if (slotIdx >= desiredCount) {
           rt.mixer.stopAllAction();

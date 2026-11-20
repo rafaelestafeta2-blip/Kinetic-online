@@ -33,6 +33,7 @@ import {
 import { subscribeDailyContracts } from '../progression/dailyContractsSystem';
 import { DrillMode, WeaponId } from '../types/game';
 import { ActiveSquadDockBar } from './ActiveSquadDockBar';
+import { ClanCenterModal, ClanCenterTab } from './ClanCenterModal';
 import { CompetitiveRankedScreen } from './CompetitiveRankedScreen';
 import { DailyContractsModal } from './DailyContractsModal';
 import { DownloadCenterModal } from './DownloadCenterModal';
@@ -119,6 +120,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showFriendsModal, setShowFriendsModal] = useState(false);
   const [showDownloadCenter, setShowDownloadCenter] = useState(false);
+  const [clanModalTab, setClanModalTab] = useState<ClanCenterTab | null>(null);
   const [socialBadgeCount, setSocialBadgeCount] = useState(0);
   const [showOnlineLobby, setShowOnlineLobby] = useState(false);
   const [showSquadRoom, setShowSquadRoom] = useState(false);
@@ -233,7 +235,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     const existing = getActiveOnlineRoom();
     if (existing) {
       if (existing.hostUid === getLocalEffectiveUid() && !existing.isSearchingMatch) {
-        updateSquadRoomConfig(targetMode, queueType);
+        updateSquadRoomConfig(targetMode, queueType, isPrivate);
       }
       setShowSquadRoom(true);
       return;
@@ -324,6 +326,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             onOpenBattlePassTab={() => setActiveTab('BATTLE_PASS')}
             onOpenEventsModal={() => setShowEventsModal(true)}
             onOpenContractsModal={() => setShowContractsModal(true)}
+            onOpenClanModal={() => setClanModalTab('OVERVIEW')}
             contractsBadgeCount={contractsBadgeCount}
             onHover={handleHover}
           />
@@ -462,6 +465,13 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         isOpen={showSquadRoom}
         onMinimize={() => setShowSquadRoom(false)}
         onLeaveRoom={() => setShowSquadRoom(false)}
+        onOpenClanModal={(tab) => setClanModalTab(tab)}
+      />
+
+      <ClanCenterModal
+        isOpen={clanModalTab !== null}
+        initialTab={clanModalTab || 'OVERVIEW'}
+        onClose={() => setClanModalTab(null)}
       />
 
       <ActiveSquadDockBar

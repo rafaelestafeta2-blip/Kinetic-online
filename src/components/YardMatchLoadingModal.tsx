@@ -2,6 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { soundEngine } from '../audio/soundEngine';
 import { BLACKTHORN_ROSTER, VANGUARD_ROSTER } from '../data/matchRoster';
 import {
+  getActivePlayerClanSummary,
+  subscribeClanService,
+} from '../firebase/clanService';
+import {
   getCloudSyncState,
   getPlayerCallsign,
   subscribePlayerProfile,
@@ -16,6 +20,11 @@ import { TACTICAL_ACHIEVEMENTS } from '../progression/achievementsData';
 import { getPlayerInventoryState } from '../progression/loadoutSystem';
 import { DrillMode } from '../types/game';
 import { isMapSpawnHarness } from '../three/mapModeUtils';
+import {
+  ClanEmblemIcon,
+  ClanEmblemId,
+  CLAN_EMBLEM_CATALOG,
+} from './ClanEmblemIcons';
 import {
   BlackthornTeamEmblem,
   OperatorTacticalAvatar,
@@ -36,6 +45,8 @@ type LoadingRow = {
   isPlayer?: boolean;
   avatarDataUrl?: string;
   rankLevel: number;
+  clanName?: string;
+  clanEmblemId?: ClanEmblemId;
   bannerTitle?: string;
   bannerIcon?: string;
   bannerTier?: 'BRONZE' | 'SILVER' | 'GOLD' | 'PLATINUM';
@@ -117,7 +128,11 @@ const LoadingOperatorRow: React.FC<{
         }`}
       >
         <div className="min-w-0">
-          <div className="flex items-center gap-1.5 min-w-0">
+          <div
+            className={`flex items-center gap-1.5 min-w-0 ${
+              flip ? 'flex-row-reverse' : ''
+            }`}
+          >
             <WarfaceRankIcon level={op.rankLevel} className="w-3.5 h-3.5 shrink-0" />
             <div
               className={`text-[10px] sm:text-xs font-display font-black tracking-wide truncate ${
@@ -126,10 +141,29 @@ const LoadingOperatorRow: React.FC<{
             >
               {op.callsign}
             </div>
+            {op.clanName && (
+              <span
+                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-950/80 border border-red-500/45 shrink-0 ${
+                  flip ? 'flex-row-reverse' : ''
+                }`}
+              >
+                <ClanEmblemIcon
+                  emblemId={op.clanEmblemId || 'alpha_wolf'}
+                  className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0"
+                />
+                <span className="font-display font-black text-[8px] sm:text-[9px] text-[#ff4d4d] tracking-wide truncate max-w-[68px] sm:max-w-[90px]">
+                  {op.clanName}
+                </span>
+              </span>
+            )}
           </div>
           <div
             className={`text-[8px] sm:text-[9px] font-mono uppercase tracking-wider truncate ${
-              op.isReady ? 'text-emerald-300 font-bold' : team === 'VANGUARD' ? 'text-sky-300/90' : 'text-red-300/90'
+              op.isReady
+                ? 'text-emerald-300 font-bold'
+                : team === 'VANGUARD'
+                  ? 'text-sky-300/90'
+                  : 'text-red-300/90'
             }`}
           >
             Lv.{op.rankLevel} · {op.title}
@@ -184,6 +218,7 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
   const [statusText, setStatusText] = useState('INICIALIZANDO THREE.LOADINGMANAGER & DRACOLOADER...');
   const [onlineRoom, setOnlineRoom] = useState<OnlineRoomState | null>(null);
   const [profile, setProfile] = useState(() => getCloudSyncState().profile);
+  const [localClan, setLocalClan] = useState(() => getActivePlayerClanSummary());
 
   const completedRef = useRef(false);
   const localMapReadyRef = useRef(false);
@@ -249,9 +284,13 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
   useEffect(() => {
     const unsubRoom = subscribeOnlineRoom((room) => setOnlineRoom(room));
     const unsubProfile = subscribePlayerProfile((sync) => setProfile(sync.profile));
+    const unsubClan = subscribeClanService(() => {
+      setLocalClan(getActivePlayerClanSummary());
+    });
     return () => {
       unsubRoom();
       unsubProfile();
+      unsubClan();
     };
   }, []);
 
@@ -485,6 +524,10 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
     [profile.unlockedAchievements]
   );
 
+  const defaultVanguardClanName = localClan?.clanName || 'AlphaGym';
+  const defaultVanguardClanEmblem: ClanEmblemId =
+    localClan?.clanEmblemId || 'alpha_wolf';
+
   const vanguardDisplay: LoadingRow[] = isOnline
     ? onlinePlayers
         .filter((p) => p.team === 'VANGUARD')
@@ -499,6 +542,13 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
             isReady: ready,
             avatarDataUrl: (isLocal ? profile.avatarDataUrl : undefined) || p.avatarDataUrl,
             rankLevel: p.rankLevel || (isLocal ? profile.rankLevel : 1),
+            clanName:
+              (isLocal ? localClan?.clanName : undefined) ||
+              p.clanName ||
+              defaultVanguardClanName,
+            clanEmblemId: ((isLocal ? localClan?.clanEmblemId : undefined) ||
+              p.clanEmblemId ||
+              defaultVanguardClanEmblem) as ClanEmblemId,
             bannerTitle: isLocal ? showcase?.title : undefined,
             bannerIcon: isLocal ? showcase?.icon : undefined,
             bannerTier: isLocal ? showcase?.tier : undefined,
@@ -514,6 +564,8 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
         isReady: isArenaReady,
         avatarDataUrl: op.isPlayer ? profile.avatarDataUrl : undefined,
         rankLevel: op.isPlayer ? profile.rankLevel : 55 + idx * 12,
+        clanName: defaultVanguardClanName,
+        clanEmblemId: defaultVanguardClanEmblem,
         bannerTitle: op.isPlayer ? showcase?.title : undefined,
         bannerIcon: op.isPlayer ? showcase?.icon : undefined,
         bannerTier: op.isPlayer ? showcase?.tier : undefined,
@@ -533,12 +585,24 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
             isReady: ready,
             avatarDataUrl: (isLocal ? profile.avatarDataUrl : undefined) || p.avatarDataUrl,
             rankLevel: p.rankLevel || (isLocal ? profile.rankLevel : 1),
+            clanName:
+              (isLocal ? localClan?.clanName : undefined) ||
+              p.clanName ||
+              'BlackthornLegion',
+            clanEmblemId: ((isLocal ? localClan?.clanEmblemId : undefined) ||
+              p.clanEmblemId ||
+              'crimson_skull') as ClanEmblemId,
           };
         })
     : BLACKTHORN_ROSTER.map((op, idx) => ({
         ...op,
         isReady: isArenaReady,
         rankLevel: 48 + idx * 11,
+        clanName: idx < 3 ? 'BlackthornLegion' : 'CrimsonVipers',
+        clanEmblemId: (
+          CLAN_EMBLEM_CATALOG[(idx + 1) % CLAN_EMBLEM_CATALOG.length]?.id ||
+          'crimson_skull'
+        ) as ClanEmblemId,
       }));
 
   return (

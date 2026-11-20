@@ -13,6 +13,10 @@ export interface OnlinePlayerState {
   weaponId: WeaponId;
   weaponSkinId?: string;
   classId?: WarfaceClassId;
+  clanName?: string;
+  clanTag?: string;
+  clanEmblemId?: string;
+  clanLevel?: number;
   x: number;
   y: number;
   z: number;

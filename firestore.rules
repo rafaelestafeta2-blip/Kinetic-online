@@ -452,6 +452,33 @@ service cloud.firestore {
       allow delete: if isOwner(userId) && isValidId(userId);
     }
 
+    function isValidClan(data, clanId) {
+      return data.keys().hasAll([
+          'clanId', 'name', 'tag', 'emblemId', 'motto',
+          'ownerUid', 'ownerCallsign', 'clanXp', 'clanLevel',
+          'memberUids', 'members', 'dailyState', 'updatedAtMs', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'clanId', 'name', 'tag', 'emblemId', 'motto',
+          'ownerUid', 'ownerCallsign', 'clanXp', 'clanLevel',
+          'memberUids', 'members', 'dailyState', 'updatedAtMs', 'createdAt'
+        ])
+        && data.clanId is string && data.clanId == clanId && data.clanId.size() >= 3 && data.clanId.size() <= 24 && data.clanId.matches('^[a-z0-9_\\-]+$')
+        && data.name is string && data.name.size() >= 3 && data.name.size() <= 18
+        && data.tag is string && data.tag.size() >= 2 && data.tag.size() <= 4 && data.tag.matches('^[A-Z0-9]+$')
+        && data.emblemId is string && data.emblemId.size() >= 3 && data.emblemId.size() <= 32
+        && data.motto is string && data.motto.size() <= 80
+        && data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128
+        && data.ownerCallsign is string && data.ownerCallsign.size() >= 1 && data.ownerCallsign.size() <= 32
+        && isNonNegativeNumber(data.clanXp) && data.clanXp <= 50000000
+        && data.clanLevel is number && data.clanLevel >= 1 && data.clanLevel <= 50
+        && data.memberUids is list && data.memberUids.size() >= 1 && data.memberUids.size() <= 7 && data.memberUids[0] is string
+        && data.members is map && data.members.size() >= 1 && data.members.size() <= 7
+        && data.dailyState is map && data.dailyState.size() <= 8
+        && isNonNegativeNumber(data.updatedAtMs)
+        && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 40;
+    }
+
     match /direct_chats/{chatId} {
       allow get: if isAuthenticated()
         && isValidChatId(chatId)
@@ -468,6 +495,40 @@ service cloud.firestore {
         && incoming().participants == existing().participants
         && incoming().diff(existing()).affectedKeys().hasOnly(['messages', 'updatedAtMs']);
       allow delete: if false;
+    }
+
+    match /clans/{clanId} {
+      allow get: if isAuthenticated() && isValidId(clanId);
+      allow list: if isAuthenticated() && existing().clanLevel >= 1;
+      allow create: if isAuthenticated()
+        && isValidId(clanId)
+        && isValidClan(incoming(), clanId)
+        && incoming().ownerUid == request.auth.uid
+        && incoming().clanXp == 0
+        && incoming().clanLevel == 1
+        && incoming().memberUids.size() == 1
+        && incoming().memberUids[0] == request.auth.uid
+        && request.auth.uid in incoming().members;
+      allow update: if isAuthenticated()
+        && isValidId(clanId)
+        && isValidClan(incoming(), clanId)
+        && incoming().clanId == existing().clanId
+        && incoming().name == existing().name
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().clanXp >= existing().clanXp
+        && incoming().clanXp <= existing().clanXp + 10000
+        && (
+          existing().ownerUid == request.auth.uid
+          || request.auth.uid in existing().members
+          || (
+            existing().members.size() < 7
+            && incoming().members.diff(existing().members).affectedKeys().hasOnly([request.auth.uid])
+          )
+        );
+      allow delete: if isAuthenticated()
+        && isValidId(clanId)
+        && existing().ownerUid == request.auth.uid;
     }
   }
 }

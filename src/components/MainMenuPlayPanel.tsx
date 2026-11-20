@@ -30,6 +30,7 @@ interface MainMenuPlayPanelProps {
   onOpenBattlePassTab: () => void;
   onOpenEventsModal: () => void;
   onOpenContractsModal: () => void;
+  onOpenClanModal?: () => void;
   contractsBadgeCount?: number;
   onHover: () => void;
 }
@@ -51,6 +52,7 @@ export const MainMenuPlayPanel: React.FC<MainMenuPlayPanelProps> = ({
   onOpenBattlePassTab,
   onOpenEventsModal,
   onOpenContractsModal,
+  onOpenClanModal,
   contractsBadgeCount = 0,
   onHover,
 }) => {
@@ -72,6 +74,9 @@ export const MainMenuPlayPanel: React.FC<MainMenuPlayPanelProps> = ({
         break;
       case 'RANKED':
         onOpenRankedScreen('DUST2_BOMB_5V5');
+        break;
+      case 'CLAN':
+        onOpenClanModal?.();
         break;
       case 'INVENTARIO':
         onOpenInventory();

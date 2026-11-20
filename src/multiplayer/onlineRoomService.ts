@@ -1,4 +1,5 @@
 import { collection, deleteField, doc, getDoc, getDocs, limit, onSnapshot, query, setDoc, Unsubscribe, updateDoc, where } from 'firebase/firestore';
+import { getActivePlayerClanSummary } from '../firebase/clanService';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase/firebaseClient';
 import { getCloudSyncState } from '../firebase/playerCloudSync';
 import { registerMatchProgressionGate } from '../progression/matchProgressionGate';
@@ -199,6 +200,7 @@ function getEffectiveLocalUid(): string {
 function createInitialLocalPlayerState(arenaMode: DrillMode, team: OnlineTeam, slotIndex = 0): OnlinePlayerState {
   const sync = getCloudSyncState();
   const inv = getPlayerInventoryState();
+  const clan = getActivePlayerClanSummary();
   const uid = getEffectiveLocalUid();
   const spawn = getTeamSpawnForArena(arenaMode, team, slotIndex);
   const mmr = Number(sync.profile.mmr) > 0 ? Number(sync.profile.mmr) : 2450;
@@ -212,6 +214,10 @@ function createInitialLocalPlayerState(arenaMode: DrillMode, team: OnlineTeam, s
     weaponId: sync.profile.activeWeapon || 'M4_CARBINE',
     weaponSkinId: getEquippedWeaponSkinId(sync.profile.activeWeapon || 'M4_CARBINE'),
     classId: inv.selectedClass || 'FUZILEIRO',
+    ...(clan.clanName ? { clanName: clan.clanName } : {}),
+    ...(clan.clanTag ? { clanTag: clan.clanTag } : {}),
+    ...(clan.clanEmblemId ? { clanEmblemId: clan.clanEmblemId } : {}),
+    ...(clan.clanLevel ? { clanLevel: clan.clanLevel } : {}),
     x: spawn.x, y: spawn.y, z: spawn.z, yaw: spawn.yaw, pitch: 0,
     health: 100, armor: 100, isDown: false, isCrouching: false, isFiring: false,
     kills: 0, deaths: 0, assists: 0, headshots: 0, loadProgress: 0, isLoaded: false,
@@ -240,6 +246,10 @@ function mergePreservingFresherPlayers(
         ...remote,
         ...existing,
         classId: existing.classId || remote.classId || 'FUZILEIRO',
+        clanName: existing.clanName || remote.clanName,
+        clanTag: existing.clanTag || remote.clanTag,
+        clanEmblemId: existing.clanEmblemId || remote.clanEmblemId,
+        clanLevel: existing.clanLevel || remote.clanLevel,
         isReady: typeof existing.isReady === 'boolean' ? existing.isReady : Boolean(remote.isReady),
         loadProgress: Math.max(existing.loadProgress || 0, remote.loadProgress || 0),
         isLoaded: Boolean(existing.isLoaded || remote.isLoaded),
@@ -249,6 +259,10 @@ function mergePreservingFresherPlayers(
         ...existing,
         ...remote,
         classId: remote.classId || existing.classId || 'FUZILEIRO',
+        clanName: remote.clanName || existing.clanName,
+        clanTag: remote.clanTag || existing.clanTag,
+        clanEmblemId: remote.clanEmblemId || existing.clanEmblemId,
+        clanLevel: remote.clanLevel || existing.clanLevel,
         isReady: typeof remote.isReady === 'boolean' ? remote.isReady : Boolean(existing.isReady),
       };
     }
@@ -1090,11 +1104,13 @@ export function sendSquadChatMessage(rawText: string): boolean {
 
 export function updateSquadRoomConfig(
   arenaMode: DrillMode,
-  queueType?: MatchQueueType
+  queueType?: MatchQueueType,
+  isPrivate?: boolean
 ): void {
   if (!activeRoom) return;
   activeRoom.arenaMode = arenaMode;
   if (queueType) activeRoom.queueType = queueType;
+  if (typeof isPrivate === 'boolean') activeRoom.isPrivate = isPrivate;
   activeRoom.isSearchingMatch = false;
   activeRoom.searchStartedAtMs = null;
   activeRoom.updatedAtMs = Date.now();
@@ -1108,9 +1124,29 @@ export function updateSquadRoomConfig(
   });
 }
 
+const OFFICIAL_AUTO_DRAW_5V5_MAPS: DrillMode[] = [
+  'DUST2_BOMB_5V5',
+  'ASSAULT_BOMB_5V5',
+  'INDUSTRIA_BOMB_5V5',
+  'HANGAR_BOMB_5V5',
+  'EASTERN_CITY_BOMB_5V5',
+  'MIRAGE_ANUBIS_BOMB_5V5',
+];
+
+export function pickRandomOfficial5v5Map(currentMode?: DrillMode): DrillMode {
+  if (currentMode === 'STATION_TDM_5V5') return 'STATION_TDM_5V5';
+  const idx = Math.floor(Math.random() * OFFICIAL_AUTO_DRAW_5V5_MAPS.length);
+  return OFFICIAL_AUTO_DRAW_5V5_MAPS[idx] || 'DUST2_BOMB_5V5';
+}
+
 export function startSquadMatchSearch(): void {
   if (!activeRoom) return;
   const nowMs = Date.now();
+  // Ranked and Classic rooms draw the 5v5 map automatically (only Private Rooms allow manual map choice)
+  if (!activeRoom.isPrivate && activeRoom.arenaMode !== 'STATION_TDM_5V5') {
+    const drawnMap = pickRandomOfficial5v5Map(activeRoom.arenaMode);
+    activeRoom.arenaMode = drawnMap;
+  }
   activeRoom.isSearchingMatch = true;
   activeRoom.searchStartedAtMs = nowMs;
   activeRoom.updatedAtMs = nowMs;
