@@ -25,6 +25,8 @@ import {
 } from './engineMathTemps';
 
 const _baseShotDir = new THREE.Vector3();
+let lastShellAudioMs = 0;
+let lastAutoHudEmitMs = 0;
 
 /** Temporarily rewind online peer meshes to attacker-time pose for fairer hit checks. */
 function withRewoundOnlinePeers<T>(engine: any, rewindMs: number, fn: () => T): T {
@@ -236,6 +238,7 @@ export function executeSingleShot(engine: any): void {
       engine.state.activeWeapon === 'SHOTGUN_SPAS';
     const isRpg = engine.state.activeWeapon === 'RPG7_LAUNCHER';
 
+    let shotInterval = 0.075;
     if (isSniper) {
       const boltDur =
         engine.state.activeWeapon === 'SNIPER_HEAVY'
@@ -245,7 +248,7 @@ export function executeSingleShot(engine: any): void {
             : engine.state.activeWeapon === 'SNIPER_BOLT'
               ? 1.32
               : 1.08;
-      engine.fireCooldown = boltDur + 0.1;
+      shotInterval = boltDur + 0.1;
       engine.sniperChamberDuration = boltDur;
       if (engine.state.currentMagRounds > 0) {
         engine.sniperChamberTimer = boltDur;
@@ -260,28 +263,36 @@ export function executeSingleShot(engine: any): void {
         engine.state.boltLockedBack = true;
       }
     } else if (isRpg) {
-      engine.fireCooldown = 0.9;
+      shotInterval = 0.9;
     } else if (isShotgun) {
-      engine.fireCooldown =
-        engine.state.activeWeapon === 'SHOTGUN_12' ? 0.68 : 0.32;
+      shotInterval = engine.state.activeWeapon === 'SHOTGUN_12' ? 0.68 : 0.3;
     } else {
-      engine.fireCooldown =
+      shotInterval =
         engine.state.activeWeapon === 'SMG_45'
-          ? 0.066
+          ? 0.064
           : engine.state.activeWeapon === 'SMG_MP5'
-            ? 0.072
+            ? 0.07
             : engine.state.activeWeapon === 'AK47_RIFLE'
-              ? 0.095
+              ? 0.088
               : engine.state.activeWeapon === 'AK12_RIFLE'
-                ? 0.086
+                ? 0.082
                 : engine.state.activeWeapon === 'S_MILITARY'
-                  ? 0.08
-                  : engine.state.activeWeapon === 'M1911_PISTOL'
-                    ? 0.14
-                    : engine.state.activeWeapon === 'P50_PISTOL'
-                      ? 0.18
-                      : 0.078;
+                  ? 0.078
+                  : engine.state.activeWeapon === 'L49_LMG'
+                    ? 0.08
+                    : engine.state.activeWeapon === 'M1911_PISTOL'
+                      ? 0.135
+                      : engine.state.activeWeapon === 'P50_PISTOL'
+                        ? 0.175
+                        : 0.075;
     }
+    // Carry over sub-frame negative fireCooldown remainder so rapid full-auto maintains
+    // a rock-solid, natural RPM cadence even when frame times fluctuate on mobile.
+    const carryOver =
+      engine.fireCooldown < 0
+        ? Math.max(-shotInterval * 0.6, engine.fireCooldown)
+        : 0;
+    engine.fireCooldown = shotInterval + carryOver;
     engine.state.shotsFired += 1;
 
     // Consume chambered round and cycle bolt carrier
@@ -315,35 +326,43 @@ export function executeSingleShot(engine: any): void {
 
     // Muzzle flash, GLB embedded fire animation (Fire / Fire_ADS) & bolt carrier kick
     engine.weaponRig.triggerFireAnimation(wasScopedAtShot);
-    engine.boltCycleOffset = 0.052;
-    engine.muzzleFlashTimer = engine.state.suppressorAttached ? 0.022 : 0.056;
+    engine.boltCycleOffset = 0.046;
+    engine.muzzleFlashTimer = engine.state.suppressorAttached ? 0.018 : 0.036;
     engine.weaponRig.muzzleFlashGroup.rotation.z = Math.random() * Math.PI * 2;
-    const randFlashScale = 0.92 + Math.random() * 0.36;
+    const randFlashScale = 0.88 + Math.random() * 0.32;
     engine.weaponRig.muzzleFlashGroup.scale.set(
       randFlashScale,
       randFlashScale,
-      0.95 + Math.random() * 0.45
+      0.92 + Math.random() * 0.38
     );
 
-    // Eject spinning brass casing from ejection port + 3D brass bounce sound on concrete (RPG-7 não ejeta cápsula)
+    // Eject spinning brass casing from ejection port + throttled 3D brass bounce sound
+    const nowPerfMs = performance.now();
     if (!isRpg) {
       engine.weaponRig.ejectionPortWorldPos.getWorldPosition(_worldPos);
       engine.camera.getWorldDirection(_forward);
       _right.crossVectors(_forward, _up).normalize();
       engine.fxPool.spawnBrassCasing(_worldPos, _right, _up);
-      playShellCasingDrop3D(
-        engine.playerPos,
-        engine.playerPos,
-        engine.yaw,
-        engine.state.activeWeapon,
-        true
-      );
+      if (nowPerfMs - lastShellAudioMs >= 145) {
+        lastShellAudioMs = nowPerfMs;
+        playShellCasingDrop3D(
+          engine.playerPos,
+          engine.playerPos,
+          engine.yaw,
+          engine.state.activeWeapon,
+          true
+        );
+      }
     }
 
     // Perform Ballistic Raycast FIRST (aligned with exact current Sight/Crosshair vector before recoil kick & unscope!)
+    // Update only camera chain without force=true so we don't recursively rebuild the entire 1P weapon/arms skeleton 13x/sec.
     engine.yawObject.rotation.y = engine.yaw;
     engine.pitchObject.rotation.x = engine.pitch;
-    engine.camera.updateMatrixWorld(true);
+    engine.yawObject.updateMatrix();
+    engine.pitchObject.updateMatrix();
+    engine.camera.updateMatrix();
+    engine.yawObject.updateMatrixWorld(false);
 
     engine.camera.getWorldPosition(_rayOrigin);
     engine.camera.getWorldDirection(_rayDir);
@@ -392,16 +411,17 @@ export function executeSingleShot(engine: any): void {
     const spray = getSprayOffset(engine.state.activeWeapon as WeaponId, sprayIdx);
     const jitter = 0.15 + Math.random() * 0.2;
 
+    // Crisp per-shot kick with a tighter Z cap so rapid full-auto visibly snaps cleanly per round
     engine.recoilKickZ = Math.min(
-      engine.recoilKickZ + feel.kickZ * pitchMult,
-      0.092
+      engine.recoilKickZ * 0.65 + feel.kickZ * pitchMult,
+      0.058
     );
     engine.recoilPitch += (feel.kickPitch + spray.pitch * jitter) * pitchMult;
     engine.recoilYaw +=
       (spray.yaw + (Math.random() - 0.5) * feel.kickYaw) * yawMult;
     engine.cameraShake = Math.min(
       engine.cameraShake + feel.shake * pitchMult,
-      0.02
+      0.016
     );
     engine.weaponFeelRecovery = feel.recovery;
 
@@ -528,5 +548,15 @@ export function executeSingleShot(engine: any): void {
       engine.burstRemaining -= 1;
     }
 
-    engine.emitHud();
+    // Throttle React HUD emit during full-auto spray so ammo counter stays smooth
+    // without triggering 13+ full React reconciliations/sec on mobile.
+    const mustEmitNow =
+      engine.state.boltLockedBack ||
+      engine.state.currentMagRounds <= 3 ||
+      engine.state.fireMode !== 'AUTO' ||
+      nowPerfMs - lastAutoHudEmitMs >= 75;
+    if (mustEmitNow) {
+      lastAutoHudEmitMs = nowPerfMs;
+      engine.emitHud();
+    }
 }

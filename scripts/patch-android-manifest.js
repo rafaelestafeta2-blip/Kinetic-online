@@ -240,6 +240,7 @@ public class MainActivity extends BridgeActivity {
                 });
 
         super.onCreate(savedInstanceState);
+        setVolumeControlStream(AudioManager.STREAM_MUSIC);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             WindowManager.LayoutParams lp = getWindow().getAttributes();
@@ -397,6 +398,24 @@ public class MainActivity extends BridgeActivity {
         }
 
         /**
+         * Keeps Android AudioManager in MODE_NORMAL + STREAM_MUSIC while mic is active
+         * so gunshots and footsteps stay loud and crisp (no phone-call muffling).
+         */
+        @JavascriptInterface
+        public void keepMediaAudioWhileMicActive() {
+            runOnUiThread(() -> {
+                try {
+                    setVolumeControlStream(AudioManager.STREAM_MUSIC);
+                    AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+                    if (am != null) {
+                        am.setMode(AudioManager.MODE_NORMAL);
+                    }
+                } catch (Exception ignored) {
+                }
+            });
+        }
+
+        /**
          * Restores Android AudioManager from MODE_IN_COMMUNICATION (low-volume voice call
          * routing triggered by WebRTC getUserMedia) back to MODE_NORMAL full media volume.
          */
@@ -404,6 +423,7 @@ public class MainActivity extends BridgeActivity {
         public void restoreMediaAudioMode() {
             runOnUiThread(() -> {
                 try {
+                    setVolumeControlStream(AudioManager.STREAM_MUSIC);
                     AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
                     if (am != null) {
                         am.setMode(AudioManager.MODE_NORMAL);
@@ -839,5 +859,65 @@ if (fs.existsSync(appBuildGradlePath)) {
     }
   }
 }
+
+// ============================================================================
+// 6. Install KINETIC Premium Android Launcher Icons (replaces default Capacitor icon)
+// ============================================================================
+const androidResDir = path.resolve('android/app/src/main/res');
+const sourceIconsDir = path.resolve('assets/android-icons');
+if (fs.existsSync(androidResDir) && fs.existsSync(sourceIconsDir)) {
+  const densities = ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi'];
+  let copiedCount = 0;
+
+  for (const dpi of densities) {
+    const srcMipmap = path.join(sourceIconsDir, `mipmap-${dpi}`);
+    const dstMipmap = path.join(androidResDir, `mipmap-${dpi}`);
+    if (!fs.existsSync(srcMipmap)) continue;
+    fs.mkdirSync(dstMipmap, { recursive: true });
+    for (const fileName of [
+      'ic_launcher.png',
+      'ic_launcher_round.png',
+      'ic_launcher_foreground.png',
+    ]) {
+      const srcFile = path.join(srcMipmap, fileName);
+      if (fs.existsSync(srcFile)) {
+        fs.copyFileSync(srcFile, path.join(dstMipmap, fileName));
+        copiedCount += 1;
+      }
+    }
+  }
+
+  // Adaptive icon background color (#090B0E obsidian carbon)
+  const valuesDir = path.join(androidResDir, 'values');
+  fs.mkdirSync(valuesDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(valuesDir, 'ic_launcher_background.xml'),
+    `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#090B0E</color>
+</resources>
+`,
+    'utf8'
+  );
+
+  // Adaptive icon XML definitions for Android 8+ (API 26+)
+  const anyDpiDir = path.join(androidResDir, 'mipmap-anydpi-v26');
+  fs.mkdirSync(anyDpiDir, { recursive: true });
+  const adaptiveXml = `<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+</adaptive-icon>
+`;
+  fs.writeFileSync(path.join(anyDpiDir, 'ic_launcher.xml'), adaptiveXml, 'utf8');
+  fs.writeFileSync(path.join(anyDpiDir, 'ic_launcher_round.xml'), adaptiveXml, 'utf8');
+
+  console.log(
+    `[patch-manifest] Installed KINETIC premium Android launcher icons (${copiedCount} PNGs + adaptive v26 XML)`
+  );
+} else {
+  console.log('[patch-manifest] Android res or assets/android-icons not found, skipping icon install.');
+}
+
 
 

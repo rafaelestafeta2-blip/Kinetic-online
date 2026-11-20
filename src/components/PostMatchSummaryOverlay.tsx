@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { stopMatchEndFanfare } from '../audio/characterAndBombAudio';
 import { getCloudSyncState } from '../firebase/playerCloudSync';
+import { isOnlineMatchActive } from '../multiplayer/onlineRoomService';
 import { SquadOperatorStats, WeaponId, YardBombHudInfo } from '../types/game';
 import { bindTap } from './hudTapUtils';
 import { PostMatchRewardsOverlay } from './PostMatchRewardsOverlay';
@@ -9,6 +10,7 @@ import { BlackthornTeamEmblem, VanguardTeamEmblem } from './WarfaceClassIcons';
 interface PostMatchSummaryOverlayProps {
   yardBomb: YardBombHudInfo;
   onCloseToMenu?: () => void;
+  onReturnToSquadRoom?: () => void;
 }
 
 const WEAPON_LABELS: Record<WeaponId, string> = {
@@ -43,10 +45,12 @@ const FALLBACK_SQUAD: SquadOperatorStats[] = [
 export const PostMatchSummaryOverlay: React.FC<PostMatchSummaryOverlayProps> = ({
   yardBomb,
   onCloseToMenu,
+  onReturnToSquadRoom,
 }) => {
   const [statsModalOpen, setStatsModalOpen] = useState(false);
   const [showRewards, setShowRewards] = useState(false);
   const profile = getCloudSyncState().profile;
+  const hasActiveSquadRoom = isOnlineMatchActive();
 
   const isVictory = yardBomb.matchWinner === 'VANGUARD';
   const rawSquad =
@@ -75,6 +79,8 @@ export const PostMatchSummaryOverlay: React.FC<PostMatchSummaryOverlayProps> = (
     return (
       <PostMatchRewardsOverlay
         yardBomb={yardBomb}
+        hasActiveSquadRoom={hasActiveSquadRoom}
+        onReturnToSquadRoom={onReturnToSquadRoom}
         onContinue={() => onCloseToMenu?.()}
       />
     );
@@ -231,8 +237,8 @@ export const PostMatchSummaryOverlay: React.FC<PostMatchSummaryOverlayProps> = (
             })}
           </div>
 
-          {/* Coluna de Botões à Direita (Igual aos botões PLAY AGAIN / RETURN TO LOBBY da foto) */}
-          <div className="flex flex-row lg:flex-col gap-1.5 shrink-0 lg:w-48">
+          {/* Coluna de Botões à Direita */}
+          <div className="flex flex-row lg:flex-col gap-1.5 shrink-0 lg:w-52">
             <button
               type="button"
               {...bindTap(() => setStatsModalOpen(true))}
@@ -242,16 +248,38 @@ export const PostMatchSummaryOverlay: React.FC<PostMatchSummaryOverlayProps> = (
               <span>ESTATÍSTICAS</span>
             </button>
 
-            <button
-              type="button"
-              {...bindTap(handleCloseToLobby)}
-              className="flex-1 py-1.5 sm:py-2.5 px-3 sm:px-4 rounded bg-gradient-to-r from-[#56a85a] to-[#68b86b] hover:from-[#64b868] hover:to-[#77c87a] border border-emerald-300/60 text-slate-950 font-display font-black text-[11px] sm:text-sm tracking-wider uppercase flex items-center justify-center gap-1.5 shadow-[0_0_20px_rgba(86,168,90,0.4)] active:scale-95 transition-all cursor-pointer"
-            >
-              <span className="w-4 h-4 rounded-full bg-slate-950 text-emerald-400 flex items-center justify-center text-[10px] font-black">
-                ✕
-              </span>
-              <span>VOLTAR AO LOBBY</span>
-            </button>
+            {hasActiveSquadRoom && onReturnToSquadRoom ? (
+              <>
+                <button
+                  type="button"
+                  {...bindTap(() => {
+                    stopMatchEndFanfare();
+                    onReturnToSquadRoom();
+                  })}
+                  className="flex-1 py-1.5 sm:py-2 px-3 rounded bg-gradient-to-r from-[#56a85a] to-[#68b86b] hover:from-[#64b868] hover:to-[#77c87a] border border-emerald-300/60 text-slate-950 font-display font-black text-[11px] sm:text-xs tracking-wider uppercase flex items-center justify-center gap-1.5 shadow-[0_0_20px_rgba(86,168,90,0.4)] active:scale-95 transition-all cursor-pointer"
+                >
+                  <span>VOLTAR PARA A SALA</span>
+                </button>
+                <button
+                  type="button"
+                  {...bindTap(handleCloseToLobby)}
+                  className="flex-1 py-1.5 sm:py-2 px-3 rounded bg-red-950/75 hover:bg-red-900/80 border border-red-400/50 text-red-100 font-display font-bold text-[10px] sm:text-xs tracking-wider uppercase flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+                >
+                  <span>RECOMPENSAS / MENU</span>
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                {...bindTap(handleCloseToLobby)}
+                className="flex-1 py-1.5 sm:py-2.5 px-3 sm:px-4 rounded bg-gradient-to-r from-[#56a85a] to-[#68b86b] hover:from-[#64b868] hover:to-[#77c87a] border border-emerald-300/60 text-slate-950 font-display font-black text-[11px] sm:text-sm tracking-wider uppercase flex items-center justify-center gap-1.5 shadow-[0_0_20px_rgba(86,168,90,0.4)] active:scale-95 transition-all cursor-pointer"
+              >
+                <span className="w-4 h-4 rounded-full bg-slate-950 text-emerald-400 flex items-center justify-center text-[10px] font-black">
+                  ✕
+                </span>
+                <span>VOLTAR AO LOBBY</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

@@ -7,6 +7,8 @@ import { WarfaceRankIcon } from './WarfaceRankIcon';
 
 interface PostMatchRewardsOverlayProps {
   yardBomb: YardBombHudInfo;
+  hasActiveSquadRoom?: boolean;
+  onReturnToSquadRoom?: () => void;
   onContinue: () => void;
 }
 
@@ -32,6 +34,8 @@ const WEAPON_LABELS: Partial<Record<WeaponId, string>> = {
 
 export const PostMatchRewardsOverlay: React.FC<PostMatchRewardsOverlayProps> = ({
   yardBomb,
+  hasActiveSquadRoom = false,
+  onReturnToSquadRoom,
   onContinue,
 }) => {
   const profile = getCloudSyncState().profile;
@@ -164,13 +168,32 @@ export const PostMatchRewardsOverlay: React.FC<PostMatchRewardsOverlayProps> = (
         </div>
 
         <div className="px-3.5 pb-3 pt-2 sm:px-4 sm:pb-4 border-t border-white/10 shrink-0 bg-[#070b14]/90">
-          <button
-            type="button"
-            {...bindTap(onContinue)}
-            className="w-full py-2 sm:py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 font-display font-black tracking-wider uppercase text-xs sm:text-sm shadow-[0_0_20px_rgba(245,158,11,0.35)] active:scale-[0.98] cursor-pointer"
-          >
-            Continuar para o Lobby
-          </button>
+          {hasActiveSquadRoom && onReturnToSquadRoom ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button
+                type="button"
+                {...bindTap(onReturnToSquadRoom)}
+                className="w-full py-2 sm:py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-display font-black tracking-wider uppercase text-xs sm:text-sm shadow-[0_0_20px_rgba(16,185,129,0.4)] active:scale-[0.98] cursor-pointer"
+              >
+                VOLTAR PARA A SALA
+              </button>
+              <button
+                type="button"
+                {...bindTap(onContinue)}
+                className="w-full py-2 sm:py-2.5 rounded-xl bg-white/10 hover:bg-red-500/20 border border-white/20 hover:border-red-400/50 text-slate-200 font-display font-bold tracking-wider uppercase text-xs sm:text-sm active:scale-[0.98] cursor-pointer"
+              >
+                SAIR PARA O MENU
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              {...bindTap(onContinue)}
+              className="w-full py-2 sm:py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 font-display font-black tracking-wider uppercase text-xs sm:text-sm shadow-[0_0_20px_rgba(245,158,11,0.35)] active:scale-[0.98] cursor-pointer"
+            >
+              Continuar para o Menu
+            </button>
+          )}
         </div>
       </div>
     </div>

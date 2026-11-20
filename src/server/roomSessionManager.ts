@@ -16,8 +16,18 @@ export interface WsClientMeta {
   enqueuedAtMs: number;
 }
 
+export interface ServerSquadChatMessage {
+  id: string;
+  senderUid: string;
+  senderCallsign: string;
+  senderClassId: string;
+  text: string;
+  ts: number;
+}
+
 export interface ServerRoomMeta {
   roomId: string;
+  hostUid: string | null;
   queueType: ServerQueueType;
   arenaMode: string;
   isPrivate: boolean;
@@ -25,6 +35,10 @@ export interface ServerRoomMeta {
   averageMmr: number;
   serverConfirmedStart: boolean;
   status: 'WAITING' | 'PLAYING' | 'FINISHED';
+  isSearchingMatch: boolean;
+  searchStartedAtMs: number | null;
+  readyByUid: Map<string, boolean>;
+  chatHistory: ServerSquadChatMessage[];
   memberMmrs: Map<string, number>;
   memberPlayers: Map<string, Record<string, unknown>>;
 }
@@ -74,9 +88,14 @@ export function removeClientFromRoom(client: WsClientMeta): void {
   if (meta && client.uid) {
     meta.memberMmrs.delete(client.uid);
     meta.memberPlayers.delete(client.uid);
+    meta.readyByUid.delete(client.uid);
     recalculateRoomAverageMmr(meta);
     if (meta.memberMmrs.size < 10) {
       meta.serverConfirmedStart = false;
+    }
+    if (meta.hostUid === client.uid) {
+      const nextHost = meta.memberPlayers.keys().next().value ?? null;
+      meta.hostUid = nextHost;
     }
   }
 
@@ -92,6 +111,7 @@ export function removeClientFromRoom(client: WsClientMeta): void {
           type: 'PLAYER_LEFT',
           roomId,
           uid: client.uid,
+          hostUid: meta?.hostUid ?? null,
           averageMmr: meta?.averageMmr ?? 1000,
           ts: Date.now(),
         },

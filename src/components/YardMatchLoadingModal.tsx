@@ -25,6 +25,7 @@ import {
   WarfaceClassId,
 } from './WarfaceClassIcons';
 import { WarfaceRankIcon } from './WarfaceRankIcon';
+import { TeamVoiceCommsHud } from './TeamVoiceCommsHud';
 import { thumbForDrillMode } from './mapSelectThumbs';
 
 type LoadingRow = {
@@ -664,6 +665,11 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
       </div>
 
       <footer className="relative z-10 px-4 sm:px-8 pb-2.5 sm:pb-4 pt-1.5 bg-[#050811]/85 border-t border-white/10">
+        {isOnline && (
+          <div className="max-w-3xl mx-auto mb-2">
+            <TeamVoiceCommsHud variant="LOBBY" />
+          </div>
+        )}
         <div className="max-w-xl mx-auto flex flex-col items-center">
           <div className="flex items-center gap-2 text-[10px] sm:text-xs font-display font-bold tracking-[0.2em] text-sky-200 uppercase mb-1">
             <span>LOADING MATCH ({Math.round(progress)}%)</span>

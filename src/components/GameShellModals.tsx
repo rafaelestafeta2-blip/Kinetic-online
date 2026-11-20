@@ -4,6 +4,7 @@ import {
   loadControlSettings,
   saveControlSettings,
 } from '../controls/hudLayoutSettings';
+import { isOnlineMatchActive } from '../multiplayer/onlineRoomService';
 import { DrillMode, GyroMode, HudState } from '../types/game';
 import { ApkInstructionsModal } from './ApkInstructionsModal';
 import { HudLayoutEditorModal } from './HudLayoutEditorModal';
@@ -18,6 +19,7 @@ interface GameShellModalsProps {
   onResumeGame: () => void;
   onRestartDrill: () => void;
   onReturnToTitle: () => void;
+  onReturnToSquadRoom?: () => void;
   onSelectDrillMode: (mode: DrillMode) => void;
   onSetGyroMode: (mode: GyroMode) => void;
   onSetGyroSensitivity: (sens: number) => void;
@@ -58,10 +60,11 @@ const GYRO_MODES: [GyroMode, string][] = [
 export const GameShellModals: React.FC<GameShellModalsProps> = ({
   hud, fpsLimit, vibration, controlSettings: externalControlSettings,
   onUpdateControlSettings, onStartGame, onResumeGame, onRestartDrill,
-  onReturnToTitle, onSelectDrillMode, onSetGyroMode, onSetGyroSensitivity,
+  onReturnToTitle, onReturnToSquadRoom, onSelectDrillMode, onSetGyroMode, onSetGyroSensitivity,
   onSetLookSensitivity, onSetAdsSensitivity, onRecalibrateGyro,
   onToggleHaptics, onToggleFullscreen, onSetFpsLimit,
 }) => {
+  const hasActiveSquadRoom = isOnlineMatchActive();
   const [showApkModal, setShowApkModal] = useState(false);
   const [showHudEditor, setShowHudEditor] = useState(false);
   const [localControls, setLocalControls] = useState<ControlSettings>(() => loadControlSettings());
@@ -350,8 +353,13 @@ export const GameShellModals: React.FC<GameShellModalsProps> = ({
           <button type="button" onClick={onRestartDrill} className="min-h-[42px] px-5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-100 font-medium text-sm rounded-xl border border-white/10 transition-colors whitespace-nowrap shrink-0 cursor-pointer">
             Reiniciar Percurso
           </button>
+          {hasActiveSquadRoom && onReturnToSquadRoom && (
+            <button type="button" onClick={onReturnToSquadRoom} className="min-h-[42px] px-4 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 font-semibold text-sm rounded-xl border border-emerald-400/50 transition-colors whitespace-nowrap shrink-0 cursor-pointer">
+              Voltar para a Sala
+            </button>
+          )}
           <button type="button" onClick={onReturnToTitle} className="min-h-[42px] px-4 py-2 bg-transparent hover:bg-white/5 text-slate-300 font-medium text-sm rounded-xl border border-white/10 transition-colors whitespace-nowrap shrink-0 cursor-pointer">
-            Tela Inicial
+            {hasActiveSquadRoom ? 'Sair para o Menu' : 'Tela Inicial'}
           </button>
         </div>
       </div>

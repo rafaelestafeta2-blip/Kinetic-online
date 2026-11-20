@@ -1,8 +1,18 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { soundEngine } from '../audio/soundEngine';
 import { CloudSyncState } from '../firebase/playerCloudSync';
 import { RankDefinition } from '../progression/ranks';
 import { isVipBattlePassActive } from '../progression/vipBattlePassSystem';
+import {
+  AssetDownloadSnapshot,
+  getAssetDownloadSnapshot,
+  subscribeAssetDownloads,
+} from '../utils/assetDownloadTracker';
+import {
+  getResourcePacksSnapshot,
+  ResourcePacksSnapshot,
+  subscribeResourcePacks,
+} from '../utils/resourcePackManager';
 
 export type MainMenuTab =
   | 'PLAY'
@@ -23,6 +33,7 @@ interface MainMenuTopNavProps {
   syncState: CloudSyncState;
   onOpenProfile: () => void;
   onOpenFriends?: () => void;
+  onOpenDownloads?: () => void;
   onToggleNews?: () => void;
   newsBadgeCount?: number;
   socialBadgeCount?: number;
@@ -37,12 +48,39 @@ export const MainMenuTopNav: React.FC<MainMenuTopNavProps> = ({
   syncState,
   onOpenProfile,
   onOpenFriends,
+  onOpenDownloads,
   onToggleNews,
   newsBadgeCount = 3,
   socialBadgeCount = 0,
 }) => {
+  const [packSnap, setPackSnap] = useState<ResourcePacksSnapshot>(() =>
+    getResourcePacksSnapshot()
+  );
+  const [liveDlSnap, setLiveDlSnap] = useState<AssetDownloadSnapshot>(() =>
+    getAssetDownloadSnapshot()
+  );
+
+  useEffect(() => {
+    const unsubPacks = subscribeResourcePacks(setPackSnap);
+    const unsubLive = subscribeAssetDownloads(setLiveDlSnap);
+    return () => {
+      unsubPacks();
+      unsubLive();
+    };
+  }, []);
+
   const diamondCount = Math.max(0, Math.floor(Number(syncState.profile.diamonds) || 0));
   const vipActive = isVipBattlePassActive(syncState.profile.vipBattlePass);
+  const isDownloadingNow = packSnap.isAnyDownloading || liveDlSnap.activeCount > 0;
+  const activeDlPct = packSnap.isAnyDownloading
+    ? packSnap.activeProgressPct
+    : liveDlSnap.activeCount > 0
+      ? liveDlSnap.progressPct
+      : 0;
+  const pendingPackCount = Math.max(
+    0,
+    packSnap.totalPackCount - packSnap.downloadedPackCount
+  );
 
   return (
     <header className="relative z-30 w-full h-9 lg:h-12 px-2 sm:px-4 bg-gradient-to-b from-[#0b0d13]/96 via-[#07090e]/95 to-[#05060a]/92 border-b border-red-500/45 flex items-center justify-between gap-2 shrink-0 backdrop-blur-md shadow-[0_4px_24px_rgba(0,0,0,0.8)]">
@@ -173,6 +211,43 @@ export const MainMenuTopNav: React.FC<MainMenuTopNavProps> = ({
 
       {/* Direita: Ícones Sociais, Correio/Notícias, Configurações e Sinal Firebase */}
       <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+        {onOpenDownloads && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              soundEngine.playMenuSelect();
+              onOpenDownloads();
+            }}
+            title={
+              isDownloadingNow
+                ? `Baixando recursos (${activeDlPct}%) · Abrir Central de Downloads`
+                : pendingPackCount > 0
+                  ? `Central de Downloads (${pendingPackCount} pacotes disponíveis)`
+                  : 'Central de Downloads (Todos os pacotes instalados)'
+            }
+            className={`relative h-8 rounded-md border flex items-center justify-center gap-1.5 cursor-pointer transition-all shrink-0 ${
+              isDownloadingNow
+                ? 'px-2 bg-sky-500/18 hover:bg-sky-500/28 border-sky-400/70 text-sky-200'
+                : 'w-8 bg-white/[0.04] hover:bg-white/10 border-white/10 hover:border-amber-400/60 text-slate-200 hover:text-white'
+            }`}
+          >
+            <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.1">
+              <path d="M12 3v11m0 0l-4-4m4 4l4-4M4 18h16" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            {isDownloadingNow && (
+              <span className="font-mono font-bold text-[10px] tabular-nums text-sky-200 whitespace-nowrap">
+                {activeDlPct}%
+              </span>
+            )}
+            {!isDownloadingNow && pendingPackCount > 0 && (
+              <span className="absolute -top-1 -right-1 px-1 min-w-[14px] h-[14px] rounded-full bg-amber-500 text-slate-950 font-mono font-black text-[8px] flex items-center justify-center">
+                {pendingPackCount}
+              </span>
+            )}
+          </button>
+        )}
+
         {onOpenFriends && (
           <button
             type="button"

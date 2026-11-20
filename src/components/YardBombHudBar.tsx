@@ -10,6 +10,7 @@ interface YardBombHudBarProps {
   yardBomb: YardBombHudInfo;
   onPlantBomb: () => void;
   onReturnToMenu?: () => void;
+  onReturnToSquadRoom?: () => void;
   onCycleSpectator?: (dir: -1 | 1) => void;
 }
 
@@ -17,6 +18,7 @@ export const YardBombHudBar: React.FC<YardBombHudBarProps> = ({
   yardBomb,
   onPlantBomb,
   onReturnToMenu,
+  onReturnToSquadRoom,
   onCycleSpectator,
 }) => {
   if (yardBomb.roundState === 'MATCH_OVER') {
@@ -24,6 +26,7 @@ export const YardBombHudBar: React.FC<YardBombHudBarProps> = ({
       <PostMatchSummaryOverlay
         yardBomb={yardBomb}
         onCloseToMenu={onReturnToMenu}
+        onReturnToSquadRoom={onReturnToSquadRoom}
       />
     );
   }

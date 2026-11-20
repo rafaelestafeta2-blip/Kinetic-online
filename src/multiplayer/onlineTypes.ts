@@ -29,8 +29,18 @@ export interface OnlinePlayerState {
   headshots: number;
   loadProgress?: number;
   isLoaded?: boolean;
+  isReady?: boolean;
   lastShotAtMs: number;
   updatedAtMs: number;
+}
+
+export interface SquadChatMessage {
+  id: string;
+  senderUid: string;
+  senderCallsign: string;
+  senderClassId: WarfaceClassId;
+  text: string;
+  ts: number;
 }
 
 export interface OnlineHitEvent {
@@ -88,6 +98,8 @@ export interface OnlineRoomState {
   queueType?: MatchQueueType;
   averageMmr?: number;
   status: 'WAITING' | 'PLAYING' | 'FINISHED';
+  isSearchingMatch?: boolean;
+  searchStartedAtMs?: number | null;
   currentRound: number;
   vanguardScore: number;
   blackthornScore: number;

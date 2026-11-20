@@ -20,6 +20,11 @@ import { applyGraphicsToEngine } from './graphics/applyGraphicsToEngine';
 import { FpsLimit, GameSettings, getDefaultSettings, loadGameSettings, saveGameSettings } from './graphics/graphicsSettings';
 import { mobileHardware } from './mobile/nativeHardware';
 import { AssetDownloadProgressToast } from './components/AssetDownloadProgressToast';
+import {
+  getActiveOnlineRoom,
+  leaveActiveRoom,
+  returnActiveRoomToLobby,
+} from './multiplayer/onlineRoomService';
 import { voiceChatManager } from './multiplayer/voiceChatManager';
 import { runOtaUpdateCheck } from './ota/otaUpdateManager';
 import { getClassCombatModifiers } from './progression/loadoutSystem';
@@ -37,6 +42,7 @@ export default function App() {
   const [loadingBombMode, setLoadingBombMode] = useState<DrillMode | null>(null);
   const [matchmakingTargetMode, setMatchmakingTargetMode] =
     useState<DrillMode | null>(null);
+  const [openSquadRoomOnMenuReturn, setOpenSquadRoomOnMenuReturn] = useState(false);
   const [gameSettings, setGameSettings] = useState<GameSettings>(() => loadGameSettings());
   const gameSettingsRef = useRef<GameSettings>(gameSettings);
   gameSettingsRef.current = gameSettings;
@@ -264,12 +270,31 @@ export default function App() {
     }
   }, [hud.screen]);
 
-  // Shut down microphone & restore normal media audio volume whenever outside an active match
+  // Keep microphone & WebRTC voice alive seamlessly while inside a Squad Room
+  // (Squad Room -> Menu browsing -> Map Loading -> Playing -> Back to Squad Room).
+  // Shut down microphone & restore Android media audio whenever outside a match AND not in a room.
   useEffect(() => {
-    if (hud.screen !== 'PLAYING') {
+    if (hud.screen !== 'PLAYING' && !loadingBombMode && !getActiveOnlineRoom()) {
       voiceChatManager.endMatchVoiceSession();
     }
-  }, [hud.screen]);
+  }, [hud.screen, loadingBombMode]);
+
+  const handleReturnToSquadRoom = useCallback(async () => {
+    setMatchmakingTargetMode(null);
+    await returnActiveRoomToLobby();
+    setOpenSquadRoomOnMenuReturn(true);
+    engineRef.current?.returnToMainMenu();
+    setHud((prev) => ({ ...prev, screen: 'MAIN_MENU' }));
+  }, []);
+
+  const handleExitMatchToMenu = useCallback(() => {
+    setMatchmakingTargetMode(null);
+    setOpenSquadRoomOnMenuReturn(false);
+    void leaveActiveRoom();
+    voiceChatManager.endMatchVoiceSession();
+    engineRef.current?.returnToMainMenu();
+    setHud((prev) => ({ ...prev, screen: 'MAIN_MENU' }));
+  }, []);
 
   return (
     <main
@@ -363,6 +388,8 @@ export default function App() {
             controlSettings={controlSettings}
             onUpdateControlSettings={handleUpdateControlSettings}
             onRecalibrateGyro={() => engineRef.current?.recalibrateGyro()}
+            initialOpenSquadRoom={openSquadRoomOnMenuReturn}
+            onConsumeInitialOpenSquadRoom={() => setOpenSquadRoomOnMenuReturn(false)}
           />
           {hud.rankUpNotification && (
             <WarfaceRankUpModal
@@ -425,10 +452,9 @@ export default function App() {
             onPlantBomb={() => engineRef.current?.triggerPlantBomb()}
             onActivateStreak={() => engineRef.current?.activateReadyStreak()}
             onCycleSpectator={(dir) => engineRef.current?.cycleSpectator(dir)}
-            onReturnToMenu={() => {
-              setMatchmakingTargetMode(null);
-              engineRef.current?.returnToMainMenu();
-              setHud((prev) => ({ ...prev, screen: 'MAIN_MENU' }));
+            onReturnToMenu={handleExitMatchToMenu}
+            onReturnToSquadRoom={() => {
+              void handleReturnToSquadRoom();
             }}
           />
 
@@ -467,10 +493,9 @@ export default function App() {
           onStartGame={(mode?: DrillMode) => handleStartMatch(mode)}
           onResumeGame={() => engineRef.current?.resumeGame()}
           onRestartDrill={() => handleStartMatch(hud.drillMode)}
-          onReturnToTitle={() => {
-            setMatchmakingTargetMode(null);
-            engineRef.current?.returnToMainMenu();
-            setHud((prev) => ({ ...prev, screen: 'MAIN_MENU' }));
+          onReturnToTitle={handleExitMatchToMenu}
+          onReturnToSquadRoom={() => {
+            void handleReturnToSquadRoom();
           }}
           onSelectDrillMode={(mode: DrillMode) => engineRef.current?.setDrillMode(mode)}
           onSetGyroMode={(m: GyroMode) => handleUpdateControlSettings({ ...controlSettingsRef.current, gyroMode: m })}
@@ -484,7 +509,14 @@ export default function App() {
         />
       )}
       <AssetDownloadProgressToast
-        hidden={hud.screen === 'LOADING' || hud.screen === 'INTRO' || hud.screen === 'VIDEO_INTRO'}
+        hidden={
+          hud.screen === 'LOADING' ||
+          hud.screen === 'INTRO' ||
+          hud.screen === 'VIDEO_INTRO' ||
+          hud.screen === 'AUTH_LOGIN' ||
+          hud.screen === 'MAIN_MENU' ||
+          hud.screen === 'TITLE'
+        }
       />
     </main>
   );

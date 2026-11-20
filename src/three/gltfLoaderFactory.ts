@@ -16,6 +16,10 @@ import {
   endAssetDownload,
   updateAssetDownloadProgress,
 } from '../utils/assetDownloadTracker';
+import {
+  cacheFetchedAssetBuffer,
+  readCachedAssetBuffer,
+} from '../utils/resourcePackManager';
 
 const DRACO_DECODER_PATH = '/draco/';
 const KTX2_TRANSCODER_PATH = '/basis/';
@@ -68,31 +72,132 @@ export function createGameGltfLoader(loadingManager?: THREE.LoadingManager): GLT
     loader.__ownsDraco = false;
   }
 
-  // Track real byte-level download progress for every GLB fetched from CDN/local
+  // Serve downloaded packs straight from persistent Cache Storage (0ms network)
+  // and track + persist on-demand GLB downloads into Cache Storage automatically.
   const rawLoad = loader.load.bind(loader);
   loader.load = (url, onLoad, onProgress, onError) => {
-    beginAssetDownload(url);
-    rawLoad(
-      url,
-      (gltf) => {
-        endAssetDownload(url);
-        onLoad(gltf);
-      },
-      (ev) => {
-        if (ev && typeof ev.loaded === 'number') {
-          updateAssetDownloadProgress(
-            url,
-            ev.loaded,
-            ev.lengthComputable ? ev.total : 0
-          );
+    const resourcePath = THREE.LoaderUtils.extractUrlBase(url);
+    const manager = loader.manager;
+
+    const runNetworkFallback = () => {
+      beginAssetDownload(url);
+      rawLoad(
+        url,
+        (gltf) => {
+          endAssetDownload(url);
+          onLoad(gltf);
+        },
+        (ev) => {
+          if (ev && typeof ev.loaded === 'number') {
+            updateAssetDownloadProgress(
+              url,
+              ev.loaded,
+              ev.lengthComputable ? ev.total : 0
+            );
+          }
+          onProgress?.(ev);
+        },
+        (err) => {
+          endAssetDownload(url);
+          onError?.(err);
         }
-        onProgress?.(ev);
-      },
-      (err) => {
-        endAssetDownload(url);
-        onError?.(err);
+      );
+    };
+
+    void (async () => {
+      // 1. Check local persistent Cache Storage first
+      const cachedBuffer = await readCachedAssetBuffer(url);
+      if (cachedBuffer) {
+        manager?.itemStart(url);
+        loader.parse(
+          cachedBuffer,
+          resourcePath,
+          (gltf) => {
+            manager?.itemEnd(url);
+            onLoad(gltf);
+          },
+          (parseErr) => {
+            manager?.itemError(url);
+            manager?.itemEnd(url);
+            onError?.(parseErr);
+          }
+        );
+        return;
       }
-    );
+
+      // 2. Fetch + stream progress + save to persistent Cache Storage
+      if (typeof fetch !== 'function' || typeof window === 'undefined' || !('caches' in window)) {
+        runNetworkFallback();
+        return;
+      }
+
+      beginAssetDownload(url);
+      manager?.itemStart(url);
+      try {
+        const res = await fetch(url, { mode: 'cors', credentials: 'omit' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const total = Number(res.headers.get('content-length') || '0');
+        let buffer: ArrayBuffer;
+
+        if (res.body && typeof res.body.getReader === 'function') {
+          const reader = res.body.getReader();
+          const chunks: Uint8Array[] = [];
+          let loaded = 0;
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (value && value.byteLength > 0) {
+              chunks.push(value);
+              loaded += value.byteLength;
+              updateAssetDownloadProgress(url, loaded, total);
+              onProgress?.(
+                new ProgressEvent('progress', {
+                  lengthComputable: total > 0,
+                  loaded,
+                  total,
+                })
+              );
+            }
+          }
+          const merged = new Uint8Array(loaded);
+          let offset = 0;
+          for (const chunk of chunks) {
+            merged.set(chunk, offset);
+            offset += chunk.byteLength;
+          }
+          buffer = merged.buffer;
+        } else {
+          buffer = await res.arrayBuffer();
+          updateAssetDownloadProgress(url, buffer.byteLength, total);
+        }
+
+        endAssetDownload(url);
+        void cacheFetchedAssetBuffer(
+          url,
+          buffer,
+          res.headers.get('content-type') || 'model/gltf-binary'
+        );
+
+        loader.parse(
+          buffer,
+          resourcePath,
+          (gltf) => {
+            manager?.itemEnd(url);
+            onLoad(gltf);
+          },
+          (parseErr) => {
+            manager?.itemError(url);
+            manager?.itemEnd(url);
+            onError?.(parseErr);
+          }
+        );
+      } catch {
+        endAssetDownload(url);
+        manager?.itemEnd(url);
+        runNetworkFallback();
+      }
+    })();
   };
 
   return loader;

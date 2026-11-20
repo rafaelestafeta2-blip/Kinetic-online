@@ -36,6 +36,7 @@ interface TacticalHudOverlayProps {
   onPlantBomb?: () => void;
   onActivateStreak?: () => void;
   onReturnToMenu?: () => void;
+  onReturnToSquadRoom?: () => void;
   onCycleSpectator?: (dir: -1 | 1) => void;
 }
 
@@ -60,6 +61,7 @@ export const TacticalHudOverlay: React.FC<TacticalHudOverlayProps> = ({
   onPlantBomb,
   onActivateStreak,
   onReturnToMenu,
+  onReturnToSquadRoom,
   onCycleSpectator,
 }) => {
   const isSpectating = Boolean(hud.yardBomb?.isSpectating);
@@ -327,6 +329,7 @@ export const TacticalHudOverlay: React.FC<TacticalHudOverlayProps> = ({
             yardBomb={hud.yardBomb}
             onPlantBomb={() => onPlantBomb?.()}
             onReturnToMenu={onReturnToMenu}
+            onReturnToSquadRoom={onReturnToSquadRoom}
             onCycleSpectator={onCycleSpectator}
           />
         )}

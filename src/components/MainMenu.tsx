@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { soundEngine } from '../audio/soundEngine';
 import { ControlSettings } from '../controls/hudLayoutSettings';
 import {
@@ -10,6 +10,14 @@ import {
 import { subscribeSocialInbox } from '../firebase/friendsSocialService';
 import { GameSettings } from '../graphics/graphicsSettings';
 import { mobileHardware } from '../mobile/nativeHardware';
+import {
+  createSquadReadyRoom,
+  getActiveOnlineRoom,
+  getLocalEffectiveUid,
+  subscribeOnlineRoom,
+  updateSquadRoomConfig,
+} from '../multiplayer/onlineRoomService';
+import { MatchQueueType, OnlineRoomState } from '../multiplayer/onlineTypes';
 import {
   getNextRank,
   getRankForXp,
@@ -24,8 +32,10 @@ import {
 } from '../progression/loadoutSystem';
 import { subscribeDailyContracts } from '../progression/dailyContractsSystem';
 import { DrillMode, WeaponId } from '../types/game';
+import { ActiveSquadDockBar } from './ActiveSquadDockBar';
 import { CompetitiveRankedScreen } from './CompetitiveRankedScreen';
 import { DailyContractsModal } from './DailyContractsModal';
+import { DownloadCenterModal } from './DownloadCenterModal';
 import { FriendsSocialModal } from './FriendsSocialModal';
 import { GraphicsSettingsPanel } from './GraphicsSettingsPanel';
 import { InventoryLoadoutModal } from './InventoryLoadoutModal';
@@ -36,6 +46,7 @@ import { MainMenuTopNav } from './MainMenuTopNav';
 import { MenuBackground } from './MenuBackground';
 import { OnlineLobbyModal } from './OnlineLobbyModal';
 import { PlayerProfileModal } from './PlayerProfileModal';
+import { SquadReadyRoomModal } from './SquadReadyRoomModal';
 import { VipBattlePassModal } from './VipBattlePassModal';
 import { WarfaceDiamondStoreModal } from './WarfaceDiamondStoreModal';
 import { WeaponInspectionModal } from './WeaponInspectionModal';
@@ -52,6 +63,8 @@ interface MainMenuProps {
   controlSettings?: ControlSettings;
   onUpdateControlSettings?: (next: ControlSettings) => void;
   onRecalibrateGyro?: () => void;
+  initialOpenSquadRoom?: boolean;
+  onConsumeInitialOpenSquadRoom?: () => void;
 }
 
 const WEAPON_DISPLAY_NAMES: Record<
@@ -90,6 +103,8 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   controlSettings,
   onUpdateControlSettings,
   onRecalibrateGyro,
+  initialOpenSquadRoom = false,
+  onConsumeInitialOpenSquadRoom,
 }) => {
   const [activeTab, setActiveTab] = useState<
     'PLAY' | 'STORE' | 'INVENTORY' | 'WEAPON' | 'RANKS' | 'BATTLE_PASS' | 'SETTINGS'
@@ -103,8 +118,13 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   const [contractsBadgeCount, setContractsBadgeCount] = useState(0);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showFriendsModal, setShowFriendsModal] = useState(false);
+  const [showDownloadCenter, setShowDownloadCenter] = useState(false);
   const [socialBadgeCount, setSocialBadgeCount] = useState(0);
   const [showOnlineLobby, setShowOnlineLobby] = useState(false);
+  const [showSquadRoom, setShowSquadRoom] = useState(false);
+  const [activeRoom, setActiveRoom] = useState<OnlineRoomState | null>(() =>
+    getActiveOnlineRoom()
+  );
   const [showRankedScreen, setShowRankedScreen] = useState(false);
   const [onlineLobbyArena, setOnlineLobbyArena] = useState<DrillMode>('DUST2_BOMB_5V5');
   const [syncState, setSyncState] = useState<CloudSyncState>(() =>
@@ -123,14 +143,47 @@ export const MainMenu: React.FC<MainMenuProps> = ({
       const invCount = Object.keys(inbox.invites || {}).length;
       setSocialBadgeCount(reqCount + invCount);
     });
+    const unsubRoom = subscribeOnlineRoom((room) => {
+      setActiveRoom(room);
+      if (!room) setShowSquadRoom(false);
+    });
     return () => {
       unsub();
       unsubInv();
       unsubContracts();
       unsubSocial();
+      unsubRoom();
       soundEngine.stopMenuMusic();
     };
   }, []);
+
+  // Re-open Squad Ready Room automatically when returning from a match via "Voltar para a Sala"
+  useEffect(() => {
+    if (initialOpenSquadRoom && getActiveOnlineRoom()) {
+      setShowSquadRoom(true);
+      onConsumeInitialOpenSquadRoom?.();
+    }
+  }, [initialOpenSquadRoom, onConsumeInitialOpenSquadRoom]);
+
+  const launchedPlayingRoomRef = useRef<string | null>(null);
+
+  // Single source of truth: whenever the active squad room enters PLAYING
+  // (whether the modal is open or minimized while browsing Store/Inventory),
+  // launch the match exactly once.
+  useEffect(() => {
+    if (!activeRoom || activeRoom.status !== 'PLAYING') {
+      launchedPlayingRoomRef.current = null;
+      return;
+    }
+    if (launchedPlayingRoomRef.current === activeRoom.roomId) return;
+    launchedPlayingRoomRef.current = activeRoom.roomId;
+    setShowSquadRoom(false);
+    soundEngine.playMenuSelect();
+    soundEngine.stopMenuMusic();
+    void mobileHardware.enterFullscreenLandscape().finally(() => {
+      onStartDrill(activeRoom.arenaMode);
+    });
+  }, [activeRoom, onStartDrill]);
 
   const playerXp = Math.max(loadSavedPlayerXp(), syncState.profile.playerXp);
   const currentRank = getRankForXp(playerXp);
@@ -171,6 +224,29 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     onStartMatchmaking(targetMode);
   };
 
+  const handleOpenSquadRoom = async (
+    targetMode: DrillMode,
+    queueType: MatchQueueType,
+    isPrivate: boolean
+  ) => {
+    soundEngine.playMenuSelect();
+    const existing = getActiveOnlineRoom();
+    if (existing) {
+      if (existing.hostUid === getLocalEffectiveUid() && !existing.isSearchingMatch) {
+        updateSquadRoomConfig(targetMode, queueType);
+      }
+      setShowSquadRoom(true);
+      return;
+    }
+    const created = await createSquadReadyRoom(targetMode, queueType, isPrivate);
+    if (created) {
+      setShowSquadRoom(true);
+    } else {
+      // Offline fallback if Firestore room creation failed
+      await handleLaunchDrill(targetMode);
+    }
+  };
+
   const classEquippedPrimary =
     inventoryState.classLoadouts[inventoryState.selectedClass]?.primaryWeapon ||
     activeWeapon;
@@ -203,6 +279,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         xpLevelProgress={xpLevelProgress}
         syncState={syncState}
         onOpenProfile={() => setShowProfileModal(true)}
+        onOpenDownloads={() => setShowDownloadCenter(true)}
         onOpenFriends={() => setShowFriendsModal(true)}
         onToggleNews={() => setShowNewsModal((prev) => !prev)}
         socialBadgeCount={socialBadgeCount}
@@ -239,6 +316,9 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             onOpenOnlineLobby={(targetMode) => {
               setOnlineLobbyArena(targetMode);
               setShowOnlineLobby(true);
+            }}
+            onOpenSquadRoom={(targetMode, queueType, isPrivate) => {
+              void handleOpenSquadRoom(targetMode, queueType, isPrivate);
             }}
             onOpenRanksTab={() => setActiveTab('RANKS')}
             onOpenBattlePassTab={() => setActiveTab('BATTLE_PASS')}
@@ -369,8 +449,25 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         onOpenOnlineLobbyWithRoom={(mode) => {
           setShowFriendsModal(false);
           setOnlineLobbyArena(mode);
-          setShowOnlineLobby(true);
+          setShowSquadRoom(true);
         }}
+      />
+
+      <DownloadCenterModal
+        isOpen={showDownloadCenter}
+        onClose={() => setShowDownloadCenter(false)}
+      />
+
+      <SquadReadyRoomModal
+        isOpen={showSquadRoom}
+        onMinimize={() => setShowSquadRoom(false)}
+        onLeaveRoom={() => setShowSquadRoom(false)}
+      />
+
+      <ActiveSquadDockBar
+        visible={Boolean(activeRoom) && !showSquadRoom && !showRankedScreen}
+        onOpenSquadRoom={() => setShowSquadRoom(true)}
+        onLeftRoom={() => setShowSquadRoom(false)}
       />
 
       {showRankedScreen && (

@@ -32,6 +32,12 @@ interface TracerBeamInstance {
   mat: THREE.LineBasicMaterial;
   active: boolean;
   age: number;
+  maxAge: number;
+  start: THREE.Vector3;
+  end: THREE.Vector3;
+  dir: THREE.Vector3;
+  totalDist: number;
+  travelDist: number;
 }
 
 const SPARK_COUNT = 64;
@@ -176,23 +182,34 @@ export class BallisticsFXPool {
     this.decalMesh.instanceMatrix.needsUpdate = true;
     this.group.add(this.decalMesh);
 
-    // 5. Pool of 12 Supersonic Ballistic Tracer Streaks
-    for (let i = 0; i < 12; i++) {
+    // 5. Pool of 16 Supersonic Flying Ballistic Tracer Streaks (Zero-GC)
+    for (let i = 0; i < 16; i++) {
       const geo = new THREE.BufferGeometry().setFromPoints([
         new THREE.Vector3(),
         new THREE.Vector3(0, 0, -1),
       ]);
       const mat = new THREE.LineBasicMaterial({
-        color: 0xfde047,
+        color: 0xfef08a,
         transparent: true,
-        opacity: 0.75,
+        opacity: 0.85,
         blending: THREE.AdditiveBlending,
       });
       const line = new THREE.Line(geo, mat);
       line.visible = false;
       line.frustumCulled = false;
       this.group.add(line);
-      this.tracers.push({ line, mat, active: false, age: 0 });
+      this.tracers.push({
+        line,
+        mat,
+        active: false,
+        age: 0,
+        maxAge: 0.06,
+        start: new THREE.Vector3(),
+        end: new THREE.Vector3(),
+        dir: new THREE.Vector3(0, 0, -1),
+        totalDist: 1,
+        travelDist: 0,
+      });
     }
   }
 
@@ -332,20 +349,47 @@ export class BallisticsFXPool {
   public spawnTracer(
     startPos: THREE.Vector3,
     endPos: THREE.Vector3,
-    colorHex = 0xfde047
+    colorHex = 0xfef08a
   ): void {
     const tr = this.tracers[this.tracerCursor];
     this.tracerCursor = (this.tracerCursor + 1) % this.tracers.length;
 
+    tr.start.copy(startPos);
+    tr.end.copy(endPos);
+    tr.dir.subVectors(endPos, startPos);
+    const dist = tr.dir.length();
+    tr.totalDist = Math.max(0.25, dist);
+    if (dist > 0.001) {
+      tr.dir.divideScalar(dist);
+    } else {
+      tr.dir.set(0, 0, -1);
+    }
+
+    // Initial streak leaving the barrel immediately so shot feels snappy & fast
+    const initialHead = Math.min(tr.totalDist, 4.5);
+    const initialTail = Math.max(0, initialHead - 3.8);
+    tr.travelDist = initialHead;
+    tr.maxAge = Math.min(0.09, Math.max(0.032, tr.totalDist / 260));
+
     const posAttr = tr.line.geometry.getAttribute(
       'position'
     ) as THREE.BufferAttribute;
-    posAttr.setXYZ(0, startPos.x, startPos.y, startPos.z);
-    posAttr.setXYZ(1, endPos.x, endPos.y, endPos.z);
+    posAttr.setXYZ(
+      0,
+      tr.start.x + tr.dir.x * initialTail,
+      tr.start.y + tr.dir.y * initialTail,
+      tr.start.z + tr.dir.z * initialTail
+    );
+    posAttr.setXYZ(
+      1,
+      tr.start.x + tr.dir.x * initialHead,
+      tr.start.y + tr.dir.y * initialHead,
+      tr.start.z + tr.dir.z * initialHead
+    );
     posAttr.needsUpdate = true;
 
     tr.mat.color.setHex(colorHex);
-    tr.mat.opacity = 0.72;
+    tr.mat.opacity = 0.88;
     tr.active = true;
     tr.age = 0;
     tr.line.visible = true;
@@ -439,16 +483,38 @@ export class BallisticsFXPool {
       this.sparksDirty = anyActive;
     }
 
-    // Update Tracers
+    // Update High-Speed Supersonic Flying Tracers (Zero-GC)
+    const TRACER_SPEED = 240; // meters/sec visual flight speed
+    const TRACER_LENGTH = 7.5; // crisp supersonic streak length
     for (let i = 0; i < this.tracers.length; i++) {
       const tr = this.tracers[i];
       if (!tr.active) continue;
       tr.age += dt;
-      if (tr.age >= 0.085) {
+      tr.travelDist += TRACER_SPEED * dt;
+      const tailDist = Math.max(0, tr.travelDist - TRACER_LENGTH);
+      if (tailDist >= tr.totalDist || tr.age >= tr.maxAge + 0.03) {
         tr.active = false;
         tr.line.visible = false;
       } else {
-        tr.mat.opacity = 0.72 * (1 - tr.age / 0.085);
+        const headDist = Math.min(tr.totalDist, tr.travelDist);
+        const posAttr = tr.line.geometry.getAttribute(
+          'position'
+        ) as THREE.BufferAttribute;
+        posAttr.setXYZ(
+          0,
+          tr.start.x + tr.dir.x * tailDist,
+          tr.start.y + tr.dir.y * tailDist,
+          tr.start.z + tr.dir.z * tailDist
+        );
+        posAttr.setXYZ(
+          1,
+          tr.start.x + tr.dir.x * headDist,
+          tr.start.y + tr.dir.y * headDist,
+          tr.start.z + tr.dir.z * headDist
+        );
+        posAttr.needsUpdate = true;
+        const lifeFade = Math.max(0.15, 1 - tr.age / (tr.maxAge + 0.03));
+        tr.mat.opacity = 0.88 * lifeFade;
       }
     }
   }

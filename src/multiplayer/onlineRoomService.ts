@@ -29,6 +29,7 @@ import {
   OnlineRoundEvent,
   OnlineScorestreakEvent,
   OnlineTeam,
+  SquadChatMessage,
 } from './onlineTypes';
 import { pushPeerPose, resetPeerSnapshotBuffers } from './peerSnapshotBuffer';
 
@@ -39,6 +40,7 @@ export interface OnlineBombEvent {
 }
 
 type RoomSubscriber = (room: OnlineRoomState | null) => void;
+type SquadChatSubscriber = (messages: SquadChatMessage[]) => void;
 type HitSubscriber = (hit: OnlineHitEvent) => void;
 type GrenadeSubscriber = (evt: OnlineGrenadeEvent) => void;
 type ScorestreakSubscriber = (evt: OnlineScorestreakEvent) => void;
@@ -47,6 +49,7 @@ type BombSubscriber = (evt: OnlineBombEvent) => void;
 type RoundSubscriber = (evt: OnlineRoundEvent) => void;
 
 const roomSubscribers = new Set<RoomSubscriber>();
+const squadChatSubscribers = new Set<SquadChatSubscriber>();
 const hitSubscribers = new Set<HitSubscriber>();
 const grenadeSubscribers = new Set<GrenadeSubscriber>();
 const scorestreakSubscribers = new Set<ScorestreakSubscriber>();
@@ -58,6 +61,9 @@ const processedGrenadeIds = new Set<string>();
 const processedScorestreakIds = new Set<string>();
 const processedClassSupportIds = new Set<string>();
 const processedRoundEventIds = new Set<string>();
+const processedSquadChatIds = new Set<string>();
+let squadChatMessages: SquadChatMessage[] = [];
+let autoJoinQueueOnWsOpen = true;
 
 let activeRoom: OnlineRoomState | null = null;
 let roomUnsub: Unsubscribe | null = null;
@@ -123,6 +129,30 @@ export function getLocalEffectiveUid(): string {
 function emitRoomState(): void {
   const snapshot = activeRoom ? { ...activeRoom, players: { ...activeRoom.players } } : null;
   roomSubscribers.forEach((fn) => fn(snapshot));
+}
+
+function emitSquadChat(): void {
+  const snapshot = [...squadChatMessages];
+  squadChatSubscribers.forEach((fn) => fn(snapshot));
+}
+
+function appendSquadChatMessage(msg: SquadChatMessage): void {
+  if (!msg || !msg.id || processedSquadChatIds.has(msg.id)) return;
+  processedSquadChatIds.add(msg.id);
+  if (processedSquadChatIds.size > 200) {
+    const first = processedSquadChatIds.values().next().value;
+    if (first) processedSquadChatIds.delete(first);
+  }
+  squadChatMessages = [...squadChatMessages.slice(-49), msg];
+  emitSquadChat();
+}
+
+function clearSquadChat(): void {
+  processedSquadChatIds.clear();
+  if (squadChatMessages.length > 0) {
+    squadChatMessages = [];
+    emitSquadChat();
+  }
 }
 
 function rememberHitEventId(eventId: string): void {
@@ -205,11 +235,12 @@ function mergePreservingFresherPlayers(
     const existingTs = existing.updatedAtMs || 0;
     const remoteTs = remote.updatedAtMs || 0;
     if (isPlaying || existingTs >= remoteTs) {
-      // Preserve live WebSocket transform/vitals; accept newer lobby/load/classId metadata if any.
+      // Preserve live WebSocket transform/vitals & ready state; accept newer lobby/load/classId metadata if any.
       merged[uid] = {
         ...remote,
         ...existing,
         classId: existing.classId || remote.classId || 'FUZILEIRO',
+        isReady: typeof existing.isReady === 'boolean' ? existing.isReady : Boolean(remote.isReady),
         loadProgress: Math.max(existing.loadProgress || 0, remote.loadProgress || 0),
         isLoaded: Boolean(existing.isLoaded || remote.isLoaded),
       };
@@ -218,6 +249,7 @@ function mergePreservingFresherPlayers(
         ...existing,
         ...remote,
         classId: remote.classId || existing.classId || 'FUZILEIRO',
+        isReady: typeof remote.isReady === 'boolean' ? remote.isReady : Boolean(existing.isReady),
       };
     }
   }
@@ -303,7 +335,7 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
       const idToken = await auth.currentUser?.getIdToken().catch(() => null);
       if (ws.readyState !== WebSocket.OPEN) return;
       const queueType: MatchQueueType = liveRoom.queueType === 'RANKED' ? 'RANKED' : 'CASUAL';
-      if (!liveRoom.isPrivate && liveRoom.status === 'WAITING') {
+      if (autoJoinQueueOnWsOpen && !liveRoom.isPrivate && liveRoom.status === 'WAITING') {
         ws.send(JSON.stringify({
           type: 'JOIN_QUEUE', uid: livePlayer.uid, idToken, queueType,
           arenaMode: liveRoom.arenaMode, mmr: livePlayer.mmr || 2450, player: livePlayer,
@@ -311,7 +343,7 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
       }
       ws.send(JSON.stringify({
         type: 'JOIN_ROOM', roomId: liveRoom.roomId, uid: livePlayer.uid, idToken,
-          queueType, arenaMode: liveRoom.arenaMode, isPrivate: liveRoom.isPrivate,
+        queueType, arenaMode: liveRoom.arenaMode, isPrivate: liveRoom.isPrivate,
         mmr: livePlayer.mmr || 2450, player: livePlayer,
       }));
       startWsPingTimer(ws);
@@ -334,9 +366,16 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
           type?: string;
           roomId?: string;
           uid?: string;
+          hostUid?: string | null;
           senderUid?: string;
           arenaMode?: DrillMode;
+          queueType?: MatchQueueType;
           status?: 'WAITING' | 'PLAYING' | 'FINISHED';
+          isReady?: boolean;
+          isSearchingMatch?: boolean;
+          searchStartedAtMs?: number | null;
+          message?: SquadChatMessage;
+          chatHistory?: SquadChatMessage[];
           player?: OnlinePlayerState;
           players?: Record<string, OnlinePlayerState>;
           vanguardUids?: string[];
@@ -353,10 +392,63 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
           runtimeTelemetry.recordPingSample(Date.now() - msg.clientTs);
           return;
         }
+        if (msg.type === 'VOICE_SIGNAL' || msg.type === 'VOICE_STATE') {
+          voiceWireHandler?.(msg as Record<string, unknown>);
+          return;
+        }
         if (!activeRoom) return;
         const localUid = getEffectiveLocalUid();
 
-        if (msg.type === 'PLAYER_STATE') {
+        if (msg.type === 'SQUAD_CHAT' && msg.message) {
+          appendSquadChatMessage(msg.message);
+          return;
+        } else if (msg.type === 'PLAYER_READY' && msg.uid) {
+          const target = activeRoom.players[msg.uid];
+          if (target) {
+            target.isReady = Boolean(msg.isReady);
+            target.updatedAtMs = Date.now();
+            emitRoomState();
+          }
+          return;
+        } else if (msg.type === 'SQUAD_CONFIG_UPDATE') {
+          if (msg.arenaMode) activeRoom.arenaMode = msg.arenaMode;
+          if (msg.queueType) activeRoom.queueType = msg.queueType;
+          activeRoom.isSearchingMatch = Boolean(msg.isSearchingMatch);
+          if (!activeRoom.isSearchingMatch) activeRoom.searchStartedAtMs = null;
+          activeRoom.updatedAtMs = Date.now();
+          emitRoomState();
+          return;
+        } else if (msg.type === 'SQUAD_QUEUE_STATE') {
+          activeRoom.isSearchingMatch = Boolean(msg.isSearchingMatch);
+          activeRoom.searchStartedAtMs =
+            typeof msg.searchStartedAtMs === 'number' ? msg.searchStartedAtMs : null;
+          if (msg.arenaMode) activeRoom.arenaMode = msg.arenaMode;
+          if (msg.queueType) activeRoom.queueType = msg.queueType;
+          activeRoom.updatedAtMs = Date.now();
+          emitRoomState();
+          return;
+        } else if (msg.type === 'ROOM_RETURNED_TO_LOBBY') {
+          activeRoom.status = 'WAITING';
+          activeRoom.isSearchingMatch = false;
+          activeRoom.searchStartedAtMs = null;
+          activeRoom.currentRound = 1;
+          activeRoom.vanguardScore = 0;
+          activeRoom.blackthornScore = 0;
+          activeRoom.bombStatus = 'CARRIED';
+          activeRoom.plantedSite = 'NONE';
+          Object.values(activeRoom.players).forEach((p) => {
+            p.isReady = false;
+            p.isLoaded = false;
+            p.loadProgress = 0;
+            p.health = 100;
+            p.armor = 100;
+            p.isDown = false;
+            p.updatedAtMs = Date.now();
+          });
+          activeRoom.updatedAtMs = Date.now();
+          emitRoomState();
+          return;
+        } else if (msg.type === 'PLAYER_STATE') {
           const wire = msg as {
             type?: string;
             uid?: string;
@@ -395,6 +487,9 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
           }
         } else if (msg.type === 'PLAYER_JOINED' && msg.player?.uid) {
           const joined = msg.player;
+          if (msg.hostUid) activeRoom.hostUid = msg.hostUid;
+          if (msg.arenaMode) activeRoom.arenaMode = msg.arenaMode;
+          if (msg.queueType) activeRoom.queueType = msg.queueType;
           if (!activeRoom.players[joined.uid]) {
             activeRoom.players[joined.uid] = joined;
           } else {
@@ -406,11 +501,21 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
           }
           emitRoomState();
         } else if (msg.type === 'PLAYER_LEFT' && msg.uid) {
+          if (msg.hostUid) activeRoom.hostUid = msg.hostUid;
           if (msg.uid !== localUid && activeRoom.players[msg.uid]) {
             delete activeRoom.players[msg.uid];
             emitRoomState();
           }
         } else if (msg.type === 'ROOM_SYNC_META' && msg.players) {
+          if (msg.hostUid) activeRoom.hostUid = msg.hostUid;
+          if (msg.arenaMode) activeRoom.arenaMode = msg.arenaMode;
+          if (msg.queueType) activeRoom.queueType = msg.queueType;
+          if (typeof msg.isSearchingMatch === 'boolean') {
+            activeRoom.isSearchingMatch = msg.isSearchingMatch;
+          }
+          if (msg.searchStartedAtMs !== undefined) {
+            activeRoom.searchStartedAtMs = msg.searchStartedAtMs;
+          }
           activeRoom.players = mergePreservingFresherPlayers(
             activeRoom.players,
             msg.players,
@@ -421,9 +526,14 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
           } else if (msg.status === 'FINISHED') {
             activeRoom.status = 'FINISHED';
           }
+          if (Array.isArray(msg.chatHistory)) {
+            msg.chatHistory.forEach((entry) => appendSquadChatMessage(entry));
+          }
           emitRoomState();
         } else if (msg.type === 'MATCH_START') {
           if (activeRoom.status !== 'PLAYING') {
+            activeRoom.isSearchingMatch = false;
+            activeRoom.searchStartedAtMs = null;
             void startMatchInActiveRoom(true);
           }
         } else if (msg.type === 'COMBAT_HIT' && msg.hit) {
@@ -620,13 +730,16 @@ function attachRoomSnapshotListener(roomId: string): void {
       } else {
         const prevStatus = activeRoom.status;
         const prevPlayers = activeRoom.players || {};
-        const isPlaying = activeRoom.status === 'PLAYING' || data.status === 'PLAYING';
+        const remoteIsFresher = (data.updatedAtMs || 0) >= (activeRoom.updatedAtMs || 0);
         const mergedStatus: OnlineRoomState['status'] =
           activeRoom.status === 'FINISHED' || data.status === 'FINISHED'
             ? 'FINISHED'
-            : activeRoom.status === 'PLAYING' || data.status === 'PLAYING'
-              ? 'PLAYING'
-              : 'WAITING';
+            : activeRoom.status === 'WAITING' && !remoteIsFresher
+              ? 'WAITING'
+              : activeRoom.status === 'PLAYING' || data.status === 'PLAYING'
+                ? 'PLAYING'
+                : 'WAITING';
+        const isPlaying = mergedStatus === 'PLAYING';
         const prevRound = activeRoom.currentRound || 1;
         const nextRound = isPlaying
           ? Math.max(prevRound, data.currentRound || 1)
@@ -694,25 +807,56 @@ function attachRoomSnapshotListener(roomId: string): void {
   );
 }
 
-function pickBalancedTeam(players: Record<string, OnlinePlayerState>): OnlineTeam {
+function pickBalancedTeam(
+  players: Record<string, OnlinePlayerState>,
+  preferVanguardSquad = false
+): OnlineTeam {
   let vgCount = 0;
   let btCount = 0;
   Object.values(players).forEach((p) => (p.team === 'VANGUARD' ? vgCount++ : btCount++));
+  if (preferVanguardSquad && vgCount < 5) {
+    return 'VANGUARD';
+  }
   return vgCount <= btCount ? 'VANGUARD' : 'BLACKTHORN';
+}
+
+function buildFirestoreSafeRoomDoc(room: OnlineRoomState): Record<string, unknown> {
+  return {
+    roomId: room.roomId,
+    hostUid: room.hostUid,
+    arenaMode: room.arenaMode,
+    isPrivate: room.isPrivate,
+    queueType: room.queueType || 'CASUAL',
+    averageMmr: room.averageMmr ?? 2450,
+    status: room.status,
+    currentRound: room.currentRound,
+    vanguardScore: room.vanguardScore,
+    blackthornScore: room.blackthornScore,
+    bombStatus: room.bombStatus,
+    plantedSite: room.plantedSite,
+    players: room.players,
+    updatedAtMs: room.updatedAtMs,
+    createdAt: room.createdAt,
+  };
 }
 
 export async function createMultiplayerRoom(
   arenaMode: DrillMode,
   isPrivate: boolean,
-  queueType: MatchQueueType = 'CASUAL'
+  queueType: MatchQueueType = 'CASUAL',
+  options?: { autoEnqueue?: boolean }
 ): Promise<OnlineRoomState | null> {
   await leaveActiveRoom();
+  autoJoinQueueOnWsOpen = options?.autoEnqueue ?? !isPrivate;
   const uid = getEffectiveLocalUid();
   const roomId = generateRoomCode();
   const localPlayer = createInitialLocalPlayerState(arenaMode, 'VANGUARD', 0);
+  localPlayer.isReady = false;
   const newRoom: OnlineRoomState = {
     roomId, hostUid: uid, arenaMode, isPrivate, queueType,
     averageMmr: localPlayer.mmr || 2450, status: 'WAITING',
+    isSearchingMatch: false,
+    searchStartedAtMs: null,
     currentRound: 1, vanguardScore: 0, blackthornScore: 0,
     bombStatus: 'CARRIED', plantedSite: 'NONE',
     players: { [uid]: localPlayer },
@@ -720,6 +864,7 @@ export async function createMultiplayerRoom(
   };
 
   activeRoom = newRoom;
+  clearSquadChat();
   resetCombatNetcodeThrottle();
   resetPeerSnapshotBuffers();
   connectWebSocketForRoom(newRoom, localPlayer);
@@ -727,7 +872,7 @@ export async function createMultiplayerRoom(
 
   if (auth.currentUser) {
     try {
-      await setDoc(doc(db, 'rooms', roomId), newRoom);
+      await setDoc(doc(db, 'rooms', roomId), buildFirestoreSafeRoomDoc(newRoom));
       attachRoomSnapshotListener(roomId);
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, `rooms/${roomId}`);
@@ -740,6 +885,15 @@ export async function createMultiplayerRoom(
   return newRoom;
 }
 
+/** Creates a Squad Ready Room (1-5 friends) without immediately jumping into matchmaking queue. */
+export async function createSquadReadyRoom(
+  arenaMode: DrillMode,
+  queueType: MatchQueueType = 'CASUAL',
+  isPrivate = true
+): Promise<OnlineRoomState | null> {
+  return createMultiplayerRoom(arenaMode, isPrivate, queueType, { autoEnqueue: false });
+}
+
 export async function joinRoomByCode(rawCode: string): Promise<{ ok: boolean; error?: string; room?: OnlineRoomState }> {
   const user = auth.currentUser;
   if (!user) return { ok: false, error: 'Faça login com sua Conta Google primeiro.' };
@@ -747,6 +901,7 @@ export async function joinRoomByCode(rawCode: string): Promise<{ ok: boolean; er
   if (code.length < 4) return { ok: false, error: 'Digite um código válido (6 caracteres).' };
 
   await leaveActiveRoom();
+  autoJoinQueueOnWsOpen = false;
   const roomRef = doc(db, 'rooms', code);
   try {
     const snap = await getDoc(roomRef);
@@ -758,8 +913,11 @@ export async function joinRoomByCode(rawCode: string): Promise<{ ok: boolean; er
       return { ok: false, error: 'Esta sala 5v5 já está cheia (10/10 jogadores).' };
     }
 
-    const assignedTeam = existingPlayers[user.uid]?.team || pickBalancedTeam(existingPlayers);
+    const assignedTeam =
+      existingPlayers[user.uid]?.team ||
+      pickBalancedTeam(existingPlayers, data.status === 'WAITING');
     const localPlayer = createInitialLocalPlayerState(data.arenaMode, assignedTeam, playerCount);
+    localPlayer.isReady = false;
     const allPlayers = { ...existingPlayers, [user.uid]: localPlayer };
     const avgMmr = Math.round(
       Object.values(allPlayers).reduce((acc, p) => acc + (Number(p.mmr) || 1000), 0) /
@@ -767,7 +925,14 @@ export async function joinRoomByCode(rawCode: string): Promise<{ ok: boolean; er
     );
 
     await updateDoc(roomRef, { [`players.${user.uid}`]: localPlayer, averageMmr: avgMmr, updatedAtMs: Date.now() });
-    activeRoom = { ...data, averageMmr: avgMmr, players: allPlayers };
+    activeRoom = {
+      ...data,
+      averageMmr: avgMmr,
+      isSearchingMatch: false,
+      searchStartedAtMs: null,
+      players: allPlayers,
+    };
+    clearSquadChat();
     resetPeerSnapshotBuffers();
     attachRoomSnapshotListener(code);
     connectWebSocketForRoom(activeRoom, localPlayer);
@@ -860,17 +1025,174 @@ export async function startMatchInActiveRoom(serverConfirmed = false): Promise<b
   });
   activeRoom.players = resetPlayers;
   activeRoom.status = 'PLAYING';
+  activeRoom.isSearchingMatch = false;
+  activeRoom.searchStartedAtMs = null;
   resetCombatNetcodeThrottle();
   resetPeerSnapshotBuffers();
   emitRoomState();
-  if (auth.currentUser) {
+  const canPersistPlayingToFirestore =
+    activeRoom.queueType !== 'RANKED' || Object.keys(resetPlayers).length === 10;
+  if (auth.currentUser && canPersistPlayingToFirestore) {
     try {
-      await updateDoc(doc(db, 'rooms', activeRoom.roomId), { status: 'PLAYING', players: resetPlayers, updatedAtMs: Date.now() });
+      await updateDoc(doc(db, 'rooms', activeRoom.roomId), {
+        status: 'PLAYING',
+        players: resetPlayers,
+        updatedAtMs: Date.now(),
+      });
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `rooms/${activeRoom.roomId}`);
     }
   }
   return true;
+}
+
+export function setLocalPlayerReady(isReady: boolean): void {
+  if (!activeRoom) return;
+  const uid = getEffectiveLocalUid();
+  const me = activeRoom.players[uid];
+  if (!me) return;
+  me.isReady = isReady;
+  me.updatedAtMs = Date.now();
+  emitRoomState();
+  sendRawWsMessage({
+    type: 'PLAYER_READY',
+    roomId: activeRoom.roomId,
+    isReady,
+    ts: Date.now(),
+  });
+}
+
+export function sendSquadChatMessage(rawText: string): boolean {
+  if (!activeRoom) return false;
+  const text = rawText.replace(/[\r\n\t]+/g, ' ').trim().slice(0, 180);
+  if (!text) return false;
+  if (wsClient && wsClient.readyState === WebSocket.OPEN) {
+    return sendRawWsMessage({
+      type: 'SQUAD_CHAT',
+      roomId: activeRoom.roomId,
+      text,
+      ts: Date.now(),
+    });
+  }
+  // Offline/local fallback when WS is temporarily reconnecting so user still sees own message
+  const uid = getEffectiveLocalUid();
+  const me = activeRoom.players[uid];
+  appendSquadChatMessage({
+    id: `local_chat_${uid}_${Date.now()}`,
+    senderUid: uid,
+    senderCallsign: me?.callsign || getCloudSyncState().profile.callsign || 'OPERADOR',
+    senderClassId: me?.classId || getPlayerInventoryState().selectedClass || 'FUZILEIRO',
+    text,
+    ts: Date.now(),
+  });
+  return true;
+}
+
+export function updateSquadRoomConfig(
+  arenaMode: DrillMode,
+  queueType?: MatchQueueType
+): void {
+  if (!activeRoom) return;
+  activeRoom.arenaMode = arenaMode;
+  if (queueType) activeRoom.queueType = queueType;
+  activeRoom.isSearchingMatch = false;
+  activeRoom.searchStartedAtMs = null;
+  activeRoom.updatedAtMs = Date.now();
+  emitRoomState();
+  sendRawWsMessage({
+    type: 'SQUAD_CONFIG_UPDATE',
+    roomId: activeRoom.roomId,
+    arenaMode,
+    queueType: activeRoom.queueType || 'CASUAL',
+    ts: Date.now(),
+  });
+}
+
+export function startSquadMatchSearch(): void {
+  if (!activeRoom) return;
+  const nowMs = Date.now();
+  activeRoom.isSearchingMatch = true;
+  activeRoom.searchStartedAtMs = nowMs;
+  activeRoom.updatedAtMs = nowMs;
+  emitRoomState();
+  sendRawWsMessage({
+    type: 'SQUAD_QUEUE_START',
+    roomId: activeRoom.roomId,
+    arenaMode: activeRoom.arenaMode,
+    queueType: activeRoom.queueType || 'CASUAL',
+    ts: nowMs,
+  });
+}
+
+export function cancelSquadMatchSearch(): void {
+  if (!activeRoom) return;
+  activeRoom.isSearchingMatch = false;
+  activeRoom.searchStartedAtMs = null;
+  activeRoom.updatedAtMs = Date.now();
+  emitRoomState();
+  sendRawWsMessage({
+    type: 'SQUAD_QUEUE_CANCEL',
+    roomId: activeRoom.roomId,
+    ts: Date.now(),
+  });
+}
+
+/**
+ * Returns the active Squad Room from PLAYING back to WAITING without closing
+ * the WebSocket connection, Squad Chat history, or WebRTC voice chat.
+ */
+export async function returnActiveRoomToLobby(): Promise<void> {
+  if (!activeRoom) return;
+  const nowMs = Date.now();
+  const resetPlayers: Record<string, OnlinePlayerState> = {};
+  Object.values(activeRoom.players).forEach((p) => {
+    resetPlayers[p.uid] = {
+      ...p,
+      isReady: false,
+      isLoaded: false,
+      loadProgress: 0,
+      health: 100,
+      armor: 100,
+      isDown: false,
+      updatedAtMs: nowMs,
+    };
+  });
+  activeRoom.status = 'WAITING';
+  activeRoom.isSearchingMatch = false;
+  activeRoom.searchStartedAtMs = null;
+  activeRoom.currentRound = 1;
+  activeRoom.vanguardScore = 0;
+  activeRoom.blackthornScore = 0;
+  activeRoom.bombStatus = 'CARRIED';
+  activeRoom.plantedSite = 'NONE';
+  activeRoom.players = resetPlayers;
+  activeRoom.updatedAtMs = nowMs;
+  resetCombatNetcodeThrottle();
+  resetPeerSnapshotBuffers();
+  emitRoomState();
+
+  sendRawWsMessage({
+    type: 'RETURN_TO_ROOM',
+    roomId: activeRoom.roomId,
+    ts: nowMs,
+  });
+
+  if (auth.currentUser) {
+    try {
+      await updateDoc(doc(db, 'rooms', activeRoom.roomId), {
+        status: 'WAITING',
+        currentRound: 1,
+        vanguardScore: 0,
+        blackthornScore: 0,
+        bombStatus: 'CARRIED',
+        plantedSite: 'NONE',
+        players: resetPlayers,
+        updatedAtMs: nowMs,
+      });
+    } catch {
+      // ignore if room doc already cleaned up
+    }
+  }
 }
 
 export function publishLocalLoadProgress(
@@ -1151,6 +1473,7 @@ export async function leaveActiveRoom(): Promise<void> {
   const user = auth.currentUser;
   const prevRoom = activeRoom;
   activeRoom = null;
+  clearSquadChat();
   resetCombatNetcodeThrottle();
   resetPeerSnapshotBuffers();
   emitRoomState();
@@ -1210,6 +1533,16 @@ export function subscribeOnlineRoom(fn: RoomSubscriber): () => void {
   roomSubscribers.add(fn);
   fn(activeRoom);
   return () => roomSubscribers.delete(fn);
+}
+
+export function getSquadChatMessages(): SquadChatMessage[] {
+  return [...squadChatMessages];
+}
+
+export function subscribeSquadChat(fn: SquadChatSubscriber): () => void {
+  squadChatSubscribers.add(fn);
+  fn([...squadChatMessages]);
+  return () => squadChatSubscribers.delete(fn);
 }
 
 export function subscribeOnlineClassSupport(

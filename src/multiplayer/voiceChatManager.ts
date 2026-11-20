@@ -297,11 +297,16 @@ class TacticalVoiceChatManager {
       return false;
     }
     try {
+      // IMPORTANT for Android/Mobile FPS (same strategy as COD Mobile / PUBG Mobile):
+      // Setting echoCancellation: true forces Chromium WebView into Android
+      // AudioManager.MODE_IN_COMMUNICATION (phone-call mode), which heavily muffles
+      // and lowers stereo game audio (footsteps, gunshots, directional cues).
+      // Keeping echoCancellation: false preserves full-volume crisp stereo game audio!
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          echoCancellation: true,
+          echoCancellation: false,
           noiseSuppression: true,
-          autoGainControl: true,
+          autoGainControl: false,
           channelCount: 1,
         },
         video: false,
@@ -310,6 +315,29 @@ class TacticalVoiceChatManager {
       this.state.micPermissionError = null;
       this.setupLocalAudioGraph(stream);
       this.updateLocalTrackEnabled();
+
+      // Reinforce Android STREAM_MUSIC / MODE_NORMAL immediately & after Chromium audio routing settles
+      const reinforceMediaAudio = () => {
+        try {
+          const nativeBridge = (
+            window as unknown as {
+              KineticNativeAuth?: {
+                keepMediaAudioWhileMicActive?: () => void;
+                restoreMediaAudioMode?: () => void;
+              };
+            }
+          ).KineticNativeAuth;
+          if (typeof nativeBridge?.keepMediaAudioWhileMicActive === 'function') {
+            nativeBridge.keepMediaAudioWhileMicActive();
+          } else if (typeof nativeBridge?.restoreMediaAudioMode === 'function') {
+            nativeBridge.restoreMediaAudioMode();
+          }
+        } catch {
+          // ignore on web
+        }
+      };
+      reinforceMediaAudio();
+      window.setTimeout(reinforceMediaAudio, 350);
 
       // Attach stream tracks to any existing peer connections
       this.peerConnections.forEach((entry) => {

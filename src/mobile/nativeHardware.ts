@@ -16,6 +16,7 @@ export class MobileHardwareManager {
   private capacitorHaptics: { impact: (opts: { style: string }) => Promise<void> } | null =
     null;
   private capacitorTried = false;
+  private lastGunshotVibrateMs = 0;
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -29,16 +30,14 @@ export class MobileHardwareManager {
     }
   }
 
-  private async ensureCapacitorHaptics(): Promise<void> {
+  private resolveCapacitorHapticsSync(): void {
     if (this.capacitorTried) return;
     this.capacitorTried = true;
     try {
-      // Prefer Capacitor plugin registry when the native shell exposes Haptics.
       const cap = (window as any)?.Capacitor;
       const plugins = cap?.Plugins;
       if (plugins?.Haptics?.impact) {
         this.capacitorHaptics = plugins.Haptics;
-        return;
       }
     } catch {
       this.capacitorHaptics = null;
@@ -50,24 +49,23 @@ export class MobileHardwareManager {
   // =========================================================================
   private triggerVibrate(pattern: number | number[]): void {
     if (!this.hapticsEnabled) return;
-    void this.ensureCapacitorHaptics().then(() => {
-      try {
-        if (this.capacitorHaptics && typeof pattern === 'number') {
-          const style = pattern >= 28 ? 'HEAVY' : pattern >= 16 ? 'MEDIUM' : 'LIGHT';
-          void this.capacitorHaptics.impact({ style });
-          return;
-        }
-      } catch {
-        // fall through to vibrate
+    this.resolveCapacitorHapticsSync();
+    try {
+      if (this.capacitorHaptics && typeof pattern === 'number') {
+        const style = pattern >= 28 ? 'HEAVY' : pattern >= 16 ? 'MEDIUM' : 'LIGHT';
+        void this.capacitorHaptics.impact({ style });
+        return;
       }
-      try {
-        if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
-          navigator.vibrate(pattern);
-        }
-      } catch {
-        // Ignore if device or browser blocks vibration
+    } catch {
+      // fall through to vibrate
+    }
+    try {
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        navigator.vibrate(pattern);
       }
-    });
+    } catch {
+      // Ignore if device or browser blocks vibration
+    }
   }
 
   public vibrateGunshot(
@@ -75,12 +73,19 @@ export class MobileHardwareManager {
     boltLockedBack: boolean,
     weaponHapticMs?: number
   ): void {
+    if (!this.hapticsEnabled) return;
+    const now = performance.now();
+    // Throttle rapid full-auto haptics so Android Binder IPC vibration never stutters rifle fire
+    if (!boltLockedBack && now - this.lastGunshotVibrateMs < 115) {
+      return;
+    }
+    this.lastGunshotVibrateMs = now;
     if (boltLockedBack) {
-      this.triggerVibrate([20, 25, 38]);
+      this.triggerVibrate([16, 20, 30]);
     } else if (suppressed) {
-      this.triggerVibrate(Math.max(8, Math.round((weaponHapticMs || 16) * 0.55)));
+      this.triggerVibrate(Math.max(6, Math.round((weaponHapticMs || 12) * 0.5)));
     } else {
-      this.triggerVibrate(weaponHapticMs || 19);
+      this.triggerVibrate(Math.min(14, weaponHapticMs || 12));
     }
   }
 

@@ -329,6 +329,18 @@ async function startServer(): Promise<void> {
   const httpServer = http.createServer(app);
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
   const scorestreakCooldownByUid = new Map<string, number>();
+  const squadChatCooldownByUid = new Map<string, number>();
+  const ALLOWED_SQUAD_ARENAS = new Set([
+    'DUST2_BOMB_5V5',
+    'ASSAULT_BOMB_5V5',
+    'YARD_BOMB_5V5',
+    'INDUSTRIA_BOMB_5V5',
+    'HANGAR_BOMB_5V5',
+    'EASTERN_CITY_BOMB_5V5',
+    'MIRAGE_ANUBIS_BOMB_5V5',
+    'STATION_TDM_5V5',
+    'STATION_CAPTURE_5V5',
+  ]);
 
   wss.on('connection', (ws) => {
     const clientMeta: WsClientMeta = {
@@ -431,6 +443,7 @@ async function startServer(): Promise<void> {
           if (!meta) {
             meta = {
               roomId,
+              hostUid: uid,
               queueType,
               arenaMode,
               isPrivate,
@@ -438,8 +451,12 @@ async function startServer(): Promise<void> {
               averageMmr: verifiedMmr,
               serverConfirmedStart: false,
               status: 'WAITING',
+              isSearchingMatch: false,
+              searchStartedAtMs: null,
+              readyByUid: new Map([[uid, false]]),
+              chatHistory: [],
               memberMmrs: new Map([[uid, verifiedMmr]]),
-              memberPlayers: new Map([[uid, enrichedPlayer]]),
+              memberPlayers: new Map([[uid, { ...enrichedPlayer, isReady: false }]]),
             };
             roomMetaMap.set(roomId, meta);
           } else {
@@ -468,8 +485,11 @@ async function startServer(): Promise<void> {
                 return;
               }
             }
+            const existingReady = meta.readyByUid.get(uid) ?? false;
+            meta.readyByUid.set(uid, existingReady);
             meta.memberMmrs.set(uid, verifiedMmr);
-            meta.memberPlayers.set(uid, enrichedPlayer);
+            meta.memberPlayers.set(uid, { ...enrichedPlayer, isReady: existingReady });
+            if (!meta.hostUid) meta.hostUid = uid;
             recalculateRoomAverageMmr(meta);
           }
 
@@ -487,15 +507,18 @@ async function startServer(): Promise<void> {
           }
           set.add(clientMeta);
 
+          const memberPlayerForBroadcast = meta.memberPlayers.get(uid) || enrichedPlayer;
           broadcastToRoom(
             roomId,
             {
               type: 'PLAYER_JOINED',
               roomId,
               uid: clientMeta.uid,
+              hostUid: meta.hostUid,
               queueType: meta.queueType,
+              arenaMode: meta.arenaMode,
               averageMmr: meta.averageMmr,
-              player: enrichedPlayer,
+              player: memberPlayerForBroadcast,
               ts: Date.now(),
             },
             clientMeta.uid
@@ -503,19 +526,27 @@ async function startServer(): Promise<void> {
 
           const playersSnapshot: Record<string, Record<string, unknown>> = {};
           meta.memberPlayers.forEach((pObj, memberUid) => {
-            playersSnapshot[memberUid] = pObj;
+            playersSnapshot[memberUid] = {
+              ...pObj,
+              isReady: Boolean(meta!.readyByUid.get(memberUid)),
+            };
           });
 
           ws.send(
             JSON.stringify({
               type: 'ROOM_SYNC_META',
               roomId,
+              hostUid: meta.hostUid,
               queueType: meta.queueType,
+              arenaMode: meta.arenaMode,
               status: meta.status,
+              isSearchingMatch: meta.isSearchingMatch,
+              searchStartedAtMs: meta.searchStartedAtMs,
               averageMmr: meta.averageMmr,
               playerMmr: verifiedMmr,
               playersCount: set.size,
               players: playersSnapshot,
+              chatHistory: meta.chatHistory,
               ts: Date.now(),
             })
           );
@@ -527,6 +558,193 @@ async function startServer(): Promise<void> {
         if (msg.type === 'LEAVE_ROOM') {
           removeClientFromQueue(clientMeta);
           removeClientFromRoom(clientMeta);
+          return;
+        }
+
+        // 2B. Sala de Esquadrão (Chat de Texto em Tempo Real, Pronto ✓, Busca de Partida e Retorno à Sala)
+        if (clientMeta.roomId && clientMeta.uid && msg.type === 'SQUAD_CHAT') {
+          const meta = roomMetaMap.get(clientMeta.roomId);
+          if (!meta) return;
+          const nowMs = Date.now();
+          const lastMsgAt = squadChatCooldownByUid.get(clientMeta.uid) || 0;
+          if (nowMs - lastMsgAt < 400) return;
+          squadChatCooldownByUid.set(clientMeta.uid, nowMs);
+          if (squadChatCooldownByUid.size > 600) {
+            const firstKey = squadChatCooldownByUid.keys().next().value;
+            if (firstKey) squadChatCooldownByUid.delete(firstKey);
+          }
+
+          const rawText = typeof msg.text === 'string' ? msg.text : '';
+          const cleanText = rawText.replace(/[\r\n\t]+/g, ' ').trim().slice(0, 180);
+          if (!cleanText) return;
+
+          const senderMember = meta.memberPlayers.get(clientMeta.uid);
+          const senderCallsign = String(
+            senderMember?.callsign || clientMeta.callsign || 'OPERADOR'
+          ).slice(0, 24);
+          const senderClassId = String(
+            senderMember?.classId || 'FUZILEIRO'
+          ).slice(0, 24);
+
+          const chatEntry = {
+            id: `chat_${clientMeta.uid}_${nowMs}_${Math.random().toString(36).slice(2, 6)}`,
+            senderUid: clientMeta.uid,
+            senderCallsign,
+            senderClassId,
+            text: cleanText,
+            ts: nowMs,
+          };
+          meta.chatHistory.push(chatEntry);
+          if (meta.chatHistory.length > 40) {
+            meta.chatHistory.shift();
+          }
+
+          broadcastToRoom(clientMeta.roomId, {
+            type: 'SQUAD_CHAT',
+            roomId: clientMeta.roomId,
+            message: chatEntry,
+            ts: nowMs,
+          });
+          return;
+        }
+
+        if (clientMeta.roomId && clientMeta.uid && msg.type === 'PLAYER_READY') {
+          const meta = roomMetaMap.get(clientMeta.roomId);
+          if (!meta) return;
+          const isReady = Boolean(msg.isReady);
+          meta.readyByUid.set(clientMeta.uid, isReady);
+          const member = meta.memberPlayers.get(clientMeta.uid);
+          if (member) {
+            meta.memberPlayers.set(clientMeta.uid, { ...member, isReady });
+          }
+          broadcastToRoom(clientMeta.roomId, {
+            type: 'PLAYER_READY',
+            roomId: clientMeta.roomId,
+            uid: clientMeta.uid,
+            isReady,
+            ts: Date.now(),
+          });
+          return;
+        }
+
+        if (clientMeta.roomId && clientMeta.uid && msg.type === 'SQUAD_CONFIG_UPDATE') {
+          const meta = roomMetaMap.get(clientMeta.roomId);
+          if (!meta || (meta.hostUid && meta.hostUid !== clientMeta.uid)) return;
+          const nextArena =
+            typeof msg.arenaMode === 'string' && ALLOWED_SQUAD_ARENAS.has(msg.arenaMode)
+              ? msg.arenaMode
+              : meta.arenaMode;
+          const nextQueue = msg.queueType ? normalizeQueueType(msg.queueType) : meta.queueType;
+          meta.arenaMode = nextArena;
+          meta.queueType = nextQueue;
+          meta.isSearchingMatch = false;
+          meta.searchStartedAtMs = null;
+
+          const members = roomsMap.get(clientMeta.roomId);
+          members?.forEach((c) => {
+            c.arenaMode = nextArena;
+            c.queueType = nextQueue;
+            removeClientFromQueue(c);
+          });
+
+          broadcastToRoom(clientMeta.roomId, {
+            type: 'SQUAD_CONFIG_UPDATE',
+            roomId: clientMeta.roomId,
+            arenaMode: nextArena,
+            queueType: nextQueue,
+            isSearchingMatch: false,
+            ts: Date.now(),
+          });
+          return;
+        }
+
+        if (clientMeta.roomId && clientMeta.uid && msg.type === 'SQUAD_QUEUE_START') {
+          const meta = roomMetaMap.get(clientMeta.roomId);
+          if (!meta || (meta.hostUid && meta.hostUid !== clientMeta.uid)) return;
+          if (typeof msg.arenaMode === 'string' && ALLOWED_SQUAD_ARENAS.has(msg.arenaMode)) {
+            meta.arenaMode = msg.arenaMode;
+          }
+          if (msg.queueType) {
+            meta.queueType = normalizeQueueType(msg.queueType);
+          }
+          const nowMs = Date.now();
+          meta.isSearchingMatch = true;
+          meta.searchStartedAtMs = nowMs;
+
+          const members = roomsMap.get(clientMeta.roomId);
+          if (members && !meta.isPrivate) {
+            members.forEach((c) => {
+              if (!c.uid) return;
+              c.arenaMode = meta.arenaMode;
+              c.queueType = meta.queueType;
+              c.enqueuedAtMs = nowMs;
+              matchmakingQueue.set(c.uid, c);
+            });
+          }
+
+          broadcastToRoom(clientMeta.roomId, {
+            type: 'SQUAD_QUEUE_STATE',
+            roomId: clientMeta.roomId,
+            isSearchingMatch: true,
+            searchStartedAtMs: nowMs,
+            arenaMode: meta.arenaMode,
+            queueType: meta.queueType,
+            ts: nowMs,
+          });
+          return;
+        }
+
+        if (clientMeta.roomId && clientMeta.uid && msg.type === 'SQUAD_QUEUE_CANCEL') {
+          const meta = roomMetaMap.get(clientMeta.roomId);
+          if (!meta) return;
+          meta.isSearchingMatch = false;
+          meta.searchStartedAtMs = null;
+          const members = roomsMap.get(clientMeta.roomId);
+          members?.forEach((c) => removeClientFromQueue(c));
+
+          broadcastToRoom(clientMeta.roomId, {
+            type: 'SQUAD_QUEUE_STATE',
+            roomId: clientMeta.roomId,
+            isSearchingMatch: false,
+            searchStartedAtMs: null,
+            arenaMode: meta.arenaMode,
+            queueType: meta.queueType,
+            ts: Date.now(),
+          });
+          return;
+        }
+
+        if (clientMeta.roomId && clientMeta.uid && msg.type === 'RETURN_TO_ROOM') {
+          const meta = roomMetaMap.get(clientMeta.roomId);
+          if (!meta) return;
+          meta.status = 'WAITING';
+          meta.serverConfirmedStart = false;
+          meta.isSearchingMatch = false;
+          meta.searchStartedAtMs = null;
+          meta.readyByUid.forEach((_val, mUid) => {
+            meta.readyByUid.set(mUid, false);
+          });
+          meta.memberPlayers.forEach((pObj, mUid) => {
+            meta.memberPlayers.set(mUid, {
+              ...pObj,
+              isReady: false,
+              isLoaded: false,
+              loadProgress: 0,
+              health: 100,
+              armor: 100,
+              isDown: false,
+            });
+          });
+          clearRoomCombatAuthority(clientMeta.roomId);
+          const members = roomsMap.get(clientMeta.roomId);
+          members?.forEach((c) => removeClientFromQueue(c));
+
+          broadcastToRoom(clientMeta.roomId, {
+            type: 'ROOM_RETURNED_TO_LOBBY',
+            roomId: clientMeta.roomId,
+            status: 'WAITING',
+            ts: Date.now(),
+          });
           return;
         }
 
@@ -885,6 +1103,7 @@ async function startServer(): Promise<void> {
       roomsMap.set(roomId, matchedClients);
       roomMetaMap.set(roomId, {
         roomId,
+        hostUid: allocation.players[0]?.uid ?? null,
         queueType,
         arenaMode,
         isPrivate: false,
@@ -892,6 +1111,10 @@ async function startServer(): Promise<void> {
         averageMmr: allocation.averageMmr,
         serverConfirmedStart: true,
         status: 'PLAYING',
+        isSearchingMatch: false,
+        searchStartedAtMs: null,
+        readyByUid: new Map(),
+        chatHistory: [],
         memberMmrs,
         memberPlayers,
       });

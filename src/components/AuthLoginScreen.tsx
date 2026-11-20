@@ -13,6 +13,11 @@ import {
   subscribePlayerProfile,
 } from '../firebase/playerCloudSync';
 import { mobileHardware } from '../mobile/nativeHardware';
+import {
+  AssetDownloadSnapshot,
+  getAssetDownloadSnapshot,
+  subscribeAssetDownloads,
+} from '../utils/assetDownloadTracker';
 import { MenuBackground } from './MenuBackground';
 import { WarfaceRankIcon } from './WarfaceRankIcon';
 
@@ -30,6 +35,13 @@ export const AuthLoginScreen: React.FC<AuthLoginScreenProps> = ({
   );
   const [signingIn, setSigningIn] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [dlSnap, setDlSnap] = useState<AssetDownloadSnapshot>(() =>
+    getAssetDownloadSnapshot()
+  );
+
+  useEffect(() => {
+    return subscribeAssetDownloads(setDlSnap);
+  }, []);
 
   useEffect(() => {
     soundEngine.playMenuMusic();
@@ -135,14 +147,12 @@ export const AuthLoginScreen: React.FC<AuthLoginScreenProps> = ({
             KINETIC CLOUD · FIREBASE FIRESTORE
           </span>
         </div>
-        <div className="flex items-center gap-2">
-          <span
-            className={`w-2 h-2 rounded-full ${
-              isGoogleLinked
-                ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]'
-                : 'bg-amber-400 animate-pulse'
-            }`}
-          />
+        <div className="flex items-center gap-3">
+          {dlSnap.activeCount > 0 && (
+            <span className="hidden sm:inline font-mono text-[10px] text-sky-300 tabular-nums">
+              Baixando recursos · {dlSnap.indeterminate ? '...' : `${dlSnap.progressPct}%`}
+            </span>
+          )}
           <span className="font-mono text-[9px] sm:text-xs tracking-wider uppercase text-slate-300">
             {isGoogleLinked ? 'CONTA VINCULADA' : 'AUTENTICAÇÃO TÁTICA'}
           </span>
