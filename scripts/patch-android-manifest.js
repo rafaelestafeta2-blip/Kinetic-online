@@ -46,6 +46,24 @@ if (fs.existsSync(manifestPath)) {
       '    <uses-permission android:name="android.permission.INTERNET" />\n</manifest>'
     );
   }
+  if (!content.includes('android.permission.RECORD_AUDIO')) {
+    content = content.replace(
+      '</manifest>',
+      '    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n</manifest>'
+    );
+  }
+  if (!content.includes('android.permission.MODIFY_AUDIO_SETTINGS')) {
+    content = content.replace(
+      '</manifest>',
+      '    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n</manifest>'
+    );
+  }
+  if (!content.includes('android.hardware.microphone')) {
+    content = content.replace(
+      '</manifest>',
+      '    <uses-feature android:name="android.hardware.microphone" android:required="false" />\n</manifest>'
+    );
+  }
 
   // Patch MAIN / LAUNCHER activity attributes for OAuth survival.
   content = content.replace(
@@ -146,9 +164,11 @@ if (mainActivityPath) {
 
   const mainActivitySrc = `package ${pkgName};
 
+import android.Manifest;
 import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -157,19 +177,23 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
+import android.webkit.PermissionRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.core.content.ContextCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.BridgeWebChromeClient;
 
 /**
  * Capacitor shell. Google OAuth runs in GoogleOAuthActivity (not a Dialog on this
  * Activity) so Account Picker / trust prompts do not destroy the in-app WebView
  * mid-flow. Pending tokens are persisted to SharedPreferences and flushed on resume.
+ * Also handles WebRTC RECORD_AUDIO runtime permissions for Squad Voice Chat.
  */
 public class MainActivity extends BridgeActivity {
     public static final String PREFS = "kinetic_oauth_prefs";
@@ -178,7 +202,10 @@ public class MainActivity extends BridgeActivity {
     public static final String KEY_IN_PROGRESS = "oauth_in_progress";
 
     private ActivityResultLauncher<Intent> oauthLauncher;
+    private ActivityResultLauncher<String> audioPermissionLauncher;
+    private PermissionRequest pendingWebAudioRequest = null;
     private boolean bridgeReady = false;
+    private boolean chromeClientWired = false;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -189,6 +216,25 @@ public class MainActivity extends BridgeActivity {
                 result -> {
                     // Result also written to prefs inside GoogleOAuthActivity.
                     deliverPendingOAuthToJs(true);
+                });
+
+        audioPermissionLauncher =
+            registerForActivityResult(
+                new ActivityResultContracts.RequestPermission(),
+                granted -> {
+                    PermissionRequest req = pendingWebAudioRequest;
+                    pendingWebAudioRequest = null;
+                    if (req == null) return;
+                    runOnUiThread(() -> {
+                        try {
+                            if (Boolean.TRUE.equals(granted)) {
+                                req.grant(new String[] { PermissionRequest.RESOURCE_AUDIO_CAPTURE });
+                            } else {
+                                req.deny();
+                            }
+                        } catch (Exception ignored) {
+                        }
+                    });
                 });
 
         super.onCreate(savedInstanceState);
@@ -238,10 +284,52 @@ public class MainActivity extends BridgeActivity {
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
-        settings.setDomStorageEnabled(true);
+        settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setUserAgentString(buildCleanChromeUserAgent(settings.getUserAgentString()));
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(mainWebView, true);
+        if (!chromeClientWired) {
+            mainWebView.setWebChromeClient(new BridgeWebChromeClient(getBridge()) {
+                @Override
+                public void onPermissionRequest(final PermissionRequest request) {
+                    if (request == null) return;
+                    String[] resources = request.getResources();
+                    boolean wantsAudio = false;
+                    if (resources != null) {
+                        for (String res : resources) {
+                            if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(res)) {
+                                wantsAudio = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!wantsAudio) {
+                        super.onPermissionRequest(request);
+                        return;
+                    }
+                    runOnUiThread(() -> {
+                        if (ContextCompat.checkSelfPermission(
+                                MainActivity.this,
+                                Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                            try {
+                                request.grant(new String[] { PermissionRequest.RESOURCE_AUDIO_CAPTURE });
+                            } catch (Exception ignored) {
+                            }
+                        } else {
+                            if (pendingWebAudioRequest != null) {
+                                try {
+                                    pendingWebAudioRequest.deny();
+                                } catch (Exception ignored) {
+                                }
+                            }
+                            pendingWebAudioRequest = request;
+                            audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO);
+                        }
+                    });
+                }
+            });
+            chromeClientWired = true;
+        }
         // Re-add interface every resume (safe; same name replaces).
         mainWebView.addJavascriptInterface(new KineticNativeAuthBridge(), "KineticNativeAuth");
         bridgeReady = true;
@@ -694,4 +782,39 @@ for (const gradlePath of gradleFilesToPatch) {
     console.log(`[patch-manifest] Patched Maven Central mirrors in ${gradlePath}`);
   }
 }
+
+// ============================================================================
+// 5. Patch android/app/build.gradle with optional env-driven Release signing
+//    (Activates automatically when ANDROID_KEYSTORE_BASE64 secrets are set)
+// ============================================================================
+const appBuildGradlePath = path.resolve('android/app/build.gradle');
+if (fs.existsSync(appBuildGradlePath)) {
+  let appGradle = fs.readFileSync(appBuildGradlePath, 'utf8');
+  if (!appGradle.includes('KINETIC_KEYSTORE_PATH')) {
+    const signingBlock = `
+    signingConfigs {
+        release {
+            def ksPath = System.getenv("KINETIC_KEYSTORE_PATH")
+            if (ksPath != null && !ksPath.isEmpty() && file(ksPath).exists()) {
+                storeFile file(ksPath)
+                storePassword System.getenv("KINETIC_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("KINETIC_KEY_ALIAS")
+                keyPassword System.getenv("KINETIC_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {`;
+
+    if (appGradle.includes('buildTypes {')) {
+      appGradle = appGradle.replace('buildTypes {', signingBlock.trimStart());
+      appGradle = appGradle.replace(
+        /release\s*\{/,
+        `release {\n            def ksPath = System.getenv("KINETIC_KEYSTORE_PATH")\n            if (ksPath != null && !ksPath.isEmpty() && file(ksPath).exists()) {\n                signingConfig signingConfigs.release\n            }`
+      );
+      fs.writeFileSync(appBuildGradlePath, appGradle, 'utf8');
+      console.log('[patch-manifest] Patched android/app/build.gradle with optional Release signingConfigs');
+    }
+  }
+}
+
 

@@ -39,6 +39,7 @@ export interface RoomCombatLedgerEntry {
 
 const VALID_WEAPON_IDS = new Set<WeaponId>([
   'P50_PISTOL',
+  'M1911_PISTOL',
   'SMG_45',
   'SMG_MP5',
   'SHOTGUN_12',
@@ -51,6 +52,9 @@ const VALID_WEAPON_IDS = new Set<WeaponId>([
   'L49_LMG',
   'SNIPER_BOLT',
   'SNIPER_TACTICAL',
+  'SNIPER_AWP',
+  'SNIPER_HEAVY',
+  'RPG7_LAUNCHER',
   'KNIFE_TACTICAL',
 ]);
 

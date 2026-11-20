@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { updatePlayerSprintPantingAudio } from '../audio/characterAndBombAudio';
 import { soundEngine } from '../audio/soundEngine';
+import { getWeaponGunsmithModifiers } from '../progression/loadoutSystem';
 import { WeaponId } from '../types/game';
 import { getAimRaycastIntervalSec } from './combatRaycast';
 import {
@@ -25,12 +26,26 @@ export function updateWeaponKinematicsAndOptics(engine: any, dt: number): void {
       engine.state.stance !== 'SPRINT' &&
       engine.state.wallTuckAmount < 0.55;
 
+    const activeWeapon = engine.state.activeWeapon as WeaponId;
+    const gunsmith = getWeaponGunsmithModifiers(activeWeapon);
+    const adsDampRate =
+      14 *
+      gunsmith.adsSpeedMult *
+      (typeof engine.cachedClassAdsMult === 'number'
+        ? engine.cachedClassAdsMult
+        : 1);
+
     engine.state.adsAlpha = THREE.MathUtils.damp(
       engine.state.adsAlpha,
       canAds ? 1 : 0,
-      14,
+      adsDampRate,
       dt
     );
+    const hasOpticalSniperScope =
+      activeWeapon === 'SNIPER_AWP' ||
+      activeWeapon === 'SNIPER_HEAVY' ||
+      ((activeWeapon === 'SNIPER_BOLT' || activeWeapon === 'SNIPER_TACTICAL') &&
+        engine.state.optic === 'lpvo');
 
     let targetFov = 72;
     if (engine.state.stance === 'SPRINT') {
@@ -40,6 +55,20 @@ export function updateWeaponKinematicsAndOptics(engine: any, dt: number): void {
     } else if (canAds) {
       if (engine.state.cantedActive) {
         targetFov = 60;
+      } else if (hasOpticalSniperScope) {
+        const baseScopeFov =
+          activeWeapon === 'SNIPER_HEAVY'
+            ? 14
+            : activeWeapon === 'SNIPER_AWP'
+              ? 16
+              : activeWeapon === 'SNIPER_BOLT'
+                ? 18
+                : 22;
+        targetFov = THREE.MathUtils.clamp(
+          baseScopeFov - (engine.state.lpvoZoom - 1) * 2.0,
+          11,
+          26
+        );
       } else if (engine.state.optic === 'lpvo') {
         targetFov = THREE.MathUtils.clamp(
           50 - (engine.state.lpvoZoom - 1) * 4.5,
@@ -52,10 +81,10 @@ export function updateWeaponKinematicsAndOptics(engine: any, dt: number): void {
         targetFov = 57;
       } else if (engine.state.optic === 'red_dot') {
         targetFov = 59;
-      } else if (engine.state.activeWeapon === 'SNIPER_BOLT') {
-        targetFov = 14;
-      } else if (engine.state.activeWeapon === 'SNIPER_TACTICAL') {
-        targetFov = 18;
+      } else if (activeWeapon === 'SNIPER_BOLT') {
+        targetFov = 54;
+      } else if (activeWeapon === 'SNIPER_TACTICAL') {
+        targetFov = 56;
       } else {
         targetFov = 58;
       }
@@ -259,7 +288,10 @@ export function updateWeaponKinematicsAndOptics(engine: any, dt: number): void {
 
     // Counter-Strike 2 (CS2) Viewmodel Framing (matches CS2 Desert Eagle bottom-right framing) vs Precision ADS Target Pose
     const hipPos =
-      engine.state.activeWeapon === 'P50_PISTOL' ? _hipPosPistol : _hipPosRifle;
+      engine.state.activeWeapon === 'P50_PISTOL' ||
+      engine.state.activeWeapon === 'M1911_PISTOL'
+        ? _hipPosPistol
+        : _hipPosRifle;
     const adsTransform = getOpticAdsTransform(
       engine.state.optic,
       engine.state.cantedActive,
@@ -419,13 +451,12 @@ export function updateWeaponKinematicsAndOptics(engine: any, dt: number): void {
       targetRotZ + boltTiltRotZ - magCheckAlpha * 0.42
     );
 
-    // Hide 3D weapon viewmodel when scoped sniper (native iron/8x), holding grenade, or presenting class kit
+    // Activate full optical scope overlay ONLY when weapon actually has a sniper scope or LPVO mounted
     const isSniperScoped =
-      (engine.state.activeWeapon === 'SNIPER_BOLT' ||
-        engine.state.activeWeapon === 'SNIPER_TACTICAL') &&
-      engine.state.optic === 'iron' &&
+      hasOpticalSniperScope &&
+      canAds &&
       !engine.state.cantedActive &&
-      engine.state.adsAlpha > 0.82;
+      engine.state.adsAlpha > 0.78;
     const holdingClassKit =
       Boolean(engine.classKitProps?.isHolding?.()) ||
       Boolean(engine.classSupport?.kitChannelActive);

@@ -9,6 +9,7 @@ import { getWeaponBallistics } from '../data/weaponBallistics';
 import { getSprayOffset, getWeaponFeel } from '../data/weaponFeel';
 import { mobileHardware } from '../mobile/nativeHardware';
 import { samplePeerPoseAt } from '../multiplayer/peerSnapshotBuffer';
+import { getWeaponGunsmithModifiers } from '../progression/loadoutSystem';
 import { WeaponId } from '../types/game';
 import { alertBotsToPlayerCombat } from './botNavigationSystem';
 import { raycastCombatShot } from './combatRaycast';
@@ -22,6 +23,8 @@ import {
   _worldPos,
   _worldPos2,
 } from './engineMathTemps';
+
+const _baseShotDir = new THREE.Vector3();
 
 /** Temporarily rewind online peer meshes to attacker-time pose for fairer hit checks. */
 function withRewoundOnlinePeers<T>(engine: any, rewindMs: number, fn: () => T): T {
@@ -223,16 +226,25 @@ export function executeSingleShot(engine: any): void {
 
     const isSniper =
       engine.state.activeWeapon === 'SNIPER_BOLT' ||
-      engine.state.activeWeapon === 'SNIPER_TACTICAL';
+      engine.state.activeWeapon === 'SNIPER_TACTICAL' ||
+      engine.state.activeWeapon === 'SNIPER_AWP' ||
+      engine.state.activeWeapon === 'SNIPER_HEAVY';
     const wasScopedAtShot = engine.state.isAds;
 
     const isShotgun =
       engine.state.activeWeapon === 'SHOTGUN_12' ||
       engine.state.activeWeapon === 'SHOTGUN_SPAS';
+    const isRpg = engine.state.activeWeapon === 'RPG7_LAUNCHER';
 
     if (isSniper) {
       const boltDur =
-        engine.state.activeWeapon === 'SNIPER_BOLT' ? 1.32 : 1.08;
+        engine.state.activeWeapon === 'SNIPER_HEAVY'
+          ? 1.45
+          : engine.state.activeWeapon === 'SNIPER_AWP'
+            ? 1.38
+            : engine.state.activeWeapon === 'SNIPER_BOLT'
+              ? 1.32
+              : 1.08;
       engine.fireCooldown = boltDur + 0.1;
       engine.sniperChamberDuration = boltDur;
       if (engine.state.currentMagRounds > 0) {
@@ -247,6 +259,8 @@ export function executeSingleShot(engine: any): void {
         engine.sniperReturnToScopeAfterBolt = false;
         engine.state.boltLockedBack = true;
       }
+    } else if (isRpg) {
+      engine.fireCooldown = 0.9;
     } else if (isShotgun) {
       engine.fireCooldown =
         engine.state.activeWeapon === 'SHOTGUN_12' ? 0.68 : 0.32;
@@ -262,7 +276,11 @@ export function executeSingleShot(engine: any): void {
                 ? 0.086
                 : engine.state.activeWeapon === 'S_MILITARY'
                   ? 0.08
-                  : 0.078;
+                  : engine.state.activeWeapon === 'M1911_PISTOL'
+                    ? 0.14
+                    : engine.state.activeWeapon === 'P50_PISTOL'
+                      ? 0.18
+                      : 0.078;
     }
     engine.state.shotsFired += 1;
 
@@ -307,18 +325,20 @@ export function executeSingleShot(engine: any): void {
       0.95 + Math.random() * 0.45
     );
 
-    // Eject spinning 5.56mm brass casing from ejection port + 3D brass bounce sound on concrete
-    engine.weaponRig.ejectionPortWorldPos.getWorldPosition(_worldPos);
-    engine.camera.getWorldDirection(_forward);
-    _right.crossVectors(_forward, _up).normalize();
-    engine.fxPool.spawnBrassCasing(_worldPos, _right, _up);
-    playShellCasingDrop3D(
-      engine.playerPos,
-      engine.playerPos,
-      engine.yaw,
-      engine.state.activeWeapon,
-      true
-    );
+    // Eject spinning brass casing from ejection port + 3D brass bounce sound on concrete (RPG-7 não ejeta cápsula)
+    if (!isRpg) {
+      engine.weaponRig.ejectionPortWorldPos.getWorldPosition(_worldPos);
+      engine.camera.getWorldDirection(_forward);
+      _right.crossVectors(_forward, _up).normalize();
+      engine.fxPool.spawnBrassCasing(_worldPos, _right, _up);
+      playShellCasingDrop3D(
+        engine.playerPos,
+        engine.playerPos,
+        engine.yaw,
+        engine.state.activeWeapon,
+        true
+      );
+    }
 
     // Perform Ballistic Raycast FIRST (aligned with exact current Sight/Crosshair vector before recoil kick & unscope!)
     engine.yawObject.rotation.y = engine.yaw;
@@ -328,12 +348,17 @@ export function executeSingleShot(engine: any): void {
     engine.camera.getWorldPosition(_rayOrigin);
     engine.camera.getWorldDirection(_rayDir);
 
+    const gunsmith = getWeaponGunsmithModifiers(
+      engine.state.activeWeapon as WeaponId
+    );
+
     // Tight, predictable dispersion when hip-firing or moving fast; 100% pinpoint accuracy when ADS
     const speed = Math.hypot(engine.playerVel.x, engine.playerVel.z);
     const hipSpread =
       engine.state.adsAlpha > 0.85
         ? 0
-        : (1 - engine.state.adsAlpha) * 0.0028 + speed * 0.001;
+        : ((1 - engine.state.adsAlpha) * 0.0028 + speed * 0.001) *
+          gunsmith.hipSpreadMult;
     if (hipSpread > 0.0002) {
       _rayDir.x += (Math.random() - 0.5) * hipSpread;
       _rayDir.y += (Math.random() - 0.5) * hipSpread;
@@ -345,7 +370,7 @@ export function executeSingleShot(engine: any): void {
 
     const ballistics = getWeaponBallistics(engine.state.activeWeapon as WeaponId);
     const pelletCount = ballistics.pelletCount;
-    const baseDir = _rayDir.clone();
+    const baseDir = _baseShotDir.copy(_rayDir);
     const pelletSpread = wasScopedAtShot
       ? ballistics.pelletSpreadAds
       : ballistics.pelletSpreadHip;
@@ -361,24 +386,27 @@ export function executeSingleShot(engine: any): void {
     const suppMult = engine.state.suppressorAttached ? 0.82 : 1.0;
     const adsMult = wasScopedAtShot ? 0.55 : 1.0;
     const totalMult = stanceMult * suppMult * adsMult;
+    const pitchMult = totalMult * gunsmith.recoilPitchMult;
+    const yawMult = totalMult * gunsmith.recoilYawMult;
     const sprayIdx = Math.max(0, (engine.state.shotsFired || 1) - 1);
     const spray = getSprayOffset(engine.state.activeWeapon as WeaponId, sprayIdx);
     const jitter = 0.15 + Math.random() * 0.2;
 
     engine.recoilKickZ = Math.min(
-      engine.recoilKickZ + feel.kickZ * totalMult,
+      engine.recoilKickZ + feel.kickZ * pitchMult,
       0.092
     );
-    engine.recoilPitch += (feel.kickPitch + spray.pitch * jitter) * totalMult;
-    engine.recoilYaw += (spray.yaw + (Math.random() - 0.5) * feel.kickYaw) * totalMult;
+    engine.recoilPitch += (feel.kickPitch + spray.pitch * jitter) * pitchMult;
+    engine.recoilYaw +=
+      (spray.yaw + (Math.random() - 0.5) * feel.kickYaw) * yawMult;
     engine.cameraShake = Math.min(
-      engine.cameraShake + feel.shake * totalMult,
+      engine.cameraShake + feel.shake * pitchMult,
       0.02
     );
     engine.weaponFeelRecovery = feel.recovery;
 
     engine.pitch = THREE.MathUtils.clamp(
-      engine.pitch + feel.kickPitch * 0.55 * totalMult,
+      engine.pitch + feel.kickPitch * 0.55 * pitchMult,
       -Math.PI * 0.46,
       Math.PI * 0.46
     );
@@ -444,6 +472,13 @@ export function executeSingleShot(engine: any): void {
             wallSelected = true;
             engine.selectWeapon(wallWeaponId);
             return;
+          }
+
+          if (isRpg) {
+            if (typeof engine.handleRpgExplosion === 'function') {
+              engine.handleRpgExplosion(hit.point, _hitNormal);
+            }
+            break;
           }
 
           const targetId = hitMesh?.userData?.targetId as string | undefined;

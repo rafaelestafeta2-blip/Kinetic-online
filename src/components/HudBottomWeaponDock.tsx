@@ -26,19 +26,23 @@ interface HudBottomWeaponDockProps {
 }
 
 const SHORT_WEAPON_TAG: Record<WeaponId, string> = {
-  M4_CARBINE: 'M4A1',
+  M4_CARBINE: 'MX16A4',
   SMG_45: 'SMG .45',
-  SMG_MP5: 'MP5A3',
-  SHOTGUN_12: 'M870 12GA',
+  SMG_MP5: 'MPS5',
+  SHOTGUN_12: 'DRAKE-12',
   SHOTGUN_SPAS: 'SPAS-12',
   AK47_RIFLE: 'AK-47',
-  AK12_RIFLE: 'AK-12',
+  AK12_RIFLE: 'AK-200',
   S_MILITARY: 'SCAR-L',
   CARBINE_AR: 'CARBINE',
   L49_LMG: 'LMG 100',
-  SNIPER_TACTICAL: 'SNIPER S&B',
-  SNIPER_BOLT: 'SNIPER .338',
-  P50_PISTOL: 'MARK 23',
+  SNIPER_TACTICAL: 'MK14 EBR',
+  SNIPER_BOLT: 'KAR98K',
+  SNIPER_AWP: 'AWP .338',
+  SNIPER_HEAVY: 'M200 .408',
+  RPG7_LAUNCHER: 'RPG-7V',
+  P50_PISTOL: 'DGL .50',
+  M1911_PISTOL: 'M1911 .45',
   KNIFE_TACTICAL: 'FACA',
 };
 
@@ -55,6 +59,9 @@ const PRIMARY_CYCLE_ORDER: WeaponId[] = [
   'L49_LMG',
   'SNIPER_TACTICAL',
   'SNIPER_BOLT',
+  'SNIPER_AWP',
+  'SNIPER_HEAVY',
+  'RPG7_LAUNCHER',
 ];
 
 export const HudBottomWeaponDock: React.FC<HudBottomWeaponDockProps> = ({
@@ -72,7 +79,8 @@ export const HudBottomWeaponDock: React.FC<HudBottomWeaponDockProps> = ({
   const reserveAmmo = hud.magazines.reduce((acc, r) => acc + r, 0);
   const currentTotalLoaded = hud.currentMagRounds + hud.chambered;
   const isKnifeActive = hud.activeWeapon === 'KNIFE_TACTICAL';
-  const isSecondaryActive = hud.activeWeapon === 'P50_PISTOL';
+  const isSecondaryActive =
+    hud.activeWeapon === 'P50_PISTOL' || hud.activeWeapon === 'M1911_PISTOL';
   const isPrimaryActive = !isSecondaryActive && !isKnifeActive;
 
   const handlePrimarySlotTap = () => {
@@ -107,15 +115,16 @@ export const HudBottomWeaponDock: React.FC<HudBottomWeaponDockProps> = ({
   };
 
   const handleSecondarySlotTap = () => {
+    const equippedSec = hud.secondaryWeapon || 'P50_PISTOL';
     if (hud.equippedGrenade !== null) {
-      onSelectWeapon('P50_PISTOL');
+      onSelectWeapon(equippedSec);
       setArsenalOpen(false);
       return;
     }
     if (isSecondaryActive) {
       onSelectWeapon(hud.primaryWeapon);
     } else {
-      onSelectWeapon('P50_PISTOL');
+      onSelectWeapon(equippedSec);
     }
     setArsenalOpen(false);
   };
@@ -295,10 +304,10 @@ export const HudBottomWeaponDock: React.FC<HudBottomWeaponDockProps> = ({
                 }`}
               >
                 <span className="text-[8px] font-bold text-amber-300 uppercase leading-none mb-0.5">
-                  MARK 23
+                  {SHORT_WEAPON_TAG[hud.secondaryWeapon || 'P50_PISTOL']}
                 </span>
                 <WeaponSilhouette
-                  weaponId="P50_PISTOL"
+                  weaponId={hud.secondaryWeapon || 'P50_PISTOL'}
                   className="w-9 h-4"
                 />
                 <span className="text-[7px] text-slate-300 leading-none mt-0.5">

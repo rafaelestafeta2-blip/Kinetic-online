@@ -18,12 +18,12 @@ import {
 } from './kinemationAudioBank';
 
 export const DESERT_EAGLE_WAV_LOCAL_URL =
-  '/sounds/151071__vabadus__desert-eagle.wav';
+  '/sounds/151071__vabadus__desert-eagle.mp3';
 export const DESERT_EAGLE_WAV_GITHUB_RAW_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/cfd1dfbb4fb8491525a8438785550286b18bc42b/151071__vabadus__desert-eagle.wav';
 
 export const PISTOL_RELOAD_WAV_LOCAL_URL =
-  '/sounds/pistol_full_reload.wav';
+  '/sounds/pistol_full_reload.mp3';
 export const PISTOL_RELOAD_WAV_GITHUB_RAW_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/df0ed9964c37efbafe382d8f48fa93cdd3789ac3/370251__evanboyerman__full-reload-of-a-pistol-mixed.wav';
 
@@ -33,49 +33,49 @@ export const M4A1_RELOAD_GITHUB_RAW_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/7784d4846216684d62b7ee9d608f16decff29ee8/276964__gfl7__m4a1-or-m16-reload-sound.mp3';
 
 export const M4A1_SHOT_WAV_LOCAL_URL =
-  '/sounds/m4a1_shot.wav';
+  '/sounds/m4a1_shot.mp3';
 export const M4A1_SHOT_WAV_GITHUB_RAW_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/02108defabf18df9a79b33638bbee54f344eedff/assault-rifle-shot-1.wav';
 
-export const AK47_SHOT_WAV_LOCAL_URL = '/sounds/ak47_shot.wav';
+export const AK47_SHOT_WAV_LOCAL_URL = '/sounds/ak47_shot.mp3';
 export const AK47_SHOT_WAV_GITHUB_RAW_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/fd19226e4612b67ce68f0651d5b003ba3a200a99/Sound/Ak47/855842__serutonin-deprivd__an-ak-47-being-shot-has-distinctive-metallic-kalashnikov-esque-report-punchy-sounding.wav';
 
-export const AK47_RELOAD_WAV_LOCAL_URL = '/sounds/ak47_reload.wav';
+export const AK47_RELOAD_WAV_LOCAL_URL = '/sounds/ak47_reload.mp3';
 export const AK47_RELOAD_WAV_GITHUB_RAW_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/fd19226e4612b67ce68f0651d5b003ba3a200a99/Sound/Ak47/674742__serutonin-deprivd__ak-47-assault-rifle-being-unloaded-and-reloaded.wav';
 
-export const AK47_BOLT_RACK_WAV_LOCAL_URL = '/audio/ak_bolt_rack.wav';
+export const AK47_BOLT_RACK_WAV_LOCAL_URL = '/audio/ak_bolt_rack.mp3';
 export const AK47_BOLT_RACK_WAV_GITHUB_RAW_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/23774ab834898a82f4399fdfe52e621b5977b88f/Sound/543597__dwightsabeast__ak-47-action-rack-4%20(1).wav';
 
 export const MENU_MUSIC_LOCAL_URL =
-  '/sounds/menu_theme.m4a';
+  '/audio/sombros_do_combate.mp3';
 export const MENU_MUSIC_GITHUB_RAW_URL =
-  'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/956355e99d304990fce90aa7bdbc7e704314f130/videoplayback.m4a';
+  'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/32a5dee6ae842c09095c1cf23f788daf3e60671d/Sound/Sombros%20do%20Combate.mp3';
 
 export const MATCH_LOADING_AMBIENT_LOCAL_URL =
-  '/sounds/match_loading_ambient.mp3';
+  '/sounds/match_loading_ambient.m4a';
 export const MATCH_LOADING_AMBIENT_GITHUB_RAW_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/d078bf228d72500cb7ee4f4235a170bdbfc263a5/Sound/018.%20Brasil%20-%20Ambient.mp3';
 
 export const DRY_FIRE_WAV_LOCAL_URL =
-  '/sounds/a_rifle_being_dry_fired_once.wav';
+  '/sounds/a_rifle_being_dry_fired_once.mp3';
 export const DRY_FIRE_WAV_GITHUB_RAW_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/7b2263cf0ce87b89429eb95de4ec622053dd3663/725402__serutonin-deprivd__a-rifle-being-dry-fired-once.wav';
 
 export const GRENADE_PIN_PULL_LOCAL_URL =
-  '/sounds/grenade_pin_pull.wav';
+  '/sounds/grenade_pin_pull.mp3';
 export const GRENADE_PIN_PULL_GITHUB_RAW_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/cf32fb142ec4e96c6f4dfd7c2a07079868411bcc/Sound/Granada/Grenade_thrown_with__%232-1794122888691.wav';
 
 export const GRENADE_THROW_LOCAL_URL =
-  '/sounds/grenade_throw.wav';
+  '/sounds/grenade_throw.mp3';
 export const GRENADE_THROW_GITHUB_RAW_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/cf32fb142ec4e96c6f4dfd7c2a07079868411bcc/Sound/Granada/Areme%C3%A7ar_objeto_%231-1794123019934.wav';
 
 export const GRENADE_EXPLOSION_LOCAL_URL =
-  '/sounds/grenade_explosion.flac';
+  '/sounds/grenade_explosion.mp3';
 export const GRENADE_EXPLOSION_GITHUB_RAW_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/cf32fb142ec4e96c6f4dfd7c2a07079868411bcc/Sound/Granada/609587__unfa__grenade-explosion-sfx-medium-sized-meaty-realistic.flac';
 
@@ -108,35 +108,35 @@ export const WEAPON_SWAP_LOCAL_URL = '/audio/weapon_swap.mp3';
 export const WEAPON_SWAP_GITHUB_RAW_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/cf32fb142ec4e96c6f4dfd7c2a07079868411bcc/Sound/159450__twisterman__weaponswap-custom-sound-effect.mp3';
 
-export const PLAYER_JUMP_LOCAL_URL = '/audio/player_jump.wav';
+export const PLAYER_JUMP_LOCAL_URL = '/audio/player_jump.mp3';
 export const PLAYER_JUMP_GITHUB_RAW_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/cf32fb142ec4e96c6f4dfd7c2a07079868411bcc/Sound/542082__vinrax__player_jump.wav';
 
-export const PLAYER_SLIDE_LOCAL_URL = '/audio/player_slide.wav';
+export const PLAYER_SLIDE_LOCAL_URL = '/audio/player_slide.mp3';
 export const PLAYER_SLIDE_GITHUB_RAW_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/cf32fb142ec4e96c6f4dfd7c2a07079868411bcc/Sound/488508__03thib__slide.wav';
 
-export const FOOTSTEP_RUN_LOCAL_URL = '/audio/footstep_run.wav';
+export const FOOTSTEP_RUN_LOCAL_URL = '/audio/footstep_run.mp3';
 export const FOOTSTEP_RUN_GITHUB_RAW_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/cf32fb142ec4e96c6f4dfd7c2a07079868411bcc/Sound/563476__nicholasdaryl__footstep_run_hardsurface_9.wav';
 
-export const SNIPER_SHOT_WAV_LOCAL_URL = '/sounds/sniper_shot.wav';
+export const SNIPER_SHOT_WAV_LOCAL_URL = '/sounds/sniper_shot.mp3';
 export const SNIPER_SHOT_WAV_GITHUB_RAW_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/daeab41ffa080f475b5f4359eebeb34f02ea5a44/Sound/Sniper/514228__superphat__sniper-rifle.wav';
 
-export const SNIPER_BOLT_WAV_LOCAL_URL = '/sounds/sniper_bolt.wav';
+export const SNIPER_BOLT_WAV_LOCAL_URL = '/sounds/sniper_bolt.mp3';
 export const SNIPER_BOLT_WAV_GITHUB_RAW_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/daeab41ffa080f475b5f4359eebeb34f02ea5a44/Sound/Sniper/Sharp%2C_dry_mechanica_%231-1794123918265.wav';
 
-export const SHOTGUN_SHOT_WAV_LOCAL_URL = '/sounds/shotgun_shot.wav';
+export const SHOTGUN_SHOT_WAV_LOCAL_URL = '/sounds/shotgun_shot.mp3';
 export const SHOTGUN_SHOT_WAV_GITHUB_RAW_URL =
-  'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/e2eb6ef3c9dc0b1d27f6b8d3c2a4bf6ceafff4bf/Sound/Ahotgun/348718__deganoth__shotgun_a4.wav';
+  'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/e2eb6ef3c9dc0b1d27f6b8d3c2a4bf6ceafff4bf/Sound/Ahotgun/348718__deganoth__shotgun-a4.wav';
 
-export const SHOTGUN_RELOAD_WAV_LOCAL_URL = '/sounds/shotgun_reload.wav';
+export const SHOTGUN_RELOAD_WAV_LOCAL_URL = '/sounds/shotgun_reload.mp3';
 export const SHOTGUN_RELOAD_WAV_GITHUB_RAW_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/e2eb6ef3c9dc0b1d27f6b8d3c2a4bf6ceafff4bf/Sound/Ahotgun/621153__ktfreesound__shotgun-reload-m7.wav';
 
-export const SHOTGUN_SHELL_DROP_WAV_LOCAL_URL = '/sounds/shotgun_shell_drop.wav';
+export const SHOTGUN_SHELL_DROP_WAV_LOCAL_URL = '/sounds/shotgun_shell_drop.mp3';
 export const SHOTGUN_SHELL_DROP_WAV_GITHUB_RAW_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/e2eb6ef3c9dc0b1d27f6b8d3c2a4bf6ceafff4bf/Sound/Ahotgun/773860__mrgungus__12-guage-shotgun-shell-drop.wav';
 
@@ -335,6 +335,7 @@ class TacticalSoundEngine {
   private kinShotMk14: MultiVariationBank = createMultiVariationBank(KINEMATION_SHOT_URLS.mk14);
   private kinShotKar98k: MultiVariationBank = createMultiVariationBank(KINEMATION_SHOT_URLS.kar98k);
   private kinShotDgl50: MultiVariationBank = createMultiVariationBank(KINEMATION_SHOT_URLS.dgl50);
+  private kinShotX18: MultiVariationBank = createMultiVariationBank(KINEMATION_SHOT_URLS.x18);
   private kinStepWalk: MultiVariationBank = createMultiVariationBank(KINEMATION_FOOTSTEP_URLS.walk);
   private kinStepRun: MultiVariationBank = createMultiVariationBank(KINEMATION_FOOTSTEP_URLS.run);
 
@@ -357,6 +358,8 @@ class TacticalSoundEngine {
   private kinAkx200Empty: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.akx200Empty);
   private kinDgl50Tac: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.dgl50Tac);
   private kinDgl50Empty: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.dgl50Empty);
+  private kinM1911Tac: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.m1911Tac);
+  private kinM1911Empty: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.m1911Empty);
   private kinMk14Tac: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.mk14Tac);
   private kinMk14Empty: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.mk14Empty);
   private kinDrake12Start: SingleClipBank = createSingleClipBank(KINEMATION_SINGLE_URLS.drake12Start);
@@ -445,6 +448,7 @@ class TacticalSoundEngine {
     preloadMultiBank(this.kinShotMk14, getCtx, true);
     preloadMultiBank(this.kinShotKar98k, getCtx, true);
     preloadMultiBank(this.kinShotDgl50, getCtx, true);
+    preloadMultiBank(this.kinShotX18, getCtx, true);
     preloadMultiBank(this.kinStepWalk, getCtx, false);
     preloadMultiBank(this.kinStepRun, getCtx, false);
 
@@ -467,6 +471,8 @@ class TacticalSoundEngine {
     preloadSingleBank(this.kinAkx200Empty, getCtx, 2);
     preloadSingleBank(this.kinDgl50Tac, getCtx, 2);
     preloadSingleBank(this.kinDgl50Empty, getCtx, 2);
+    preloadSingleBank(this.kinM1911Tac, getCtx, 2);
+    preloadSingleBank(this.kinM1911Empty, getCtx, 2);
     preloadSingleBank(this.kinMk14Tac, getCtx, 2);
     preloadSingleBank(this.kinMk14Empty, getCtx, 2);
     preloadSingleBank(this.kinDrake12Start, getCtx, 1);
@@ -485,6 +491,7 @@ class TacticalSoundEngine {
     decodeMultiBank(this.kinShotMk14, ctx);
     decodeMultiBank(this.kinShotKar98k, ctx);
     decodeMultiBank(this.kinShotDgl50, ctx);
+    decodeMultiBank(this.kinShotX18, ctx);
     decodeMultiBank(this.kinStepWalk, ctx);
     decodeMultiBank(this.kinStepRun, ctx);
 
@@ -507,6 +514,8 @@ class TacticalSoundEngine {
     decodeSingleBank(this.kinAkx200Empty, ctx);
     decodeSingleBank(this.kinDgl50Tac, ctx);
     decodeSingleBank(this.kinDgl50Empty, ctx);
+    decodeSingleBank(this.kinM1911Tac, ctx);
+    decodeSingleBank(this.kinM1911Empty, ctx);
     decodeSingleBank(this.kinMk14Tac, ctx);
     decodeSingleBank(this.kinMk14Empty, ctx);
     decodeSingleBank(this.kinDrake12Start, ctx);
@@ -1391,11 +1400,18 @@ class TacticalSoundEngine {
 
     const now = ctx.currentTime;
 
-    // 1. PISTOL (.50 AE DGL50 KINEMATION 4-variation pool -> Desert Eagle WAV fallback)
-    if (weaponId === 'P50_PISTOL') {
-      const playedKin = playMultiBankSample(this.kinShotDgl50, ctx, {
-        volume: suppressed ? 0.56 : 0.96,
-        pitch: 1.0,
+    // 0. LAUNCHER RPG-7V (WHOOSH PROPELLE + SUB-BASS BACKBLAST)
+    if (weaponId === 'RPG7_LAUNCHER') {
+      this.playRpgLaunch();
+      return;
+    }
+
+    // 1. PISTOLS (.50 AE DGL50 & .45 ACP M1911 KINEMATION 4-variation pools)
+    if (weaponId === 'P50_PISTOL' || weaponId === 'M1911_PISTOL') {
+      const bank = weaponId === 'M1911_PISTOL' ? this.kinShotX18 : this.kinShotDgl50;
+      const playedKin = playMultiBankSample(bank, ctx, {
+        volume: suppressed ? 0.54 : 0.96,
+        pitch: weaponId === 'M1911_PISTOL' ? 0.96 : 1.0,
         pitchJitter: 0.04,
         suppressed,
         lowpassHz: 1450,
@@ -1541,13 +1557,24 @@ class TacticalSoundEngine {
       return;
     }
 
-    // 4. PRECISION SNIPERS & DMR (KAR98K / MK14 EBR KINEMATION 4-variation pools -> Sniper WAV fallback)
-    if (weaponId === 'SNIPER_BOLT' || weaponId === 'SNIPER_TACTICAL') {
+    // 4. PRECISION SNIPERS & DMR (KAR98K / MK14 EBR / AWP / M200 -> Sniper WAV fallback)
+    if (
+      weaponId === 'SNIPER_BOLT' ||
+      weaponId === 'SNIPER_TACTICAL' ||
+      weaponId === 'SNIPER_AWP' ||
+      weaponId === 'SNIPER_HEAVY'
+    ) {
       const bank =
-        weaponId === 'SNIPER_BOLT' ? this.kinShotKar98k : this.kinShotMk14;
+        weaponId === 'SNIPER_TACTICAL' ? this.kinShotMk14 : this.kinShotKar98k;
+      const pitchBase =
+        weaponId === 'SNIPER_HEAVY'
+          ? 0.88
+          : weaponId === 'SNIPER_AWP'
+            ? 0.94
+            : 1.0;
       const playedKin = playMultiBankSample(bank, ctx, {
         volume: suppressed ? 0.62 : 0.98,
-        pitch: 1.0,
+        pitch: pitchBase,
         pitchJitter: 0.035,
         suppressed,
         lowpassHz: 1350,
@@ -1557,7 +1584,11 @@ class TacticalSoundEngine {
           const src = ctx.createBufferSource();
           src.buffer = this.sniperShotBuffer;
           src.playbackRate.setValueAtTime(
-            (weaponId === 'SNIPER_BOLT' ? 0.97 : 1.01) +
+            (weaponId === 'SNIPER_HEAVY'
+              ? 0.9
+              : weaponId === 'SNIPER_AWP' || weaponId === 'SNIPER_BOLT'
+                ? 0.97
+                : 1.01) +
               (Math.random() - 0.5) * 0.03,
             now
           );
@@ -1780,6 +1811,54 @@ class TacticalSoundEngine {
       el.volume = 0.95;
       el.play().catch(() => {});
     }
+  }
+
+  public playM1911FullReload(isDry = false): void {
+    if (this.muted) return;
+    const ctx = this.ensureContext();
+    const bank = isDry ? this.kinM1911Empty : this.kinM1911Tac;
+    if (!playSingleBankSample(bank, ctx, { volume: 0.96, pitchJitter: 0.02 })) {
+      this.playPistolFullReload(isDry);
+    }
+  }
+
+  public playRpgLaunch(): void {
+    if (this.muted) return;
+    const ctx = this.ensureContext();
+    if (!ctx || !this.noiseBuffer) return;
+    const now = ctx.currentTime;
+
+    // Backblast thump
+    const thumpOsc = ctx.createOscillator();
+    const thumpGain = ctx.createGain();
+    thumpOsc.type = 'sine';
+    thumpOsc.frequency.setValueAtTime(140, now);
+    thumpOsc.frequency.exponentialRampToValueAtTime(34, now + 0.28);
+    thumpGain.gain.setValueAtTime(0.85, now);
+    thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+    thumpOsc.connect(thumpGain);
+    thumpGain.connect(ctx.destination);
+    thumpOsc.start(now);
+    thumpOsc.stop(now + 0.32);
+
+    // Rocket motor roar + whistle
+    const roarSrc = ctx.createBufferSource();
+    roarSrc.buffer = this.noiseBuffer;
+    const roarFilter = ctx.createBiquadFilter();
+    roarFilter.type = 'bandpass';
+    roarFilter.frequency.setValueAtTime(620, now);
+    roarFilter.frequency.exponentialRampToValueAtTime(1750, now + 0.24);
+    roarFilter.frequency.exponentialRampToValueAtTime(420, now + 0.62);
+    roarFilter.Q.value = 1.4;
+    const roarGain = ctx.createGain();
+    roarGain.gain.setValueAtTime(0.02, now);
+    roarGain.gain.linearRampToValueAtTime(0.65, now + 0.05);
+    roarGain.gain.exponentialRampToValueAtTime(0.001, now + 0.65);
+    roarSrc.connect(roarFilter);
+    roarFilter.connect(roarGain);
+    roarGain.connect(ctx.destination);
+    roarSrc.start(now);
+    roarSrc.stop(now + 0.68);
   }
 
   public playM4a1FullReload(isDry = false): void {

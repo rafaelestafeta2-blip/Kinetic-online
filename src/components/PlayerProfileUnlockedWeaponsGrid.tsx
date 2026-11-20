@@ -17,19 +17,23 @@ interface WeaponProfileDisplayItem {
 }
 
 const WEAPON_ITEMS: WeaponProfileDisplayItem[] = [
-  { id: 'M4_CARBINE', name: 'M4A1 SOPMOD', stars: 5, masteryCur: 8, masteryMax: 10 },
-  { id: 'AK12_RIFLE', name: 'AK-12 SPETSNAZ', stars: 5, masteryCur: 10, masteryMax: 10 },
+  { id: 'M4_CARBINE', name: 'MX16A4 / M4 TÁTICA', stars: 5, masteryCur: 8, masteryMax: 10 },
+  { id: 'AK12_RIFLE', name: 'AK-200 TÁTICA', stars: 5, masteryCur: 10, masteryMax: 10 },
   { id: 'S_MILITARY', name: 'SCAR-L S-MILITARY', stars: 5, masteryCur: 9, masteryMax: 10 },
-  { id: 'AK47_RIFLE', name: 'AK-47 KALASHNIKOV', stars: 5, masteryCur: 10, masteryMax: 10 },
+  { id: 'AK47_RIFLE', name: 'AK-47 COMANDO', stars: 5, masteryCur: 10, masteryMax: 10 },
   { id: 'CARBINE_AR', name: 'CARABINA TÁTICA', stars: 4, masteryCur: 7, masteryMax: 10 },
-  { id: 'SHOTGUN_12', name: 'M870 BREACHER 12GA', stars: 5, masteryCur: 7, masteryMax: 10 },
+  { id: 'SHOTGUN_12', name: 'DRAKE-12 BREACHER', stars: 5, masteryCur: 7, masteryMax: 10 },
   { id: 'SHOTGUN_SPAS', name: 'SPAS-12 TÁTICA', stars: 5, masteryCur: 6, masteryMax: 10 },
-  { id: 'SMG_45', name: 'SMG .45 TACTICAL', stars: 4, masteryCur: 6, masteryMax: 10 },
-  { id: 'SMG_MP5', name: 'MP5A3 TÁTICA', stars: 4, masteryCur: 7, masteryMax: 10 },
-  { id: 'SNIPER_TACTICAL', name: 'SNIPER S&B .308', stars: 5, masteryCur: 8, masteryMax: 10 },
-  { id: 'SNIPER_BOLT', name: 'HEAVY BOLT .338', stars: 5, masteryCur: 9, masteryMax: 10 },
+  { id: 'SMG_45', name: 'SMG .45 TÁTICA', stars: 4, masteryCur: 6, masteryMax: 10 },
+  { id: 'SMG_MP5', name: 'MPS5 9MM TÁTICA', stars: 4, masteryCur: 7, masteryMax: 10 },
+  { id: 'SNIPER_TACTICAL', name: 'MK14 EBR .308', stars: 5, masteryCur: 8, masteryMax: 10 },
+  { id: 'SNIPER_BOLT', name: 'KAR98K 7.92MM', stars: 5, masteryCur: 9, masteryMax: 10 },
+  { id: 'SNIPER_AWP', name: 'AWP-M .338 6X', stars: 5, masteryCur: 10, masteryMax: 10 },
+  { id: 'SNIPER_HEAVY', name: 'M200 .408 CHEYTAC', stars: 5, masteryCur: 9, masteryMax: 10 },
   { id: 'L49_LMG', name: 'LMG 100R SAW', stars: 4, masteryCur: 5, masteryMax: 10 },
-  { id: 'P50_PISTOL', name: 'MARK 23 .45 ACP', stars: 5, masteryCur: 10, masteryMax: 10 },
+  { id: 'RPG7_LAUNCHER', name: 'RPG-7V 85MM', stars: 5, masteryCur: 7, masteryMax: 10 },
+  { id: 'P50_PISTOL', name: 'DESERT EAGLE .50AE', stars: 5, masteryCur: 10, masteryMax: 10 },
+  { id: 'M1911_PISTOL', name: 'COLT M1911 .45', stars: 5, masteryCur: 9, masteryMax: 10 },
 ];
 
 export const PlayerProfileUnlockedWeaponsGrid: React.FC<PlayerProfileUnlockedWeaponsGridProps> = ({

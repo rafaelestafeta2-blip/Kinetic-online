@@ -126,9 +126,13 @@ export function playShellCasingDrop3D(
     weaponId === 'AK47_RIFLE' ||
     weaponId === 'AK12_RIFLE' ||
     weaponId === 'SNIPER_BOLT' ||
-    weaponId === 'SNIPER_TACTICAL';
+    weaponId === 'SNIPER_TACTICAL' ||
+    weaponId === 'SNIPER_AWP' ||
+    weaponId === 'SNIPER_HEAVY';
   const firstBounceDelay =
-    weaponId === 'SNIPER_BOLT'
+    weaponId === 'SNIPER_BOLT' ||
+    weaponId === 'SNIPER_AWP' ||
+    weaponId === 'SNIPER_HEAVY'
       ? 0.48
       : weaponId === 'SHOTGUN_12'
         ? 0.34 + Math.random() * 0.04

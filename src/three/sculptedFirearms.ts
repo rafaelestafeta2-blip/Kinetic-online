@@ -699,8 +699,8 @@ function buildSculptedSmgMp5(): SculptedWeaponBuildResult {
   return { group: root };
 }
 
-export function isSculptedWeaponId(weaponId: WeaponId): boolean {
-  return weaponId === 'SMG_MP5';
+export function isSculptedWeaponId(_weaponId: WeaponId): boolean {
+  return false;
 }
 
 /**

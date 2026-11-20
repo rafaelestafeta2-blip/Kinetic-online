@@ -1,0 +1,15 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Default deny everything
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    // Public read-only CDN for 3D models, maps, and audio assets
+    match /cdn/{folder}/{allFiles=**} {
+      allow read: if folder in ['models', 'maps', 'sounds'];
+      allow write: if false;
+    }
+  }
+}

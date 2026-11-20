@@ -68,7 +68,11 @@ export function playSpatialBotGunshot(
   const now = ctx.currentTime;
 
   const dist = shooterPos.distanceTo(listenerPos);
-  const isSniper = weaponId === 'SNIPER_BOLT' || weaponId === 'SNIPER_TACTICAL';
+  const isSniper =
+    weaponId === 'SNIPER_BOLT' ||
+    weaponId === 'SNIPER_TACTICAL' ||
+    weaponId === 'SNIPER_AWP' ||
+    weaponId === 'SNIPER_HEAVY';
   const baseGain = computeGunshotDistanceGain(dist, isSniper);
   const occlusionMult = isOccludedByWall ? 0.46 : 1.0;
   const finalGain = baseGain * occlusionMult;

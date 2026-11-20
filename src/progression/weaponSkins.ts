@@ -7,7 +7,12 @@ export type CamoPatternType =
   | 'woodland'
   | 'urban_digital'
   | 'crimson'
-  | 'carbon_gold';
+  | 'carbon_gold'
+  | 'anubis_gold'
+  | 'cyber_cobalt'
+  | 'emerald_viper'
+  | 'arctic_frost'
+  | 'aemondir_legion';
 
 export interface WeaponSkinDefinition {
   id: string;
@@ -18,6 +23,8 @@ export interface WeaponSkinDefinition {
   description: string;
   /** undefined = universal across all weapons */
   weaponIds?: WeaponId[];
+  /** Dedicated 3D GLB model replacement for exclusive weapon skins (e.g. Aemondir Bucky Shotgun) */
+  modelOverrideUrl?: string;
   /** Dedicated 2K/HD albedo texture URL (e.g. automatic_shotgun skins 02..05) */
   textureUrl?: string;
   /** Procedural seamless tactical camo generator key */
@@ -27,6 +34,7 @@ export interface WeaponSkinDefinition {
   roughness?: number;
   metalness?: number;
   cashPrice: number;
+  diamondPrice?: number;
 }
 
 export const WEAPON_SKIN_CATALOG: WeaponSkinDefinition[] = [
@@ -39,6 +47,24 @@ export const WEAPON_SKIN_CATALOG: WeaponSkinDefinition[] = [
     description: 'Acabamento militar original de fábrica sem pintura adicional.',
     swatchColors: ['#1f2937', '#334155', '#f59e0b'],
     cashPrice: 0,
+  },
+  // Skin Lendária 3D Aemondir Bucky Legion (Format1.rar - Pump Shotgun 12GA)
+  {
+    id: 'shotgun_aemondir_legion',
+    name: 'Aemondir Bucky Legion',
+    shortName: 'Aemondir',
+    category: 'SKIN_EXCLUSIVA',
+    rarity: 'ELITE',
+    description:
+      'Armadura dracônica Aemondir Legion com entalhes em bronze imperial, escamas carmesim, runas incandescentes e baioneta acoplada.',
+    weaponIds: ['SHOTGUN_12'],
+    modelOverrideUrl: '/models/weapons/shotgun_aemondir_lv1.glb',
+    pattern: 'aemondir_legion',
+    swatchColors: ['#dc2626', '#eab308', '#18181b'],
+    roughness: 0.28,
+    metalness: 0.78,
+    cashPrice: 2200,
+    diamondPrice: 350,
   },
   // 4 Skins Oficiais do pacote Automatic Shotgun (automatic_shotgun_02..05)
   {
@@ -149,6 +175,7 @@ export const WEAPON_SKIN_CATALOG: WeaponSkinDefinition[] = [
     roughness: 0.36,
     metalness: 0.55,
     cashPrice: 450,
+    diamondPrice: 180,
   },
   {
     id: 'camo_carbon_gold',
@@ -163,6 +190,67 @@ export const WEAPON_SKIN_CATALOG: WeaponSkinDefinition[] = [
     roughness: 0.28,
     metalness: 0.78,
     cashPrice: 850,
+    diamondPrice: 280,
+  },
+  {
+    id: 'camo_anubis_gold',
+    name: 'Ouro Faraó Anubis',
+    shortName: 'Anubis 24K',
+    category: 'SKIN_EXCLUSIVA',
+    rarity: 'ELITE',
+    description:
+      'Ligas de Ouro Imperial 24K com entalhes em azul lápis-lazúli e obsidiana real da coleção Warbox Anubis.',
+    pattern: 'anubis_gold',
+    swatchColors: ['#facc15', '#1d4ed8', '#0f172a'],
+    roughness: 0.22,
+    metalness: 0.88,
+    cashPrice: 2400,
+    diamondPrice: 360,
+  },
+  {
+    id: 'camo_cyber_cobalt',
+    name: 'Cobalto KINETIC Cyber',
+    shortName: 'Cobalto',
+    category: 'SKIN_EXCLUSIVA',
+    rarity: 'ELITE',
+    description:
+      'Chassi em titânio escovado com circuitos táticos azul-cobalto anodizado de alta visibilidade.',
+    pattern: 'cyber_cobalt',
+    swatchColors: ['#38bdf8', '#1e3a8a', '#090d16'],
+    roughness: 0.26,
+    metalness: 0.76,
+    cashPrice: 1950,
+    diamondPrice: 320,
+  },
+  {
+    id: 'camo_emerald_viper',
+    name: 'Víbora Esmeralda',
+    shortName: 'Esmeralda',
+    category: 'SKIN_EXCLUSIVA',
+    rarity: 'ESPECIAL',
+    description:
+      'Escamas táticas furtivas em preto ônix com veios metálicos verde-esmeralda da divisão Recon.',
+    pattern: 'emerald_viper',
+    swatchColors: ['#10b981', '#064e3b', '#18181b'],
+    roughness: 0.32,
+    metalness: 0.65,
+    cashPrice: 1450,
+    diamondPrice: 240,
+  },
+  {
+    id: 'camo_arctic_frost',
+    name: 'Geada Fantasma Ártica',
+    shortName: 'Geada',
+    category: 'SKIN_EXCLUSIVA',
+    rarity: 'ESPECIAL',
+    description:
+      'Camuflagem invernal de operações especiais com fragmentos branco-gelo, prata e azul-glacial.',
+    pattern: 'arctic_frost',
+    swatchColors: ['#f8fafc', '#93c5fd', '#334155'],
+    roughness: 0.38,
+    metalness: 0.48,
+    cashPrice: 1450,
+    diamondPrice: 220,
   },
 ];
 

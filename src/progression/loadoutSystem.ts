@@ -9,6 +9,15 @@ import {
   spendPlayerCash,
 } from './ranks';
 import { getSkinDefinition } from './weaponSkins';
+import {
+  computeGunsmithModifiersForLoadout,
+  GunsmithCombatModifiers,
+  GunsmithSlotId,
+  NEUTRAL_GUNSMITH_MODIFIERS,
+  normalizeGunsmithLoadout,
+  WeaponGunsmithLoadout,
+  weaponSupportsGunsmith,
+} from './gunsmithSystem';
 
 export type EquipmentSlotId =
   | 'primaryWeapon'
@@ -83,6 +92,7 @@ export const SCOPE_PACK_CATALOG: Record<OpticType, ScopeCatalogItem> = {
       'Configuração original da arma sem mira adicional acoplada no trilho superior, garantindo saque rápido e visada limpa.',
     compatibleWeapons: [
       'P50_PISTOL',
+      'M1911_PISTOL',
       'SMG_45',
       'SMG_MP5',
       'SHOTGUN_12',
@@ -95,6 +105,9 @@ export const SCOPE_PACK_CATALOG: Record<OpticType, ScopeCatalogItem> = {
       'L49_LMG',
       'SNIPER_TACTICAL',
       'SNIPER_BOLT',
+      'SNIPER_AWP',
+      'SNIPER_HEAVY',
+      'RPG7_LAUNCHER',
     ],
   },
   red_dot: {
@@ -111,6 +124,7 @@ export const SCOPE_PACK_CATALOG: Record<OpticType, ScopeCatalogItem> = {
       'Micro colimador tubular 3D (HOLO_POINT) em alumínio anodizado com retículo chevron vermelho de aquisição instantânea para CQB.',
     compatibleWeapons: [
       'P50_PISTOL',
+      'M1911_PISTOL',
       'SMG_45',
       'SMG_MP5',
       'SHOTGUN_12',
@@ -179,8 +193,8 @@ export const SCOPE_PACK_CATALOG: Record<OpticType, ScopeCatalogItem> = {
     shortLabel: 'SCOPE 4X',
     code: 'LPVO-1-4X',
     modelUrl: '/models/accessories/scopes/Scope_Tactical_LPVO.glb',
-    unlockLevel: 6,
-    magnification: '1.5x – 4.0x',
+    unlockLevel: 1,
+    magnification: '1.5x – 6.0x',
     reticleLabel: 'Crosshair Mil-Dot Iluminado',
     reticleColorHex: '#38bdf8',
     description:
@@ -188,6 +202,8 @@ export const SCOPE_PACK_CATALOG: Record<OpticType, ScopeCatalogItem> = {
     compatibleWeapons: [
       'SNIPER_TACTICAL',
       'SNIPER_BOLT',
+      'SNIPER_AWP',
+      'SNIPER_HEAVY',
       'M4_CARBINE',
       'CARBINE_AR',
       'S_MILITARY',
@@ -206,6 +222,7 @@ export interface PlayerInventoryState {
   purchasedSkinIds: string[];
   equippedWeaponSkins: Partial<Record<WeaponId, string>>;
   equippedWeaponOptics: Partial<Record<WeaponId, OpticType>>;
+  equippedWeaponGunsmith?: Partial<Record<WeaponId, WeaponGunsmithLoadout>>;
   classLoadouts: Record<WarfaceClassId, ClassLoadoutConfig>;
 }
 
@@ -261,11 +278,11 @@ export const WARFACE_CLASS_LOADOUT_META: Record<
   },
   ENGENHEIRO: {
     classId: 'ENGENHEIRO',
-    allowedPrimaries: ['SMG_45', 'SMG_MP5'],
-    allowedWeaponRuleLabel: 'EXCLUSIVO ENGENHEIRO · APENAS SMGs',
+    allowedPrimaries: ['SMG_45', 'SMG_MP5', 'RPG7_LAUNCHER'],
+    allowedWeaponRuleLabel: 'ENGENHEIRO · SMGs & LANÇADOR ANTITANQUE RPG-7',
     defaultPrimary: 'SMG_45',
-    passiveTitle: 'ESPECIALISTA SMG & BLINDAGEM',
-    passiveDesc: 'Submetralhadoras de alta cadência + 25 Colete Balístico base.',
+    passiveTitle: 'ESPECIALISTA SMG & ARMAMENTO PESADO',
+    passiveDesc: 'Submetralhadoras e Lançador RPG-7V + 25 Colete Balístico base.',
     specialSlotTitle: 'Kit Blindagem AP',
     specialSlotDesc: 'Reparo rápido de colete balístico e plantio C4 ágil.',
     baseArmor: 25,
@@ -274,9 +291,9 @@ export const WARFACE_CLASS_LOADOUT_META: Record<
   },
   FRANCO_ATIRADOR: {
     classId: 'FRANCO_ATIRADOR',
-    allowedPrimaries: ['SNIPER_TACTICAL', 'SNIPER_BOLT'],
+    allowedPrimaries: ['SNIPER_TACTICAL', 'SNIPER_BOLT', 'SNIPER_AWP', 'SNIPER_HEAVY'],
     allowedWeaponRuleLabel: 'EXCLUSIVO SNIPER · APENAS FUZIS SNIPER',
-    defaultPrimary: 'SNIPER_TACTICAL',
+    defaultPrimary: 'SNIPER_AWP',
     passiveTitle: 'RECONHECIMENTO DE PRECISÃO',
     passiveDesc: 'Fuzis de Precisão longo alcance + estabilização de mira.',
     specialSlotTitle: 'Sensor Balístico',
@@ -314,13 +331,13 @@ export interface WeaponCatalogItem {
 export const WEAPON_INVENTORY_CATALOG: Record<WeaponId, WeaponCatalogItem> = {
   M4_CARBINE: {
     id: 'M4_CARBINE',
-    name: 'M4A1 SOPMOD',
+    name: 'MX16A4 / M4 TÁTICA',
     caliber: '5.56x45mm NATO',
     category: 'Fuzil de Assalto',
     exclusiveLabel: 'Fuzileiro · Rifle',
     attachmentSlots: 'Cano, Trilho, Mira',
     description:
-      'Carabina de assalto padrão Vanguard com mira holográfica modular, recuo dócil e precisão consistente a média distância.',
+      'Carabina de assalto modular MX16A4 com trilho quad-rail Picatinny, recuo dócil e precisão consistente a média distância.',
     firepower: 85,
     accuracy: 84,
     mobility: 78,
@@ -338,13 +355,13 @@ export const WEAPON_INVENTORY_CATALOG: Record<WeaponId, WeaponCatalogItem> = {
   },
   AK12_RIFLE: {
     id: 'AK12_RIFLE',
-    name: 'AK-12 SPETSNAZ',
+    name: 'AK-200 TÁTICA',
     caliber: '5.45x39mm',
     category: 'Fuzil de Assalto',
     exclusiveLabel: 'Fuzileiro · Rifle',
     attachmentSlots: 'Cano, Mira Integrada',
     description:
-      'Fuzil de 5ª geração equipado com luneta tática nativa, trilho Picatinny completo e alto poder de parada.',
+      'Fuzil russo AK-200 com trilho Picatinny superior completo, carregador translúcido tático e alto poder de parada.',
     firepower: 88,
     accuracy: 86,
     mobility: 74,
@@ -406,7 +423,7 @@ export const WEAPON_INVENTORY_CATALOG: Record<WeaponId, WeaponCatalogItem> = {
     hipAcc: 54,
     clipLabel: '30 / 120',
     clipPct: 65,
-    cashPrice: 1200,
+    cashPrice: 0,
   },
   CARBINE_AR: {
     id: 'CARBINE_AR',
@@ -434,13 +451,13 @@ export const WEAPON_INVENTORY_CATALOG: Record<WeaponId, WeaponCatalogItem> = {
   },
   SHOTGUN_12: {
     id: 'SHOTGUN_12',
-    name: 'M870 BREACHER 12GA',
+    name: 'DRAKE-12 BREACHER',
     caliber: 'Calibre 12 Buckshot',
     category: 'Escopeta 12 Curto Alcance',
     exclusiveLabel: 'Médico · Calibre 12',
     attachmentSlots: 'Cano, Mira Ghost-Ring',
     description:
-      'Escopeta Pump-Action 12GA de curto alcance. Dispara 8 bagos de chumbo 00-Buckshot com dano devastador até 12m.',
+      'Escopeta tática Drake-12 Pump-Action 12GA de curto alcance. Dispara 8 bagos de chumbo 00-Buckshot letais até 12m.',
     firepower: 100,
     accuracy: 62,
     mobility: 84,
@@ -482,37 +499,37 @@ export const WEAPON_INVENTORY_CATALOG: Record<WeaponId, WeaponCatalogItem> = {
   },
   SMG_45: {
     id: 'SMG_45',
-    name: 'VECTOR .45 SUB',
-    caliber: '.45 ACP',
-    category: 'Submetralhadora SMG',
-    exclusiveLabel: 'Engenheiro · SMG',
-    attachmentSlots: 'Cano, Trilho, Mira',
+    name: 'V18 SPECTRE SILENCIADA',
+    caliber: '9x19mm Subsonic',
+    category: 'SMG Engenheiro Silenciada',
+    exclusiveLabel: 'Engenheiro · SMG V18',
+    attachmentSlots: 'Supressor Integral, Mira Holo',
     description:
-      'Submetralhadora ultracompacta de altíssima cadência (900 RPM) otimizada para mobilidade e tiros sem mira.',
-    firepower: 76,
-    accuracy: 80,
+      'Nova submetralhadora tática V18 de Engenheiro com silenciador acústico integral, mira holográfica embutida e cadência de 900 RPM para domínio em CQB.',
+    firepower: 84,
+    accuracy: 86,
     mobility: 94,
-    damageStat: 68,
-    damagePct: 58,
-    rangeLabel: '35m',
-    rangePct: 42,
+    damageStat: 74,
+    damagePct: 64,
+    rangeLabel: '42m',
+    rangePct: 50,
     rpmLabel: '900',
     rpmPct: 94,
-    aimAcc: 78,
-    hipAcc: 86,
+    aimAcc: 86,
+    hipAcc: 88,
     clipLabel: '32 / 128',
     clipPct: 70,
     cashPrice: 0,
   },
   SMG_MP5: {
     id: 'SMG_MP5',
-    name: 'MP5A3 TÁTICA 9MM',
+    name: 'MPS5 TÁTICA 9MM',
     caliber: '9x19mm Parabellum',
     category: 'Submetralhadora SMG',
     exclusiveLabel: 'Engenheiro · SMG',
     attachmentSlots: 'Cano, Trilho, Mira',
     description:
-      'Clássica SMG de forças especiais com excelente controle de recuo e alta precisão em rajadas móveis.',
+      'Submetralhadora MPS5 de forças especiais com carregador translúcido, excelente controle de recuo e precisão móvel.',
     firepower: 74,
     accuracy: 85,
     mobility: 92,
@@ -527,6 +544,30 @@ export const WEAPON_INVENTORY_CATALOG: Record<WeaponId, WeaponCatalogItem> = {
     clipLabel: '30 / 120',
     clipPct: 65,
     cashPrice: 950,
+  },
+  RPG7_LAUNCHER: {
+    id: 'RPG7_LAUNCHER',
+    name: 'RPG-7V LANÇADOR',
+    caliber: 'PG-7V HEAT 85mm',
+    category: 'Lançador Pesado',
+    exclusiveLabel: 'Engenheiro · Explosivo',
+    attachmentSlots: 'Ogiva PG-7V, Mira Óptica',
+    description:
+      'Lançador antitanque portátil RPG-7V com ogiva explosiva de alto impacto em área e destruição instantânea.',
+    firepower: 100,
+    accuracy: 78,
+    mobility: 52,
+    damageStat: 220,
+    damagePct: 100,
+    rangeLabel: '120m',
+    rangePct: 90,
+    rpmLabel: '24',
+    rpmPct: 12,
+    aimAcc: 80,
+    hipAcc: 48,
+    clipLabel: '1 / 4',
+    clipPct: 15,
+    cashPrice: 1200,
   },
   L49_LMG: {
     id: 'L49_LMG',
@@ -554,17 +595,17 @@ export const WEAPON_INVENTORY_CATALOG: Record<WeaponId, WeaponCatalogItem> = {
   },
   SNIPER_TACTICAL: {
     id: 'SNIPER_TACTICAL',
-    name: 'SNIPER TÁTICA S&B',
-    caliber: '.308 Win',
-    category: 'Fuzil Sniper',
+    name: 'MK14 EBR TÁTICA',
+    caliber: '7.62x51mm NATO',
+    category: 'Fuzil Sniper DMR',
     exclusiveLabel: 'Sniper · Precisão',
-    attachmentSlots: 'Cano, Luneta S&B',
+    attachmentSlots: 'Cano, Mira Ferro / LPVO',
     description:
-      'Fuzil de precisão semiautomático com luneta de alto zoom e abate letal em qualquer distância.',
+      'Fuzil de precisão MK14 Enhanced Battle Rifle 7.62mm com chassi tático, mira de ferro aberta ou luneta LPVO.',
     firepower: 95,
     accuracy: 96,
     mobility: 68,
-    damageStat: 250,
+    damageStat: 240,
     damagePct: 94,
     rangeLabel: '135m',
     rangePct: 92,
@@ -578,17 +619,17 @@ export const WEAPON_INVENTORY_CATALOG: Record<WeaponId, WeaponCatalogItem> = {
   },
   SNIPER_BOLT: {
     id: 'SNIPER_BOLT',
-    name: 'AWP BOLT-ACTION',
-    caliber: '.338 Lapua',
-    category: 'Fuzil Sniper Pesado',
-    exclusiveLabel: 'Sniper · Precisão',
-    attachmentSlots: 'Cano, Luneta Longo Alcance',
+    name: 'KAR98K PRECISÃO',
+    caliber: '7.92x57mm / .338',
+    category: 'Fuzil Sniper Ferrolho',
+    exclusiveLabel: 'Sniper · Ferrolho',
+    attachmentSlots: 'Cano, Ferro / Luneta LPVO',
     description:
-      'Fuzil de ferrolho .338 Lapua com perfuração total de coletes e letalidade máxima de 1 disparo.',
+      'Fuzil de ferrolho Kar98k com coronha em nogueira, mira metálica aberta ou luneta LPVO de alto alcance.',
     firepower: 100,
     accuracy: 99,
     mobility: 60,
-    damageStat: 350,
+    damageStat: 340,
     damagePct: 100,
     rangeLabel: '150m',
     rangePct: 100,
@@ -600,28 +641,100 @@ export const WEAPON_INVENTORY_CATALOG: Record<WeaponId, WeaponCatalogItem> = {
     clipPct: 25,
     cashPrice: 1400,
   },
+  SNIPER_AWP: {
+    id: 'SNIPER_AWP',
+    name: 'AWP-M .338 LUNETA',
+    caliber: '.338 Lapua Magnum',
+    category: 'Fuzil Sniper Ferrolho',
+    exclusiveLabel: 'Sniper · Luneta 6x',
+    attachmentSlots: 'Luneta Óptica Nativa, Cano',
+    description:
+      'Fuzil de precisão AWP-M calibre .338 Lapua com luneta tática de longo alcance embutida e abate letal em um disparo.',
+    firepower: 100,
+    accuracy: 100,
+    mobility: 58,
+    damageStat: 360,
+    damagePct: 100,
+    rangeLabel: '180m',
+    rangePct: 100,
+    rpmLabel: '42',
+    rpmPct: 16,
+    aimAcc: 100,
+    hipAcc: 28,
+    clipLabel: '5 / 20',
+    clipPct: 25,
+    cashPrice: 0,
+  },
+  SNIPER_HEAVY: {
+    id: 'SNIPER_HEAVY',
+    name: 'M200 INTERVENTION',
+    caliber: '.408 CheyTac',
+    category: 'Fuzil Sniper Pesado',
+    exclusiveLabel: 'Sniper · Anti-Material',
+    attachmentSlots: 'Luneta Balística Nativa',
+    description:
+      'Sniper pesada de longo alcance calibre .408 CheyTac com luneta óptica integrada de altíssima penetração de blindagem.',
+    firepower: 100,
+    accuracy: 100,
+    mobility: 52,
+    damageStat: 410,
+    damagePct: 100,
+    rangeLabel: '200m',
+    rangePct: 100,
+    rpmLabel: '38',
+    rpmPct: 14,
+    aimAcc: 100,
+    hipAcc: 24,
+    clipLabel: '5 / 20',
+    clipPct: 25,
+    cashPrice: 1900,
+  },
   P50_PISTOL: {
     id: 'P50_PISTOL',
-    name: 'MARK 23 TÁTICA',
+    name: 'DESERT EAGLE .50AE',
+    caliber: '.50 Action Express',
+    category: 'Pistola Secundária',
+    exclusiveLabel: 'Todas as Classes',
+    attachmentSlots: 'Cano, Red Dot, Laser',
+    description:
+      'Pistola pesada DGL50 calibre .50 AE cromada com altíssimo impacto por disparo.',
+    firepower: 76,
+    accuracy: 80,
+    mobility: 92,
+    damageStat: 74,
+    damagePct: 62,
+    rangeLabel: '30m',
+    rangePct: 40,
+    rpmLabel: '280',
+    rpmPct: 36,
+    aimAcc: 82,
+    hipAcc: 70,
+    clipLabel: '7 / 35',
+    clipPct: 36,
+    cashPrice: 0,
+  },
+  M1911_PISTOL: {
+    id: 'M1911_PISTOL',
+    name: 'COLT M1911 .45',
     caliber: '.45 ACP',
     category: 'Pistola Secundária',
     exclusiveLabel: 'Todas as Classes',
-    attachmentSlots: 'Cano, Laser',
+    attachmentSlots: 'Cano, Red Dot, Laser',
     description:
-      'Pistola tática secundária de calibre .45 ACP com alto poder de parada para emergências.',
-    firepower: 68,
-    accuracy: 82,
-    mobility: 95,
-    damageStat: 62,
-    damagePct: 52,
-    rangeLabel: '25m',
-    rangePct: 35,
-    rpmLabel: '340',
-    rpmPct: 42,
-    aimAcc: 82,
-    hipAcc: 74,
-    clipLabel: '12 / 48',
-    clipPct: 45,
+      'Pistola clássica Colt M1911 em aço oxidado com talas de madeira, recuo equilibrado e saque instantâneo.',
+    firepower: 70,
+    accuracy: 85,
+    mobility: 96,
+    damageStat: 64,
+    damagePct: 54,
+    rangeLabel: '26m',
+    rangePct: 36,
+    rpmLabel: '360',
+    rpmPct: 45,
+    aimAcc: 85,
+    hipAcc: 78,
+    clipLabel: '8 / 32',
+    clipPct: 40,
     cashPrice: 0,
   },
   KNIFE_TACTICAL: {
@@ -858,10 +971,13 @@ function createDefaultInventory(): PlayerInventoryState {
       'M4_CARBINE',
       'AK12_RIFLE',
       'S_MILITARY',
+      'AK47_RIFLE',
       'SHOTGUN_12',
       'SMG_45',
       'SNIPER_TACTICAL',
+      'SNIPER_AWP',
       'P50_PISTOL',
+      'M1911_PISTOL',
       'KNIFE_TACTICAL',
     ],
     purchasedSkinIds: [
@@ -883,13 +999,18 @@ function createDefaultInventory(): PlayerInventoryState {
       AK47_RIFLE: 'iron',
       SMG_45: 'red_dot',
       SMG_MP5: 'red_dot',
+      RPG7_LAUNCHER: 'iron',
       SHOTGUN_12: 'iron',
       SHOTGUN_SPAS: 'red_dot',
       L49_LMG: 'red_dot',
       SNIPER_TACTICAL: 'iron',
       SNIPER_BOLT: 'iron',
+      SNIPER_AWP: 'lpvo',
+      SNIPER_HEAVY: 'lpvo',
       P50_PISTOL: 'iron',
+      M1911_PISTOL: 'iron',
     },
+    equippedWeaponGunsmith: {},
     classLoadouts: {
       FUZILEIRO: {
         primaryWeapon: 'M4_CARBINE',
@@ -981,6 +1102,7 @@ function loadInventoryState(): PlayerInventoryState {
         ...def.equippedWeaponOptics,
         ...(parsed.equippedWeaponOptics || {}),
       },
+      equippedWeaponGunsmith: { ...(parsed.equippedWeaponGunsmith || {}) },
       classLoadouts,
     };
   } catch {
@@ -988,10 +1110,164 @@ function loadInventoryState(): PlayerInventoryState {
   }
 }
 
+export interface CloudLoadoutSnapshot {
+  activeWeapon: WeaponId;
+  purchasedWeaponIds?: WeaponId[];
+  equippedWeaponOptics: Partial<Record<WeaponId, OpticType>>;
+  equippedWeaponSkins: Partial<Record<WeaponId, string>>;
+  equippedWeaponGunsmith: Partial<Record<WeaponId, WeaponGunsmithLoadout>>;
+}
+
 let currentInventory: PlayerInventoryState = loadInventoryState();
+const gunsmithModCache = new Map<WeaponId, GunsmithCombatModifiers>();
 const listeners = new Set<(state: PlayerInventoryState) => void>();
+let isApplyingRemoteLoadout = false;
+let cloudLoadoutHook: ((snapshot: CloudLoadoutSnapshot) => void) | null = null;
+
+export function registerCloudLoadoutHook(
+  cb: (snapshot: CloudLoadoutSnapshot) => void
+): void {
+  cloudLoadoutHook = cb;
+}
+
+export function getCloudLoadoutSnapshot(): CloudLoadoutSnapshot {
+  const optics: Partial<Record<WeaponId, OpticType>> = {};
+  const skins: Partial<Record<WeaponId, string>> = {};
+  const gunsmith: Partial<Record<WeaponId, WeaponGunsmithLoadout>> = {};
+  const purchasedWeaponIds: WeaponId[] = currentInventory.purchasedWeaponIds.filter(
+    (w) => w in WEAPON_INVENTORY_CATALOG
+  );
+  const activeClassLoadout =
+    currentInventory.classLoadouts[currentInventory.selectedClass] ||
+    currentInventory.classLoadouts.FUZILEIRO;
+  const activeWeapon: WeaponId = activeClassLoadout.primaryWeapon || 'M4_CARBINE';
+
+  let optCount = 0;
+  for (const [k, v] of Object.entries(currentInventory.equippedWeaponOptics || {})) {
+    if (optCount >= 25) break;
+    if (v && k in WEAPON_INVENTORY_CATALOG && v in SCOPE_PACK_CATALOG) {
+      optics[k as WeaponId] = v;
+      optCount++;
+    }
+  }
+
+  let skinCount = 0;
+  for (const [k, v] of Object.entries(currentInventory.equippedWeaponSkins || {})) {
+    if (skinCount >= 25) break;
+    if (typeof v === 'string' && v.length > 0 && k in WEAPON_INVENTORY_CATALOG) {
+      skins[k as WeaponId] = v.slice(0, 48);
+      skinCount++;
+    }
+  }
+
+  let gunCount = 0;
+  for (const [k, v] of Object.entries(currentInventory.equippedWeaponGunsmith || {})) {
+    if (gunCount >= 25) break;
+    if (v && typeof v === 'object' && k in WEAPON_INVENTORY_CATALOG) {
+      const normalized = normalizeGunsmithLoadout(v);
+      gunsmith[k as WeaponId] = {
+        barrel: normalized.barrel,
+        underbarrel: normalized.underbarrel,
+        magazine: normalized.magazine,
+        stock: normalized.stock,
+      };
+      gunCount++;
+    }
+  }
+
+  return {
+    activeWeapon,
+    purchasedWeaponIds,
+    equippedWeaponOptics: optics,
+    equippedWeaponSkins: skins,
+    equippedWeaponGunsmith: gunsmith,
+  };
+}
+
+export function applyCloudLoadoutSnapshot(
+  snapshot?: (Partial<CloudLoadoutSnapshot> & { unlockedWeapons?: WeaponId[] }) | null
+): void {
+  if (!snapshot) return;
+  let changed = false;
+
+  const remoteWeapons = [
+    ...(Array.isArray(snapshot.purchasedWeaponIds) ? snapshot.purchasedWeaponIds : []),
+    ...(Array.isArray(snapshot.unlockedWeapons) ? snapshot.unlockedWeapons : []),
+  ];
+  if (remoteWeapons.length > 0) {
+    const mergedSet = new Set<WeaponId>(currentInventory.purchasedWeaponIds);
+    for (const w of remoteWeapons) {
+      if (w in WEAPON_INVENTORY_CATALOG && !mergedSet.has(w)) {
+        mergedSet.add(w);
+        changed = true;
+      }
+    }
+    if (changed) {
+      currentInventory.purchasedWeaponIds = Array.from(mergedSet);
+    }
+  }
+
+  if (snapshot.equippedWeaponOptics && typeof snapshot.equippedWeaponOptics === 'object') {
+    const nextOptics = { ...currentInventory.equippedWeaponOptics };
+    for (const [k, v] of Object.entries(snapshot.equippedWeaponOptics)) {
+      if (k in WEAPON_INVENTORY_CATALOG && v && v in SCOPE_PACK_CATALOG) {
+        const wId = k as WeaponId;
+        if (nextOptics[wId] !== v) {
+          nextOptics[wId] = v;
+          changed = true;
+        }
+      }
+    }
+    currentInventory.equippedWeaponOptics = nextOptics;
+  }
+
+  if (snapshot.equippedWeaponSkins && typeof snapshot.equippedWeaponSkins === 'object') {
+    const nextSkins = { ...currentInventory.equippedWeaponSkins };
+    for (const [k, v] of Object.entries(snapshot.equippedWeaponSkins)) {
+      if (k in WEAPON_INVENTORY_CATALOG && typeof v === 'string' && v.length > 0) {
+        const wId = k as WeaponId;
+        if (nextSkins[wId] !== v) {
+          nextSkins[wId] = v.slice(0, 48);
+          changed = true;
+        }
+      }
+    }
+    currentInventory.equippedWeaponSkins = nextSkins;
+  }
+
+  if (snapshot.equippedWeaponGunsmith && typeof snapshot.equippedWeaponGunsmith === 'object') {
+    const nextGunsmith = { ...(currentInventory.equippedWeaponGunsmith || {}) };
+    for (const [k, v] of Object.entries(snapshot.equippedWeaponGunsmith)) {
+      if (k in WEAPON_INVENTORY_CATALOG && v && typeof v === 'object') {
+        const wId = k as WeaponId;
+        const norm = normalizeGunsmithLoadout(v);
+        const prev = nextGunsmith[wId];
+        if (
+          !prev ||
+          prev.barrel !== norm.barrel ||
+          prev.underbarrel !== norm.underbarrel ||
+          prev.magazine !== norm.magazine ||
+          prev.stock !== norm.stock
+        ) {
+          nextGunsmith[wId] = norm;
+          changed = true;
+        }
+      }
+    }
+    currentInventory.equippedWeaponGunsmith = nextGunsmith;
+  }
+
+  if (!changed) return;
+  isApplyingRemoteLoadout = true;
+  try {
+    saveAndEmit();
+  } finally {
+    isApplyingRemoteLoadout = false;
+  }
+}
 
 function saveAndEmit(): void {
+  gunsmithModCache.clear();
   try {
     localStorage.setItem(LOADOUT_STORAGE_KEY, JSON.stringify(currentInventory));
   } catch {
@@ -999,6 +1275,9 @@ function saveAndEmit(): void {
   }
   const snap = getPlayerInventoryState();
   listeners.forEach((fn) => fn(snap));
+  if (!isApplyingRemoteLoadout && cloudLoadoutHook) {
+    cloudLoadoutHook(getCloudLoadoutSnapshot());
+  }
 }
 
 export function getPlayerInventoryState(): PlayerInventoryState {
@@ -1009,6 +1288,7 @@ export function getPlayerInventoryState(): PlayerInventoryState {
     purchasedSkinIds: [...currentInventory.purchasedSkinIds],
     equippedWeaponSkins: { ...currentInventory.equippedWeaponSkins },
     equippedWeaponOptics: { ...currentInventory.equippedWeaponOptics },
+    equippedWeaponGunsmith: { ...(currentInventory.equippedWeaponGunsmith || {}) },
     classLoadouts: {
       FUZILEIRO: { ...currentInventory.classLoadouts.FUZILEIRO },
       MEDICO: { ...currentInventory.classLoadouts.MEDICO },
@@ -1117,6 +1397,46 @@ export function equipWeaponSkin(weaponId: WeaponId, skinId: string): boolean {
   return true;
 }
 
+export function grantVipWeaponAndSkin(weaponId: WeaponId, skinId: string): void {
+  const skin = getSkinDefinition(skinId);
+  currentInventory.purchasedWeaponIds = Array.from(
+    new Set([...currentInventory.purchasedWeaponIds, weaponId])
+  );
+  if (skin.id !== 'default') {
+    currentInventory.purchasedSkinIds = Array.from(
+      new Set([...currentInventory.purchasedSkinIds, skin.id])
+    );
+    if (!skin.weaponIds || skin.weaponIds.includes(weaponId)) {
+      currentInventory.equippedWeaponSkins = {
+        ...currentInventory.equippedWeaponSkins,
+        [weaponId]: skin.id,
+      };
+    }
+  }
+  saveAndEmit();
+}
+
+export function grantWeaponSkinDirect(
+  skinId: string,
+  applyToWeaponId?: WeaponId
+): void {
+  const skin = getSkinDefinition(skinId);
+  if (skin.id === 'default') return;
+  currentInventory.purchasedSkinIds = Array.from(
+    new Set([...currentInventory.purchasedSkinIds, skin.id])
+  );
+  if (
+    applyToWeaponId &&
+    (!skin.weaponIds || skin.weaponIds.includes(applyToWeaponId))
+  ) {
+    currentInventory.equippedWeaponSkins = {
+      ...currentInventory.equippedWeaponSkins,
+      [applyToWeaponId]: skin.id,
+    };
+  }
+  saveAndEmit();
+}
+
 export const SCOPE_PACK_ORDER: OpticType[] = [
   'iron',
   'red_dot',
@@ -1147,9 +1467,19 @@ export function getDefaultOpticForWeapon(
   weaponId: WeaponId,
   playerXp = loadSavedPlayerXp()
 ): OpticType {
-  if (weaponId === 'KNIFE_TACTICAL' || weaponId === 'P50_PISTOL') return 'iron';
+  if (
+    weaponId === 'KNIFE_TACTICAL' ||
+    weaponId === 'P50_PISTOL' ||
+    weaponId === 'M1911_PISTOL' ||
+    weaponId === 'RPG7_LAUNCHER'
+  ) {
+    return 'iron';
+  }
+  if (weaponId === 'SNIPER_AWP' || weaponId === 'SNIPER_HEAVY') {
+    return 'lpvo';
+  }
   if (weaponId === 'SNIPER_BOLT' || weaponId === 'SNIPER_TACTICAL') {
-    return isOpticUnlockedAtXp('lpvo', playerXp) ? 'lpvo' : 'iron';
+    return 'iron';
   }
   if (weaponId === 'AK47_RIFLE') {
     return isOpticUnlockedAtXp('kolimator', playerXp) ? 'kolimator' : 'iron';
@@ -1191,14 +1521,64 @@ export function equipWeaponOptic(
   return true;
 }
 
+export function getEquippedWeaponGunsmith(
+  weaponId: WeaponId
+): WeaponGunsmithLoadout {
+  return normalizeGunsmithLoadout(
+    currentInventory.equippedWeaponGunsmith?.[weaponId]
+  );
+}
+
+export function setWeaponGunsmithAttachment(
+  weaponId: WeaponId,
+  slot: GunsmithSlotId,
+  attachmentId: string
+): WeaponGunsmithLoadout {
+  const next = normalizeGunsmithLoadout({
+    ...getEquippedWeaponGunsmith(weaponId),
+    [slot]: attachmentId,
+  });
+  currentInventory.equippedWeaponGunsmith = {
+    ...(currentInventory.equippedWeaponGunsmith || {}),
+    [weaponId]: next,
+  };
+  saveAndEmit();
+  return next;
+}
+
+export function getWeaponGunsmithModifiers(
+  weaponId: WeaponId
+): GunsmithCombatModifiers {
+  if (!weaponSupportsGunsmith(weaponId)) {
+    return NEUTRAL_GUNSMITH_MODIFIERS;
+  }
+  const cached = gunsmithModCache.get(weaponId);
+  if (cached) return cached;
+  const computed = computeGunsmithModifiersForLoadout(
+    weaponId,
+    currentInventory.equippedWeaponGunsmith?.[weaponId]
+  );
+  gunsmithModCache.set(weaponId, computed);
+  return computed;
+}
+
 export function inferWarfaceClassForWeapon(weaponId: WeaponId): WarfaceClassId {
-  if (weaponId === 'SNIPER_BOLT' || weaponId === 'SNIPER_TACTICAL') {
+  if (
+    weaponId === 'SNIPER_BOLT' ||
+    weaponId === 'SNIPER_TACTICAL' ||
+    weaponId === 'SNIPER_AWP' ||
+    weaponId === 'SNIPER_HEAVY'
+  ) {
     return 'FRANCO_ATIRADOR';
   }
   if (weaponId === 'SHOTGUN_12' || weaponId === 'SHOTGUN_SPAS') {
     return 'MEDICO';
   }
-  if (weaponId === 'SMG_45' || weaponId === 'SMG_MP5') {
+  if (
+    weaponId === 'SMG_45' ||
+    weaponId === 'SMG_MP5' ||
+    weaponId === 'RPG7_LAUNCHER'
+  ) {
     return 'ENGENHEIRO';
   }
   return 'FUZILEIRO';
@@ -1240,7 +1620,13 @@ export function equipClassSlotItem(
 }
 
 export function syncEquippedWeaponToInventory(weaponId: WeaponId): void {
-  if (weaponId === 'P50_PISTOL' || weaponId === 'KNIFE_TACTICAL') return;
+  if (
+    weaponId === 'P50_PISTOL' ||
+    weaponId === 'M1911_PISTOL' ||
+    weaponId === 'KNIFE_TACTICAL'
+  ) {
+    return;
+  }
   const activeCfg = currentInventory.classLoadouts[currentInventory.selectedClass];
   if (
     WARFACE_CLASS_LOADOUT_META[currentInventory.selectedClass].allowedPrimaries.includes(

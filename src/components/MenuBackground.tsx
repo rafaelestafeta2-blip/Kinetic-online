@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { getEquippedWeaponSkinId } from '../progression/loadoutSystem';
 import { WeaponId } from '../types/game';
 import { FactionFlagCanvas } from './FactionFlagCanvas';
 import {
@@ -27,7 +28,7 @@ interface Particle {
 }
 
 const REFERENCE_BG_SRC =
-  '/assets/aistudio/file_00000000d0d881f495740d2844f1a6a1_70b43b8b.png';
+  '/assets/aistudio/file_00000000d0d881f495740d2844f1a6a1_70b43b8b.webp';
 
 export const MenuBackground: React.FC<MenuBackgroundProps> = ({
   showHero = true,
@@ -257,6 +258,7 @@ export const MenuBackground: React.FC<MenuBackgroundProps> = ({
             <div className="w-[360px] sm:w-[470px] h-full pointer-events-auto">
               <RankedOperator3DCanvas
                 activeWeapon={activeWeapon}
+                weaponSkinId={getEquippedWeaponSkinId(activeWeapon)}
                 operatorClass={selectedClass}
                 team="BLACKTHORN"
               />

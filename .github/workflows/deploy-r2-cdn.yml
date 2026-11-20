@@ -1,0 +1,64 @@
+name: Sync Heavy 3D Assets to Cloudflare R2 CDN
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'public/models/**'
+      - 'public/maps/**'
+      - 'public/sounds/**'
+      - 'public/audio/**'
+      - '.github/workflows/deploy-r2-cdn.yml'
+  workflow_dispatch:
+
+jobs:
+  sync-r2-cdn:
+    name: Enviar Modelos, Mapas e Áudios para Cloudflare R2 CDN
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. Checkout do Código-Fonte
+        uses: actions/checkout@v4
+
+      - name: 2. Verificar Secrets do Cloudflare R2
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+        run: |
+          if [ -z "$R2_ACCOUNT_ID" ] || [ -z "$R2_ACCESS_KEY_ID" ] || [ -z "$R2_SECRET_ACCESS_KEY" ] || [ -z "$R2_BUCKET_NAME" ]; then
+            echo "⚠️ Secrets do Cloudflare R2 ainda não configuradas."
+            echo "Configure R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY e R2_BUCKET_NAME em Settings -> Secrets -> Actions."
+            exit 0
+          fi
+          echo "R2_READY=true" >> "$GITHUB_ENV"
+
+      - name: 3. Sincronizar Assets Pesados com Cloudflare R2 (Banda Ilimitada Grátis)
+        if: env.R2_READY == 'true'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          R2_BUCKET: ${{ secrets.R2_BUCKET_NAME }}
+        run: |
+          set -e
+          for DIR in models maps sounds audio; do
+            if [ -d "public/$DIR" ]; then
+              echo ">>> Sincronizando public/$DIR -> s3://$R2_BUCKET/$DIR ..."
+              aws s3 sync "public/$DIR" "s3://$R2_BUCKET/$DIR" \
+                --endpoint-url "$R2_ENDPOINT" \
+                --cache-control "public, max-age=31536000, immutable" \
+                --only-show-errors
+            fi
+          done
+
+          # Gera manifesto leve da revisão atual no R2
+          printf '{"revision":"%s","updatedAt":"%s"}\n' "${GITHUB_SHA::12}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /tmp/cdn-manifest.json
+          aws s3 cp /tmp/cdn-manifest.json "s3://$R2_BUCKET/cdn-manifest.json" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --content-type "application/json" \
+            --cache-control "no-cache" \
+            --only-show-errors
+          echo "✅ Cloudflare R2 sincronizado com sucesso!"

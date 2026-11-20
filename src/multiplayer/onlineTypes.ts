@@ -59,6 +59,16 @@ export interface OnlineGrenadeEvent {
   ts: number;
 }
 
+export interface OnlineScorestreakEvent {
+  eventId: string;
+  senderUid: string;
+  senderCallsign: string;
+  senderTeam: OnlineTeam;
+  streak: 'UAV' | 'ADVANCED_UAV';
+  durationSec: number;
+  ts: number;
+}
+
 export interface OnlineRoundEvent {
   eventId: string;
   kind: 'ROUND_OVER' | 'NEXT_ROUND';

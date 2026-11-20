@@ -1,13 +1,25 @@
 import { User } from 'firebase/auth';
 import { evaluateUnlockedAchievements } from '../progression/achievementsData';
 import {
+  DailyContractsCloudState,
+  getDailyContractsSnapshot,
+  mergeDailyContractsStates,
+} from '../progression/dailyContractsSystem';
+import {
+  getVipBattlePassState,
+  mergeVipBattlePassStates,
+  VipBattlePassCloudState,
+} from '../progression/vipBattlePassSystem';
+import { WeaponGunsmithLoadout } from '../progression/gunsmithSystem';
+import { getCloudLoadoutSnapshot } from '../progression/loadoutSystem';
+import {
   getRankForXp,
   loadSavedPlayerCash,
   loadSavedPlayerXp,
   savePlayerCashDirect,
   savePlayerXpDirect,
 } from '../progression/ranks';
-import { WeaponId } from '../types/game';
+import { OpticType, WeaponId } from '../types/game';
 
 export interface PlayerCloudProfile {
   uid: string;
@@ -31,6 +43,15 @@ export interface PlayerCloudProfile {
   unlockedAchievements: string[];
   economyVersion?: number;
   mmr?: number;
+  equippedWeaponOptics?: Partial<Record<WeaponId, OpticType>>;
+  equippedWeaponSkins?: Partial<Record<WeaponId, string>>;
+  equippedWeaponGunsmith?: Partial<Record<WeaponId, WeaponGunsmithLoadout>>;
+  dailyContracts?: DailyContractsCloudState;
+  diamonds?: number;
+  vipBattlePass?: VipBattlePassCloudState;
+  activeOperatorId?: string;
+  unlockedOperators?: string[];
+  founderDiamondsClaimed?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -48,6 +69,7 @@ const LOCAL_PROFILE_STORAGE_KEY = 'kinetic_fps_cloud_profile_v1';
 
 const ALL_WEAPONS: WeaponId[] = [
   'P50_PISTOL',
+  'M1911_PISTOL',
   'SMG_45',
   'SMG_MP5',
   'SHOTGUN_12',
@@ -60,6 +82,9 @@ const ALL_WEAPONS: WeaponId[] = [
   'L49_LMG',
   'SNIPER_BOLT',
   'SNIPER_TACTICAL',
+  'SNIPER_AWP',
+  'SNIPER_HEAVY',
+  'RPG7_LAUNCHER',
   'KNIFE_TACTICAL',
 ];
 
@@ -68,16 +93,21 @@ export function computeUnlockedWeaponsForXp(
   extraUnlocked: WeaponId[] = []
 ): WeaponId[] {
   const rank = getRankForXp(xp);
+  const localLoadout = getCloudLoadoutSnapshot();
   const set = new Set<WeaponId>([
     'M4_CARBINE',
     'AK12_RIFLE',
     'S_MILITARY',
+    'AK47_RIFLE',
     'SHOTGUN_12',
     'SMG_45',
     'SNIPER_TACTICAL',
+    'SNIPER_AWP',
     'P50_PISTOL',
+    'M1911_PISTOL',
     'KNIFE_TACTICAL',
     ...rank.unlockedWeapons,
+    ...(localLoadout.purchasedWeaponIds || []),
     ...extraUnlocked,
   ]);
   return ALL_WEAPONS.filter((w) => set.has(w));
@@ -135,6 +165,8 @@ export function loadLocalProfileFallback(): PlayerCloudProfile {
             parsed.unlockedAchievements || []
           );
 
+      const localLoadout = getCloudLoadoutSnapshot();
+      const localContracts = getDailyContractsSnapshot().state;
       return {
         uid: parsed.uid || 'local-guest',
         callsign,
@@ -157,6 +189,17 @@ export function loadLocalProfileFallback(): PlayerCloudProfile {
         unlockedAchievements,
         economyVersion: CURRENT_ECONOMY_VERSION,
         mmr: isOutdatedEconomy || !parsed.mmr || parsed.mmr === 1000 ? 2450 : Math.max(100, Number(parsed.mmr)),
+        equippedWeaponOptics: parsed.equippedWeaponOptics || localLoadout.equippedWeaponOptics,
+        equippedWeaponSkins: parsed.equippedWeaponSkins || localLoadout.equippedWeaponSkins,
+        equippedWeaponGunsmith: parsed.equippedWeaponGunsmith || localLoadout.equippedWeaponGunsmith,
+        dailyContracts: mergeDailyContractsStates(localContracts, parsed.dailyContracts),
+        diamonds: Math.max(0, Math.floor(Number(parsed.diamonds) || 0)),
+        vipBattlePass: mergeVipBattlePassStates(getVipBattlePassState(), parsed.vipBattlePass),
+        activeOperatorId: parsed.activeOperatorId || 'op_vanguard_default',
+        unlockedOperators: Array.from(
+          new Set(['op_vanguard_default', ...(parsed.unlockedOperators || [])])
+        ).slice(0, 20),
+        founderDiamondsClaimed: Boolean(parsed.founderDiamondsClaimed),
         createdAt: parsed.createdAt || nowIso,
         updatedAt: nowIso,
       };
@@ -166,6 +209,7 @@ export function loadLocalProfileFallback(): PlayerCloudProfile {
   }
 
   const defaultRank = getRankForXp(0);
+  const localLoadout = getCloudLoadoutSnapshot();
   return {
     uid: 'local-guest',
     callsign: 'OPERADOR-01',
@@ -188,6 +232,15 @@ export function loadLocalProfileFallback(): PlayerCloudProfile {
     unlockedAchievements: [],
     economyVersion: CURRENT_ECONOMY_VERSION,
     mmr: 2450,
+    equippedWeaponOptics: localLoadout.equippedWeaponOptics,
+    equippedWeaponSkins: localLoadout.equippedWeaponSkins,
+    equippedWeaponGunsmith: localLoadout.equippedWeaponGunsmith,
+    dailyContracts: getDailyContractsSnapshot().state,
+    diamonds: 0,
+    vipBattlePass: getVipBattlePassState(),
+    activeOperatorId: 'op_vanguard_default',
+    unlockedOperators: ['op_vanguard_default'],
+    founderDiamondsClaimed: false,
     createdAt: nowIso,
     updatedAt: nowIso,
   };
@@ -257,7 +310,10 @@ export function mergeLocalAndCloudProfiles(
     local.matchesPlayed,
     Number(cloud?.matchesPlayed) || 0
   );
-  const matchesWon = Math.max(local.matchesWon, Number(cloud?.matchesWon) || 0);
+  const matchesWon = Math.min(
+    matchesPlayed,
+    Math.max(local.matchesWon, Number(cloud?.matchesWon) || 0)
+  );
   const bombsPlanted = Math.max(
     local.bombsPlanted,
     Number(cloud?.bombsPlanted) || 0
@@ -285,6 +341,35 @@ export function mergeLocalAndCloudProfiles(
       ...(cloud?.unlockedAchievements || []),
     ]
   );
+
+  const localSnap = getCloudLoadoutSnapshot();
+  const mergedOptics: Partial<Record<WeaponId, OpticType>> = {
+    ...localSnap.equippedWeaponOptics,
+    ...(local.equippedWeaponOptics || {}),
+    ...(cloud?.equippedWeaponOptics || {}),
+  };
+  const mergedSkins: Partial<Record<WeaponId, string>> = {
+    ...localSnap.equippedWeaponSkins,
+    ...(local.equippedWeaponSkins || {}),
+    ...(cloud?.equippedWeaponSkins || {}),
+  };
+  const mergedGunsmith: Partial<Record<WeaponId, WeaponGunsmithLoadout>> = {
+    ...localSnap.equippedWeaponGunsmith,
+    ...(local.equippedWeaponGunsmith || {}),
+    ...(cloud?.equippedWeaponGunsmith || {}),
+  };
+
+  const cloudHasFounderClaim = Boolean(cloud?.founderDiamondsClaimed);
+  const localHasFounderClaim = Boolean(local.founderDiamondsClaimed);
+  const mergedFounderClaimed = cloud
+    ? cloudHasFounderClaim
+    : localHasFounderClaim;
+  const mergedDiamonds = cloud
+    ? Math.max(0, Math.floor(Number(cloud.diamonds) || 0))
+    : Math.max(0, Math.floor(Number(local.diamonds) || 0));
+
+  savePlayerXpDirect(mergedXp);
+  savePlayerCashDirect(mergedCash);
 
   return {
     uid: firebaseUser.uid,
@@ -315,6 +400,28 @@ export function mergeLocalAndCloudProfiles(
       : Number(local.mmr) > 0 && Number(local.mmr) !== 1000
       ? Number(local.mmr)
       : 2450,
+    equippedWeaponOptics: mergedOptics,
+    equippedWeaponSkins: mergedSkins,
+    equippedWeaponGunsmith: mergedGunsmith,
+    dailyContracts: mergeDailyContractsStates(
+      mergeDailyContractsStates(getDailyContractsSnapshot().state, local.dailyContracts),
+      cloud?.dailyContracts
+    ),
+    diamonds: mergedDiamonds,
+    vipBattlePass: mergeVipBattlePassStates(
+      getVipBattlePassState(),
+      cloud?.vipBattlePass
+    ),
+    activeOperatorId:
+      cloud?.activeOperatorId || local.activeOperatorId || 'op_vanguard_default',
+    unlockedOperators: Array.from(
+      new Set([
+        'op_vanguard_default',
+        ...(local.unlockedOperators || []),
+        ...(cloud?.unlockedOperators || []),
+      ])
+    ).slice(0, 20),
+    founderDiamondsClaimed: mergedFounderClaimed,
     createdAt: cloud?.createdAt || local.createdAt || nowIso,
     updatedAt: nowIso,
   };

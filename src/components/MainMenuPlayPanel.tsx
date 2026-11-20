@@ -16,6 +16,7 @@ interface MainMenuPlayPanelProps {
   weaponCategory: string;
   weaponCaliber: string;
   playerMmr?: number;
+  onOpenStoreTab: () => void;
   onOpenInventory: () => void;
   onOpenWeaponSelect: () => void;
   onStartTraining: () => void;
@@ -26,6 +27,8 @@ interface MainMenuPlayPanelProps {
   onOpenRanksTab: () => void;
   onOpenBattlePassTab: () => void;
   onOpenEventsModal: () => void;
+  onOpenContractsModal: () => void;
+  contractsBadgeCount?: number;
   onHover: () => void;
 }
 
@@ -33,6 +36,7 @@ export const MainMenuPlayPanel: React.FC<MainMenuPlayPanelProps> = ({
   selectedClass,
   weaponName,
   playerMmr = 2450,
+  onOpenStoreTab,
   onOpenInventory,
   onOpenWeaponSelect,
   onStartTraining,
@@ -43,6 +47,8 @@ export const MainMenuPlayPanel: React.FC<MainMenuPlayPanelProps> = ({
   onOpenRanksTab,
   onOpenBattlePassTab,
   onOpenEventsModal,
+  onOpenContractsModal,
+  contractsBadgeCount = 0,
   onHover,
 }) => {
   const [selectedPlayMode, setSelectedPlayMode] =
@@ -58,6 +64,9 @@ export const MainMenuPlayPanel: React.FC<MainMenuPlayPanelProps> = ({
     switch (id) {
       case 'INICIO':
         break;
+      case 'LOJA':
+        onOpenStoreTab();
+        break;
       case 'RANKED':
         onOpenRankedScreen('DUST2_BOMB_5V5');
         break;
@@ -66,6 +75,9 @@ export const MainMenuPlayPanel: React.FC<MainMenuPlayPanelProps> = ({
         break;
       case 'ARSENAL':
         onOpenWeaponSelect();
+        break;
+      case 'CONTRATOS':
+        onOpenContractsModal();
         break;
       case 'PATENTES':
         onOpenRanksTab();
@@ -118,6 +130,7 @@ export const MainMenuPlayPanel: React.FC<MainMenuPlayPanelProps> = ({
         activeId={activeSidebarId}
         onSelectButton={handleSelectSidebar}
         onHover={onHover}
+        contractsBadgeCount={contractsBadgeCount}
       />
 
       {/* CENTRO 100% LIVRE: MOSTRA O SOLDADO 3D E A BANDEIRA 3D BLACKTHORN */}

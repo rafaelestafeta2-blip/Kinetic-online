@@ -6,7 +6,7 @@ import {
   createSculptedThirdPersonWeaponMesh,
   isSculptedWeaponId,
 } from './sculptedFirearms';
-import { normalizeAnimatedM4A4Model } from './weaponBuilder';
+import { calibrateKinemationMaterialScene } from './kinemationArmsRig';
 import { applyWeaponSkinToObject3D } from './weaponSkinMaterial';
 import { resolveAssetUrl } from '../utils/assetUrl';
 
@@ -71,7 +71,6 @@ const HIDDEN_ARM_MATS = new Set([
 ]);
 
 const HIDDEN_EXTRA_NODES = new Set([
-  'object_7',
   'object_8',
   'object_25',
   'object_26',
@@ -157,15 +156,12 @@ const WEAPON_GLB_SPECS: RealGlbWeaponSpec[] = [
   },
   {
     id: 'AK12_RIFLE',
-    url: '/models/weapons/ak-12animated.glb',
-    filter: (m, n, mats) => {
-      if (isExcludedMesh(m, n, mats)) return false;
-      const mLow = m.toLowerCase();
-      if (mLow.includes('lense')) return false;
-      return true;
-    },
-    offset: [0.354, -3.794, -0.476],
-    scale: 0.45,
+    url: '/models/kinemation/weapons/ak200.glb',
+    clipName: 'Pose',
+    clipTime: 0,
+    filter: (m, n, mats) => !isExcludedMesh(m, n, mats),
+    offset: [0, 0.05, 0.03],
+    scale: 1.0,
     rotX: 0.2,
     rotY: 0,
   },
@@ -182,12 +178,13 @@ const WEAPON_GLB_SPECS: RealGlbWeaponSpec[] = [
   },
   {
     id: 'M4_CARBINE',
-    // Keep 3P/bot mount on proven pack — do not swap to spare M4A4 (breaks coverage).
-    url: '/models/m4_fps_pack.glb',
+    url: '/models/kinemation/weapons/mx16a4.glb',
+    clipName: 'Pose',
+    clipTime: 0,
     filter: (m, n, mats) => !isExcludedMesh(m, n, mats),
-    offset: [0.025, -1.365, -0.04],
-    scale: 0.9,
-    rotX: 0.22,
+    offset: [0, 0.05, 0.03],
+    scale: 1.0,
+    rotX: 0.2,
     rotY: 0,
   },
   {
@@ -203,23 +200,33 @@ const WEAPON_GLB_SPECS: RealGlbWeaponSpec[] = [
   },
   {
     id: 'SMG_45',
-    url: '/models/fps_animated_smg.glb',
-    clipName: 'allanims',
+    url: '/models/weapons/v18_engineer_smg.glb',
+    rawLocal: true,
+    filter: (m, n, mats) => !isExcludedMesh(m, n, mats),
+    offset: [0, 0.03, 0.04],
+    scale: 0.95,
+    rotX: 0.19,
+    rotY: 0,
+  },
+  {
+    id: 'SMG_MP5',
+    url: '/models/kinemation/weapons/mps5.glb',
+    clipName: 'Pose',
     clipTime: 0,
     filter: (m, n, mats) => !isExcludedMesh(m, n, mats),
-    offset: [0, -4.0, -9.5],
-    scale: 0.0095,
+    offset: [0, 0.05, 0.03],
+    scale: 1.0,
     rotX: 0.19,
     rotY: 0,
   },
   {
     id: 'SHOTGUN_12',
-    url: '/models/shotgun_animated.glb',
-    clipName: 'allanims',
+    url: '/models/kinemation/weapons/drake12.glb',
+    clipName: 'Pose',
     clipTime: 0,
     filter: (m, n, mats) => !isExcludedMesh(m, n, mats),
-    offset: [0, -4.5, -1.5],
-    scale: 0.0092,
+    offset: [0, 0.05, 0.03],
+    scale: 1.0,
     rotX: 0.19,
     rotY: 0,
   },
@@ -236,23 +243,51 @@ const WEAPON_GLB_SPECS: RealGlbWeaponSpec[] = [
   },
   {
     id: 'SNIPER_BOLT',
-    url: '/models/sniper_animated.glb',
-    clipName: 'allanims',
+    url: '/models/kinemation/weapons/kar98k.glb',
+    clipName: 'Fire',
     clipTime: 0,
-    filter: (m, n, mats) => !isExcludedMesh(m, n, mats),
-    offset: [0.05, 1.5, 14.0],
-    scale: 0.0072,
+    filter: (m, n, mats) =>
+      !isExcludedMesh(m, n, mats) &&
+      !mats.some((mn) => mn.toLowerCase() === 'm_kar98k_clip'),
+    offset: [0, 0.05, 0.03],
+    scale: 1.0,
     rotX: 0.18,
     rotY: 0,
   },
   {
     id: 'SNIPER_TACTICAL',
-    url: '/models/sniper_fps_animation.glb',
+    url: '/models/kinemation/weapons/mk14.glb',
+    clipName: 'Pose',
+    clipTime: 0,
     filter: (m, n, mats) => !isExcludedMesh(m, n, mats),
-    offset: [-0.21, 0.08, 0.35],
-    scale: 0.44,
-    rotX: 0.24,
-    rotY: Math.PI,
+    offset: [0, 0.05, 0.03],
+    scale: 1.0,
+    rotX: 0.2,
+    rotY: 0,
+  },
+  {
+    id: 'SNIPER_AWP',
+    url: '/models/sniper_animated.glb',
+    clipName: 'allanims',
+    clipTime: 0.1,
+    filter: (m, n, mats) => !isExcludedMesh(m, n, mats),
+    offset: [0.004, -0.025, 0.12],
+    scale: 0.008,
+    rotX: 0.18,
+    rotY: 0,
+  },
+  {
+    id: 'SNIPER_HEAVY',
+    url: '/models/sniper_fps_animation.glb',
+    clipName: 'Scene',
+    clipTime: 0.1,
+    filter: (m, n, mats) =>
+      !isExcludedMesh(m, n, mats) &&
+      !mats.some((mn) => mn.toLowerCase() === 'textura'),
+    offset: [0.206, 0.35, 0.03],
+    scale: 0.48,
+    rotX: 0.18,
+    rotY: Math.PI / 2,
   },
   {
     id: 'L49_LMG',
@@ -266,18 +301,36 @@ const WEAPON_GLB_SPECS: RealGlbWeaponSpec[] = [
     rotY: 0,
   },
   {
+    id: 'RPG7_LAUNCHER',
+    url: '/models/kinemation/weapons/rpg7.glb',
+    clipName: 'Pose',
+    clipTime: 0,
+    filter: (m, n, mats) => !isExcludedMesh(m, n, mats),
+    offset: [0, 0.04, 0.04],
+    scale: 1.0,
+    rotX: 0.12,
+    rotY: 0,
+  },
+  {
     id: 'P50_PISTOL',
-    url: '/models/mark_23_animated.glb',
-    rawLocal: true,
-    filter: (m, n, mats) =>
-      !isExcludedMesh(m, n, mats) &&
-      (m.includes('Mark23') ||
-        n.includes('Object_9') ||
-        n.includes('Object_10') ||
-        n.includes('Object_11')),
-    offset: [10.7, -142.5, 2.5],
-    scale: 0.012,
-    rotX: 0.18,
+    url: '/models/kinemation/weapons/dgl50.glb',
+    clipName: 'Pose',
+    clipTime: 0,
+    filter: (m, n, mats) => !isExcludedMesh(m, n, mats),
+    offset: [0, 0.04, 0.02],
+    scale: 1.0,
+    rotX: 0.16,
+    rotY: 0,
+  },
+  {
+    id: 'M1911_PISTOL',
+    url: '/models/kinemation/weapons/m1911.glb',
+    clipName: 'Pose',
+    clipTime: 0,
+    filter: (m, n, mats) => !isExcludedMesh(m, n, mats),
+    offset: [0, 0.04, 0.02],
+    scale: 1.0,
+    rotX: 0.16,
     rotY: 0,
   },
   {
@@ -294,23 +347,9 @@ const WEAPON_GLB_SPECS: RealGlbWeaponSpec[] = [
 ];
 
 /**
- * Inventory/thumbnail-only extras. Never written to glbWeaponTemplates (1P/3P mounts).
- * Uses spare on-disk packs to improve inventory coverage without touching live M4 viewmodel.
+ * Inventory/thumbnail-only overrides (empty: all weapons now preview their exact live Kinemation / 1P GLB).
  */
-const INVENTORY_PREVIEW_OVERRIDE_SPECS: RealGlbWeaponSpec[] = [
-  {
-    id: 'M4_CARBINE',
-    url: '/models/weapons/animated_fps_m4a4.glb',
-    clipName: 'Armature|Take',
-    clipTime: 0.05,
-    filter: (m, n, mats) => !isExcludedMesh(m, n, mats),
-    // Approximate studio framing after normalizeAnimatedM4A4Model (bind-world meters).
-    offset: [0.02, -1.05, -0.08],
-    scale: 0.95,
-    rotX: 0.22,
-    rotY: 0,
-  },
-];
+const INVENTORY_PREVIEW_OVERRIDE_SPECS: RealGlbWeaponSpec[] = [];
 
 function buildBakedStaticGroup(
   scene: THREE.Object3D,
@@ -447,6 +486,7 @@ function buildBakedStaticGroup(
     template.add(staticMesh);
   });
 
+  calibrateKinemationMaterialScene(template, false);
   return template;
 }
 
@@ -549,6 +589,60 @@ export function preloadRealBotWeaponGlbs(): Promise<void> {
     perSpecPromises.push(p.then(() => undefined));
   }
 
+  // Preload Aemondir Bucky Legion 3D skin override for SHOTGUN_12
+  const aemondirSpec: RealGlbWeaponSpec = {
+    id: 'SHOTGUN_12',
+    url: '/models/weapons/shotgun_aemondir_lv1.glb',
+    rawLocal: true,
+    filter: (m, n, mats) => !isExcludedMesh(m, n, mats),
+    offset: [0, 0.03, 0.02],
+    scale: 1.0,
+    rotX: 0.19,
+    rotY: 0,
+  };
+  const aemondirPromise = new Promise<void>((resolve) => {
+    loader.load(
+      resolveAssetUrl(aemondirSpec.url),
+      (gltf) => {
+        try {
+          const previewTpl = buildBakedStaticGroup(
+            gltf.scene,
+            gltf.animations,
+            aemondirSpec,
+            0
+          );
+          if (previewTpl.children.length > 0) {
+            previewTpl.traverse((c) => {
+              const m = c as THREE.Mesh;
+              if (m.isMesh && m.geometry?.getAttribute('color')) {
+                const mats = Array.isArray(m.material) ? m.material : [m.material];
+                for (const mt of mats) {
+                  const std = mt as THREE.MeshStandardMaterial;
+                  if (std && (std.name || '') !== 'Legion_Emissive_MI') {
+                    std.vertexColors = true;
+                    std.needsUpdate = true;
+                  }
+                }
+              }
+            });
+            const tilted = new THREE.Group();
+            const clone = previewTpl.clone();
+            clone.rotation.x = aemondirSpec.rotX;
+            tilted.add(clone);
+            glbSkinPreviewTemplates.set('shotgun_aemondir_legion', previewTpl);
+            glbSkinWorldTemplates.set('shotgun_aemondir_legion', tilted);
+          }
+        } catch {
+          // Fallback to base shotgun
+        }
+        resolve();
+      },
+      undefined,
+      () => resolve()
+    );
+  });
+  perSpecPromises.push(aemondirPromise);
+
   // Spare GLBs → inventory preview only (never bot mounts / 1P).
   for (const spec of INVENTORY_PREVIEW_OVERRIDE_SPECS) {
     const p = new Promise<void>((resolve) => {
@@ -556,9 +650,6 @@ export function preloadRealBotWeaponGlbs(): Promise<void> {
         resolveAssetUrl(spec.url),
         (gltf) => {
           try {
-            if (spec.url.includes('animated_fps_m4a4')) {
-              normalizeAnimatedM4A4Model(gltf.scene);
-            }
             const previewTpl = buildBakedStaticGroup(
               gltf.scene,
               gltf.animations,
@@ -585,12 +676,16 @@ export function preloadRealBotWeaponGlbs(): Promise<void> {
   return preloadAllPromise;
 }
 
+const glbSkinPreviewTemplates = new Map<string, THREE.Group>();
+const glbSkinWorldTemplates = new Map<string, THREE.Group>();
+
 /**
  * Returns a fresh horizontally-leveled 3D model instance of ANY WeaponId
  * (real GLB or sculpted PBR firearm) suitable for thumbnail/showcase rendering.
  */
 export async function buildLevel3DWeaponPreviewGroup(
-  weaponId: WeaponId
+  weaponId: WeaponId,
+  skinId?: string
 ): Promise<THREE.Group | null> {
   if (isSculptedWeaponId(weaponId)) {
     return createSculptedThirdPersonWeaponMesh(weaponId, true).group;
@@ -598,9 +693,16 @@ export async function buildLevel3DWeaponPreviewGroup(
   await preloadRealBotWeaponGlbs();
   const p = glbWeaponPromises.get(weaponId);
   if (p) await p;
+  if (skinId && glbSkinPreviewTemplates.has(skinId)) {
+    return glbSkinPreviewTemplates.get(skinId)!.clone();
+  }
   const tpl = glbLevelPreviewTemplates.get(weaponId);
   if (!tpl || tpl.children.length === 0) return null;
-  return tpl.clone();
+  const cloned = tpl.clone();
+  if (skinId && skinId !== 'default') {
+    applyWeaponSkinToObject3D(cloned, weaponId, skinId);
+  }
+  return cloned;
 }
 
 export function createBotThirdPersonWeaponMesh(
@@ -616,6 +718,11 @@ export function createBotThirdPersonWeaponMesh(
   group.name = 'BotWorldWeapon';
   group.userData.desiredSkinWeaponId = chosen;
   group.userData.desiredSkinId = skinId;
+
+  if (skinId && glbSkinWorldTemplates.has(skinId)) {
+    group.add(glbSkinWorldTemplates.get(skinId)!.clone());
+    return group;
+  }
 
   if (isSculptedWeaponId(chosen)) {
     const sculpted = createSculptedThirdPersonWeaponMesh(chosen, false);

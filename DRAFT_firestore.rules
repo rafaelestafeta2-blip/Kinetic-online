@@ -1,0 +1,473 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidChatId(id) {
+      return id is string && id.size() >= 3 && id.size() <= 260 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidOptionalString(data, field, maxLen) {
+      return !(field in data) || (data[field] is string && data[field].size() <= maxLen);
+    }
+
+    function isNonNegativeNumber(val) {
+      return val is number && val >= 0 && val <= 9999999999999;
+    }
+
+    function isValidPlayerProfile(data) {
+      return data.keys().hasAll([
+          'uid', 'callsign', 'playerXp', 'rankLevel', 'rankTitle',
+          'playerCash', 'activeWeapon', 'unlockedWeapons',
+          'totalKills', 'totalDeaths', 'totalAssists', 'totalHeadshots',
+          'matchesPlayed', 'matchesWon', 'bombsPlanted',
+          'unlockedAchievements', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid', 'callsign', 'callsignLocked', 'email', 'avatarDataUrl',
+          'playerXp', 'rankLevel', 'rankTitle', 'playerCash',
+          'activeWeapon', 'unlockedWeapons',
+          'totalKills', 'totalDeaths', 'totalAssists', 'totalHeadshots',
+          'matchesPlayed', 'matchesWon', 'bombsPlanted',
+          'unlockedAchievements', 'economyVersion', 'mmr',
+          'equippedWeaponOptics', 'equippedWeaponSkins', 'equippedWeaponGunsmith',
+          'dailyContracts', 'diamonds', 'vipBattlePass',
+          'activeOperatorId', 'unlockedOperators', 'founderDiamondsClaimed',
+          'createdAt', 'updatedAt'
+        ])
+        && data.uid is string
+        && data.uid == request.auth.uid
+        && data.uid.size() >= 1
+        && data.uid.size() <= 128
+        && data.callsign is string
+        && data.callsign.size() >= 1
+        && data.callsign.size() <= 32
+        && (!('callsignLocked' in data) || data.callsignLocked is bool)
+        && (!('economyVersion' in data) || (data.economyVersion is number && data.economyVersion >= 1 && data.economyVersion <= 100))
+        && (!('mmr' in data) || (data.mmr is number && data.mmr >= 100 && data.mmr <= 10000))
+        && (!('email' in data) || (data.email is string && data.email.size() == 0))
+        && isValidOptionalString(data, 'avatarDataUrl', 60000)
+        && isNonNegativeNumber(data.playerXp) && data.playerXp <= 50000000
+        && data.rankLevel is number && data.rankLevel >= 1 && data.rankLevel <= 70
+        && data.rankTitle is string && data.rankTitle.size() >= 1 && data.rankTitle.size() <= 64
+        && isNonNegativeNumber(data.playerCash) && data.playerCash <= 50000000
+        && data.activeWeapon is string && data.activeWeapon.size() >= 1 && data.activeWeapon.size() <= 40
+        && data.unlockedWeapons is list && data.unlockedWeapons.size() >= 1 && data.unlockedWeapons.size() <= 25 && data.unlockedWeapons[0] is string
+        && isNonNegativeNumber(data.totalKills) && data.totalKills <= 1000000
+        && isNonNegativeNumber(data.totalDeaths) && data.totalDeaths <= 1000000
+        && isNonNegativeNumber(data.totalAssists) && data.totalAssists <= 1000000
+        && isNonNegativeNumber(data.totalHeadshots) && data.totalHeadshots <= 1000000
+        && isNonNegativeNumber(data.matchesPlayed) && data.matchesPlayed <= 500000
+        && isNonNegativeNumber(data.matchesWon) && data.matchesWon <= data.matchesPlayed
+        && isNonNegativeNumber(data.bombsPlanted) && data.bombsPlanted <= 500000
+        && data.unlockedAchievements is list && data.unlockedAchievements.size() <= 50 && (data.unlockedAchievements.size() == 0 || data.unlockedAchievements[0] is string)
+        && (!('equippedWeaponOptics' in data) || (data.equippedWeaponOptics is map && data.equippedWeaponOptics.size() <= 25))
+        && (!('equippedWeaponSkins' in data) || (data.equippedWeaponSkins is map && data.equippedWeaponSkins.size() <= 25))
+        && (!('equippedWeaponGunsmith' in data) || (data.equippedWeaponGunsmith is map && data.equippedWeaponGunsmith.size() <= 25))
+        && (!('dailyContracts' in data) || (data.dailyContracts is map && data.dailyContracts.size() <= 8))
+        && (!('diamonds' in data) || (isNonNegativeNumber(data.diamonds) && data.diamonds <= 1000000))
+        && (!('vipBattlePass' in data) || (data.vipBattlePass is map && data.vipBattlePass.size() <= 8))
+        && isValidOptionalString(data, 'activeOperatorId', 40)
+        && (!('unlockedOperators' in data) || (data.unlockedOperators is list && data.unlockedOperators.size() >= 1 && data.unlockedOperators.size() <= 20 && data.unlockedOperators[0] is string))
+        && (!('founderDiamondsClaimed' in data) || data.founderDiamondsClaimed is bool)
+        && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 40
+        && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 40;
+    }
+
+    function isPlayerEconomyMigrationAction() {
+      return (!('economyVersion' in existing()) || existing().economyVersion != 2)
+        && incoming().economyVersion == 2
+        && incoming().playerXp == 0
+        && incoming().playerCash == 3000;
+    }
+
+    function isPlayerAccountResetAction() {
+      return incoming().playerXp == 0
+        && incoming().playerCash == 3000
+        && incoming().rankLevel == 1
+        && incoming().totalKills == 0
+        && incoming().totalDeaths == 0
+        && incoming().totalAssists == 0
+        && incoming().totalHeadshots == 0
+        && incoming().matchesPlayed == 0
+        && incoming().matchesWon == 0
+        && incoming().bombsPlanted == 0
+        && incoming().unlockedAchievements.size() == 0
+        && incoming().mmr == 1000
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'email', 'playerXp', 'playerCash', 'rankLevel', 'rankTitle',
+          'totalKills', 'totalDeaths', 'totalAssists', 'totalHeadshots',
+          'matchesPlayed', 'matchesWon', 'bombsPlanted',
+          'unlockedAchievements', 'unlockedWeapons', 'economyVersion', 'mmr',
+          'equippedWeaponOptics', 'equippedWeaponSkins', 'equippedWeaponGunsmith',
+          'dailyContracts', 'activeOperatorId', 'unlockedOperators', 'founderDiamondsClaimed',
+          'updatedAt'
+        ]);
+    }
+
+    function isPlayerVipPurchaseAction() {
+      return ('diamonds' in existing())
+        && existing().diamonds >= 800
+        && ('diamonds' in incoming())
+        && incoming().diamonds == existing().diamonds - 800
+        && ('vipBattlePass' in incoming())
+        && incoming().vipBattlePass is map
+        && incoming().vipBattlePass.size() <= 8
+        && ('activeUntilIso' in incoming().vipBattlePass)
+        && incoming().vipBattlePass.activeUntilIso is string
+        && incoming().vipBattlePass.activeUntilIso.size() >= 10
+        && incoming().vipBattlePass.activeUntilIso.size() <= 40
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'callsign', 'callsignLocked', 'email', 'avatarDataUrl',
+          'playerXp', 'rankLevel', 'rankTitle', 'playerCash',
+          'activeWeapon', 'unlockedWeapons',
+          'totalKills', 'totalDeaths', 'totalAssists', 'totalHeadshots',
+          'matchesPlayed', 'matchesWon', 'bombsPlanted',
+          'unlockedAchievements', 'economyVersion', 'mmr',
+          'equippedWeaponOptics', 'equippedWeaponSkins', 'equippedWeaponGunsmith',
+          'dailyContracts', 'diamonds', 'vipBattlePass',
+          'activeOperatorId', 'unlockedOperators', 'founderDiamondsClaimed',
+          'updatedAt'
+        ]);
+    }
+
+    function isPlayerFounderGrantAction() {
+      return (!('founderDiamondsClaimed' in existing()) || existing().founderDiamondsClaimed == false)
+        && ('founderDiamondsClaimed' in incoming())
+        && incoming().founderDiamondsClaimed == true
+        && ('diamonds' in incoming())
+        && (
+          (!('diamonds' in existing()) && incoming().diamonds <= 1500)
+          || (('diamonds' in existing()) && incoming().diamonds <= existing().diamonds + 1500)
+        )
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'callsign', 'callsignLocked', 'email', 'avatarDataUrl',
+          'playerXp', 'rankLevel', 'rankTitle', 'playerCash',
+          'activeWeapon', 'unlockedWeapons',
+          'totalKills', 'totalDeaths', 'totalAssists', 'totalHeadshots',
+          'matchesPlayed', 'matchesWon', 'bombsPlanted',
+          'unlockedAchievements', 'economyVersion', 'mmr',
+          'equippedWeaponOptics', 'equippedWeaponSkins', 'equippedWeaponGunsmith',
+          'dailyContracts', 'diamonds', 'vipBattlePass',
+          'activeOperatorId', 'unlockedOperators', 'founderDiamondsClaimed',
+          'updatedAt'
+        ]);
+    }
+
+    function isPlayerDiamondStoreAction() {
+      return ('diamonds' in existing())
+        && ('diamonds' in incoming())
+        && incoming().diamonds < existing().diamonds
+        && incoming().diamonds >= 0
+        && incoming().playerXp >= existing().playerXp
+        && incoming().playerXp <= existing().playerXp + 50000
+        && incoming().playerCash >= existing().playerCash
+        && incoming().playerCash <= existing().playerCash + 50000
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'callsign', 'callsignLocked', 'email', 'avatarDataUrl',
+          'playerXp', 'rankLevel', 'rankTitle', 'playerCash',
+          'activeWeapon', 'unlockedWeapons',
+          'totalKills', 'totalDeaths', 'totalAssists', 'totalHeadshots',
+          'matchesPlayed', 'matchesWon', 'bombsPlanted',
+          'unlockedAchievements', 'economyVersion', 'mmr',
+          'equippedWeaponOptics', 'equippedWeaponSkins', 'equippedWeaponGunsmith',
+          'dailyContracts', 'diamonds', 'vipBattlePass',
+          'activeOperatorId', 'unlockedOperators', 'founderDiamondsClaimed',
+          'updatedAt'
+        ]);
+    }
+
+    function isPlayerProgressionUpdateAction() {
+      return incoming().playerXp >= existing().playerXp
+        && incoming().playerXp <= existing().playerXp + 50000
+        && incoming().playerCash >= existing().playerCash - 50000
+        && incoming().playerCash <= existing().playerCash + 50000
+        && (
+          !('diamonds' in incoming())
+          || (!('diamonds' in existing()) && incoming().diamonds == 0)
+          || (('diamonds' in existing()) && incoming().diamonds == existing().diamonds)
+        )
+        && (
+          !('vipBattlePass' in incoming())
+          || (
+            ('activeUntilIso' in incoming().vipBattlePass)
+            && incoming().vipBattlePass.activeUntilIso is string
+            && incoming().vipBattlePass.activeUntilIso.size() <= 40
+            && (
+              incoming().vipBattlePass.activeUntilIso == ''
+              || (
+                ('vipBattlePass' in existing())
+                && ('activeUntilIso' in existing().vipBattlePass)
+                && incoming().vipBattlePass.activeUntilIso == existing().vipBattlePass.activeUntilIso
+              )
+            )
+          )
+        )
+        && (
+          !('mmr' in incoming())
+          || !('mmr' in existing())
+          || (existing().mmr == 1000 && incoming().mmr == 2450)
+          || (incoming().mmr >= existing().mmr - 250 && incoming().mmr <= existing().mmr + 250)
+        )
+        && incoming().totalKills >= existing().totalKills
+        && incoming().totalKills <= existing().totalKills + 200
+        && incoming().totalDeaths >= existing().totalDeaths
+        && incoming().totalDeaths <= existing().totalDeaths + 200
+        && incoming().totalAssists >= existing().totalAssists
+        && incoming().totalAssists <= existing().totalAssists + 200
+        && incoming().totalHeadshots >= existing().totalHeadshots
+        && incoming().totalHeadshots <= existing().totalHeadshots + 200
+        && incoming().matchesPlayed >= existing().matchesPlayed
+        && incoming().matchesPlayed <= existing().matchesPlayed + 20
+        && incoming().matchesWon >= existing().matchesWon
+        && incoming().matchesWon <= existing().matchesWon + 20
+        && incoming().bombsPlanted >= existing().bombsPlanted
+        && incoming().bombsPlanted <= existing().bombsPlanted + 50
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'callsign', 'callsignLocked', 'email', 'avatarDataUrl',
+          'playerXp', 'rankLevel', 'rankTitle', 'playerCash',
+          'activeWeapon', 'unlockedWeapons',
+          'totalKills', 'totalDeaths', 'totalAssists', 'totalHeadshots',
+          'matchesPlayed', 'matchesWon', 'bombsPlanted',
+          'unlockedAchievements', 'economyVersion', 'mmr',
+          'equippedWeaponOptics', 'equippedWeaponSkins', 'equippedWeaponGunsmith',
+          'dailyContracts', 'diamonds', 'vipBattlePass',
+          'activeOperatorId', 'unlockedOperators', 'founderDiamondsClaimed',
+          'updatedAt'
+        ]);
+    }
+
+    function isValidUsernameRegistry(data, usernameLower) {
+      return data.keys().hasAll(['callsign', 'uid', 'createdAt'])
+        && data.keys().hasOnly(['callsign', 'uid', 'createdAt'])
+        && data.uid is string
+        && data.uid == request.auth.uid
+        && data.uid.size() >= 1
+        && data.uid.size() <= 128
+        && data.callsign is string
+        && data.callsign.size() >= 3
+        && data.callsign.size() <= 24
+        && data.callsign.matches('^[A-Z0-9_\\-]+$')
+        && data.callsign.lower() == usernameLower
+        && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 40;
+    }
+
+    function isAllowedArenaMode(mode) {
+      return mode == 'DUST2_BOMB_5V5'
+        || mode == 'ASSAULT_BOMB_5V5'
+        || mode == 'YARD_BOMB_5V5'
+        || mode == 'INDUSTRIA_BOMB_5V5'
+        || mode == 'HANGAR_BOMB_5V5'
+        || mode == 'EASTERN_CITY_BOMB_5V5'
+        || mode == 'MIRAGE_ANUBIS_BOMB_5V5'
+        || mode == 'STATION_TDM_5V5'
+        || mode == 'STATION_CAPTURE_5V5';
+    }
+
+    function isValidMultiplayerRoom(data) {
+      return data.keys().hasAll([
+          'roomId', 'hostUid', 'arenaMode', 'isPrivate', 'status',
+          'currentRound', 'vanguardScore', 'blackthornScore',
+          'bombStatus', 'plantedSite', 'players', 'updatedAtMs', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'roomId', 'hostUid', 'arenaMode', 'isPrivate', 'queueType', 'averageMmr',
+          'status', 'currentRound', 'vanguardScore', 'blackthornScore',
+          'bombStatus', 'plantedSite', 'players', 'lastHitEvent',
+          'updatedAtMs', 'createdAt'
+        ])
+        && data.roomId is string && data.roomId.size() >= 4 && data.roomId.size() <= 16 && data.roomId.matches('^[A-Z0-9]+$')
+        && data.hostUid is string && data.hostUid.size() >= 1 && data.hostUid.size() <= 128
+        && data.arenaMode is string && data.arenaMode.size() <= 40 && isAllowedArenaMode(data.arenaMode)
+        && data.isPrivate is bool
+        && (!('queueType' in data) || (data.queueType is string && data.queueType.size() <= 16 && data.queueType in ['CASUAL', 'RANKED', 'Casual', 'Ranked']))
+        && (!('averageMmr' in data) || (data.averageMmr is number && data.averageMmr >= 0 && data.averageMmr <= 10000))
+        && data.status is string && data.status.size() <= 16 && data.status in ['WAITING', 'PLAYING', 'FINISHED']
+        && data.currentRound is number && data.currentRound >= 1 && data.currentRound <= 20
+        && data.vanguardScore is number && data.vanguardScore >= 0 && data.vanguardScore <= 20
+        && data.blackthornScore is number && data.blackthornScore >= 0 && data.blackthornScore <= 20
+        && data.bombStatus is string && data.bombStatus.size() <= 16 && data.bombStatus in ['CARRIED', 'PLANTED', 'DEFUSED', 'DETONATED']
+        && data.plantedSite is string && data.plantedSite.size() <= 8 && data.plantedSite in ['NONE', 'A', 'B']
+        && data.players is map && data.players.size() <= 12
+        && (!('lastHitEvent' in data) || (data.lastHitEvent is map && data.lastHitEvent.size() <= 16))
+        && (!('queueType' in data) || !(data.queueType in ['RANKED', 'Ranked']) || data.status != 'PLAYING' || data.players.size() == 10)
+        && isNonNegativeNumber(data.updatedAtMs)
+        && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 40;
+    }
+
+    function isRoomJoinAction() {
+      return existing().status == 'WAITING'
+        && incoming().diff(existing()).affectedKeys().hasOnly(['players', 'averageMmr', 'updatedAtMs'])
+        && incoming().players.diff(existing().players).affectedKeys().hasOnly([request.auth.uid]);
+    }
+
+    function isRoomLeaveAction() {
+      return (request.auth.uid in existing().players)
+        && incoming().diff(existing()).affectedKeys().hasOnly(['players', 'updatedAtMs'])
+        && incoming().players.diff(existing().players).affectedKeys().hasOnly([request.auth.uid])
+        && !(request.auth.uid in incoming().players);
+    }
+
+    function isRoomActivePlayAction() {
+      return existing().status != 'FINISHED'
+        && (request.auth.uid in existing().players || existing().hostUid == request.auth.uid)
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'status', 'currentRound', 'vanguardScore', 'blackthornScore',
+          'bombStatus', 'plantedSite', 'players', 'lastHitEvent', 'averageMmr', 'updatedAtMs'
+        ]);
+    }
+
+    function isValidSocialInbox(data) {
+      return data.keys().hasAll(['uid', 'friends', 'requests', 'invites', 'updatedAtMs'])
+        && data.keys().hasOnly(['uid', 'friends', 'requests', 'invites', 'updatedAtMs'])
+        && data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128
+        && data.friends is map && data.friends.size() <= 100
+        && data.requests is map && data.requests.size() <= 50
+        && data.invites is map && data.invites.size() <= 30
+        && isNonNegativeNumber(data.updatedAtMs);
+    }
+
+    function isValidDirectChat(data, chatId) {
+      return data.keys().hasAll(['chatId', 'participants', 'messages', 'updatedAtMs'])
+        && data.keys().hasOnly(['chatId', 'participants', 'messages', 'updatedAtMs'])
+        && data.chatId is string && data.chatId == chatId && data.chatId.size() >= 3 && data.chatId.size() <= 260
+        && data.participants is list
+        && data.participants.size() == 2
+        && data.participants[0] is string
+        && data.participants[1] is string
+        && data.participants[0] != data.participants[1]
+        && request.auth.uid in data.participants
+        && data.messages is list
+        && data.messages.size() <= 60
+        && (data.messages.size() == 0 || data.messages[0] is map)
+        && isNonNegativeNumber(data.updatedAtMs);
+    }
+
+    match /players/{userId} {
+      allow get: if isAuthenticated() && isValidId(userId);
+      allow list: if false;
+      allow create: if isOwner(userId)
+        && isValidId(userId)
+        && isValidPlayerProfile(incoming())
+        && incoming().playerXp <= 1000000
+        && incoming().playerCash <= 1000000
+        && (
+          !('diamonds' in incoming())
+          || incoming().diamonds == 0
+          || (incoming().diamonds <= 1500 && ('founderDiamondsClaimed' in incoming()) && incoming().founderDiamondsClaimed == true)
+        )
+        && (!('vipBattlePass' in incoming()) || (incoming().vipBattlePass.activeUntilIso == ''));
+      allow update: if isOwner(userId)
+        && isValidId(userId)
+        && isValidPlayerProfile(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && (!('callsignLocked' in existing()) || !existing().callsignLocked || (incoming().callsign == existing().callsign && incoming().callsignLocked))
+        && (isPlayerEconomyMigrationAction() || isPlayerAccountResetAction() || isPlayerVipPurchaseAction() || isPlayerFounderGrantAction() || isPlayerDiamondStoreAction() || isPlayerProgressionUpdateAction());
+      allow delete: if isOwner(userId) && isValidId(userId);
+    }
+
+    match /usernames/{usernameLower} {
+      allow get: if isAuthenticated() && isValidId(usernameLower);
+      allow list: if false;
+      allow create: if isAuthenticated()
+        && isValidId(usernameLower)
+        && isValidUsernameRegistry(incoming(), usernameLower);
+      allow update, delete: if false;
+    }
+
+    match /rooms/{roomId} {
+      allow get: if isAuthenticated() && isValidId(roomId);
+      allow list: if isAuthenticated() && existing().isPrivate == false;
+      allow create: if isAuthenticated()
+        && isValidId(roomId)
+        && isValidMultiplayerRoom(incoming())
+        && incoming().roomId == roomId
+        && incoming().hostUid == request.auth.uid
+        && incoming().status == 'WAITING'
+        && request.auth.uid in incoming().players;
+      allow update: if isAuthenticated()
+        && isValidId(roomId)
+        && isValidMultiplayerRoom(incoming())
+        && incoming().roomId == existing().roomId
+        && incoming().hostUid == existing().hostUid
+        && incoming().arenaMode == existing().arenaMode
+        && incoming().isPrivate == existing().isPrivate
+        && incoming().createdAt == existing().createdAt
+        && (!('queueType' in existing()) || incoming().queueType == existing().queueType)
+        && (isRoomJoinAction() || isRoomLeaveAction() || isRoomActivePlayAction());
+      allow delete: if isAuthenticated() && isValidId(roomId) && existing().hostUid == request.auth.uid;
+    }
+
+    match /social_inboxes/{userId} {
+      allow get: if isAuthenticated() && isValidId(userId);
+      allow list: if false;
+      allow create: if isAuthenticated()
+        && isValidId(userId)
+        && isValidSocialInbox(incoming())
+        && incoming().uid == userId
+        && (
+          isOwner(userId)
+          || (
+            incoming().friends.size() == 0
+            && (incoming().requests.size() == 0 || incoming().requests.keys().hasOnly([request.auth.uid]))
+            && (incoming().invites.size() == 0 || incoming().invites.keys().hasOnly([request.auth.uid]))
+          )
+        );
+      allow update: if isAuthenticated()
+        && isValidId(userId)
+        && isValidSocialInbox(incoming())
+        && incoming().uid == existing().uid
+        && incoming().diff(existing()).affectedKeys().hasOnly(['friends', 'requests', 'invites', 'updatedAtMs'])
+        && (
+          isOwner(userId)
+          || (
+            incoming().friends.diff(existing().friends).affectedKeys().hasOnly([request.auth.uid])
+            && incoming().requests.diff(existing().requests).affectedKeys().hasOnly([request.auth.uid])
+            && incoming().invites.diff(existing().invites).affectedKeys().hasOnly([request.auth.uid])
+          )
+        );
+      allow delete: if isOwner(userId) && isValidId(userId);
+    }
+
+    match /direct_chats/{chatId} {
+      allow get: if isAuthenticated()
+        && isValidChatId(chatId)
+        && (resource == null || request.auth.uid in existing().participants);
+      allow list: if false;
+      allow create: if isAuthenticated()
+        && isValidChatId(chatId)
+        && isValidDirectChat(incoming(), chatId);
+      allow update: if isAuthenticated()
+        && isValidChatId(chatId)
+        && isValidDirectChat(incoming(), chatId)
+        && request.auth.uid in existing().participants
+        && incoming().chatId == existing().chatId
+        && incoming().participants == existing().participants
+        && incoming().diff(existing()).affectedKeys().hasOnly(['messages', 'updatedAtMs']);
+      allow delete: if false;
+    }
+  }
+}

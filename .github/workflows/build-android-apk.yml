@@ -1,4 +1,4 @@
-name: Build Native Android APK (Capacitor + WebGL GPU)
+name: Build Native Android APK & Play Store AAB (Capacitor + WebGL GPU)
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-android-apk:
-    name: Compilar APK Nativo Android (KINETIC FPS)
+    name: Compilar APK / AAB Nativo Android (KINETIC FPS)
     runs-on: ubuntu-latest
 
     steps:
@@ -33,9 +33,14 @@ jobs:
       - name: 5. Instalar Dependências e Compilar Web App (Vite Production Build)
         env:
           VITE_WS_SERVER_URL: ${{ secrets.VITE_WS_SERVER_URL || 'wss://gamefps-multiplayer.onrender.com/ws' }}
+          VITE_ASSET_CDN_URL: ${{ secrets.VITE_ASSET_CDN_URL || '' }}
         run: |
           npm ci || npm install
           npm run build
+          if [ -n "$VITE_ASSET_CDN_URL" ]; then
+            echo ">>> CDN ativa ($VITE_ASSET_CDN_URL): removendo models/maps pesados de dist/ para gerar APK leve..."
+            rm -rf dist/models dist/maps
+          fi
 
       - name: 6. Gerar e Sincronizar Plataforma Nativa Android (Capacitor)
         run: |
@@ -44,11 +49,11 @@ jobs:
           fi
           npx cap sync android
 
-      - name: 7. Patch Android (singleTask + GoogleOAuthActivity + landscape/GPU/haptics)
+      - name: 7. Patch Android (OAuth + Voice Chat Mic + Release Signing + GPU/Haptics)
         run: |
           node scripts/patch-android-manifest.js
 
-      - name: 8. Compilar APK Nativo via Gradle (assembleDebug)
+      - name: 8. Configurar Espelhos Gradle e Compilar APK Debug (Teste Rápido)
         working-directory: ./android
         run: |
           mkdir -p ~/.gradle/init.d
@@ -69,10 +74,35 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: 9. Publicar APK nos Artifacts do GitHub
+      - name: 9. Publicar APK Debug nos Artifacts do GitHub
         uses: actions/upload-artifact@v4
         with:
-          name: KINETIC-Tactical-FPS-Android-APK
+          name: KINETIC-Tactical-FPS-Android-APK-Debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: 10. Compilar Release Assinado (APK + AAB Google Play) se Keystore configurada
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        working-directory: ./android
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KINETIC_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KINETIC_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KINETIC_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > app/release-keystore.jks
+          export KINETIC_KEYSTORE_PATH="$(pwd)/app/release-keystore.jks"
+          ./gradlew assembleRelease bundleRelease --no-daemon --stacktrace
+          rm -f app/release-keystore.jks
+
+      - name: 11. Publicar Release Assinado (Play Store AAB + APK)
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: KINETIC-Tactical-FPS-PlayStore-Release
+          path: |
+            android/app/build/outputs/bundle/release/app-release.aab
+            android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30

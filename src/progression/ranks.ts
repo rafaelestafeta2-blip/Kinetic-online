@@ -151,19 +151,22 @@ export function getRequiredXpForWeapon(weaponId: WeaponId): {
   if (
     weaponId === 'KNIFE_TACTICAL' ||
     weaponId === 'AK12_RIFLE' ||
+    weaponId === 'AK47_RIFLE' ||
     weaponId === 'M4_CARBINE' ||
     weaponId === 'S_MILITARY' ||
     weaponId === 'SHOTGUN_12' ||
     weaponId === 'SMG_45' ||
     weaponId === 'SNIPER_TACTICAL' ||
-    weaponId === 'P50_PISTOL'
+    weaponId === 'SNIPER_AWP' ||
+    weaponId === 'P50_PISTOL' ||
+    weaponId === 'M1911_PISTOL'
   ) {
     return { requiredLevel: 1, rankTitle: 'Trainee' };
   }
   if (weaponId === 'SMG_MP5') {
     return { requiredLevel: 4, rankTitle: 'Cadete Sênior' };
   }
-  if (weaponId === 'SHOTGUN_SPAS') {
+  if (weaponId === 'SHOTGUN_SPAS' || weaponId === 'SNIPER_HEAVY') {
     return { requiredLevel: 6, rankTitle: 'Recruta' };
   }
   for (const rank of WARFACE_RANKS) {
@@ -178,7 +181,7 @@ export function getRequiredXpForOptic(optic: OpticType): {
   requiredLevel: number;
   rankTitle: string;
 } {
-  if (optic === 'iron' || optic === 'red_dot') {
+  if (optic === 'iron' || optic === 'red_dot' || optic === 'lpvo') {
     return { requiredLevel: 1, rankTitle: 'Trainee' };
   }
   if (optic === 'kolimator') {
@@ -186,9 +189,6 @@ export function getRequiredXpForOptic(optic: OpticType): {
   }
   if (optic === 'holo') {
     return { requiredLevel: 4, rankTitle: 'Cadete Sênior' };
-  }
-  if (optic === 'lpvo') {
-    return { requiredLevel: 6, rankTitle: 'Recruta' };
   }
   for (const rank of WARFACE_RANKS) {
     if (rank.unlockedOptics.includes(optic)) {
@@ -216,18 +216,23 @@ export function isWeaponUnlockedAtXp(weaponId: WeaponId, xp: number): boolean {
   if (
     weaponId === 'KNIFE_TACTICAL' ||
     weaponId === 'AK12_RIFLE' ||
+    weaponId === 'AK47_RIFLE' ||
     weaponId === 'M4_CARBINE' ||
     weaponId === 'S_MILITARY' ||
     weaponId === 'SHOTGUN_12' ||
     weaponId === 'SMG_45' ||
     weaponId === 'SNIPER_TACTICAL' ||
-    weaponId === 'P50_PISTOL'
+    weaponId === 'SNIPER_AWP' ||
+    weaponId === 'P50_PISTOL' ||
+    weaponId === 'M1911_PISTOL'
   ) {
     return true;
   }
   const currentRank = getRankForXp(xp);
   if (weaponId === 'SMG_MP5') return currentRank.level >= 4;
-  if (weaponId === 'SHOTGUN_SPAS') return currentRank.level >= 6;
+  if (weaponId === 'SHOTGUN_SPAS' || weaponId === 'SNIPER_HEAVY') {
+    return currentRank.level >= 6;
+  }
   return currentRank.unlockedWeapons.includes(weaponId);
 }
 

@@ -45,7 +45,7 @@ const KillfeedWeaponIcon: React.FC<{
     );
   }
 
-  if (weaponId === 'P50_PISTOL') {
+  if (weaponId === 'P50_PISTOL' || weaponId === 'M1911_PISTOL') {
     return (
       <svg
         viewBox="0 0 34 18"
@@ -58,7 +58,26 @@ const KillfeedWeaponIcon: React.FC<{
     );
   }
 
-  if (weaponId === 'SNIPER_BOLT' || weaponId === 'SNIPER_TACTICAL') {
+  if (weaponId === 'RPG7_LAUNCHER') {
+    return (
+      <svg
+        viewBox="0 0 60 16"
+        fill="#ffffff"
+        className={`${className} drop-shadow-[0_1px_2px_rgba(0,0,0,0.95)]`}
+      >
+        <path d="M2 5.5L8 7H42L48 4.2L58 8L48 11.8L42 9H8L2 10.5V5.5Z" />
+        <rect x="20" y="9" width="3.2" height="5" />
+        <rect x="30" y="9" width="2.8" height="4.2" />
+      </svg>
+    );
+  }
+
+  if (
+    weaponId === 'SNIPER_BOLT' ||
+    weaponId === 'SNIPER_TACTICAL' ||
+    weaponId === 'SNIPER_AWP' ||
+    weaponId === 'SNIPER_HEAVY'
+  ) {
     return (
       <svg
         viewBox="0 0 62 16"

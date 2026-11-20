@@ -1,64 +1,10 @@
 import * as THREE from 'three';
-import type { GLTFParser } from 'three/addons/loaders/GLTFLoader.js';
 import { createGameGltfLoader } from './gltfLoaderFactory';
 import { resolveAssetUrl } from '../utils/assetUrl';
-
-const M4_FPS_PACK_LOCAL_URL = resolveAssetUrl('/models/m4_fps_pack.glb');
-const M4_FPS_PACK_GITHUB_RAW_URL =
-  'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/d7b8cb9d6d09ac5bfaa3aa11fd0cd8057dd3c862/m4_fps_animations_pack.glb';
-
-class SpecularGlossinessHandPlugin {
-  public name = 'KHR_materials_pbrSpecularGlossiness';
-  private parser: GLTFParser;
-
-  constructor(parser: GLTFParser) {
-    this.parser = parser;
-  }
-
-  public getMaterialType(): typeof THREE.MeshStandardMaterial {
-    return THREE.MeshStandardMaterial;
-  }
-
-  public extendParams(
-    materialParams: Record<string, unknown>,
-    materialDef: {
-      extensions?: Record<
-        string,
-        {
-          diffuseFactor?: number[];
-          diffuseTexture?: { index: number };
-          glossinessFactor?: number;
-        }
-      >;
-    }
-  ): Promise<unknown[]> {
-    const ext = materialDef.extensions?.[this.name];
-    if (!ext) return Promise.resolve([]);
-    const pending: Promise<unknown>[] = [];
-
-    if (Array.isArray(ext.diffuseFactor)) {
-      const [r, g, b, a] = ext.diffuseFactor;
-      materialParams.color = new THREE.Color(r, g, b);
-      materialParams.opacity = a ?? 1.0;
-    }
-    if (ext.diffuseTexture !== undefined) {
-      pending.push(
-        this.parser.assignTexture(
-          materialParams,
-          'map',
-          ext.diffuseTexture,
-          THREE.SRGBColorSpace
-        )
-      );
-    }
-    materialParams.metalness = 0.08;
-    materialParams.roughness =
-      ext.glossinessFactor !== undefined
-        ? Math.max(0.25, 1.0 - ext.glossinessFactor * 0.65)
-        : 0.65;
-    return Promise.all(pending);
-  }
-}
+import {
+  KINEMATION_ARMS_BASE_URL,
+  calibrateKinemationMaterialScene,
+} from './kinemationArmsRig';
 
 /**
  * Slices `granada_frag.glb` (`granade_read_the_description.glb`) so ONLY the
@@ -100,190 +46,122 @@ export function isolateSingleFragGrenadeInGlb(rawScene: THREE.Group): void {
   });
 }
 
-const _qIdentity = new THREE.Quaternion(0, 0, 0, 1);
-const _qCurl1 = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.88, 0, 0));
-const _qCurl2 = new THREE.Quaternion().setFromEuler(new THREE.Euler(1.12, 0, 0));
-const _qCurl3 = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.75, 0, 0));
-const _qThumbCurl = new THREE.Quaternion().setFromEuler(
-  new THREE.Euler(0.32, 0.42, -0.25)
-);
-const _qOffset = new THREE.Quaternion();
-const _eulerTemp = new THREE.Euler();
-
 /**
- * First-Person Rigged Hands from the M4 Weapon Pack (`m4_fps_pack.glb`)
- * adapted to grip the 3D Grenade cleanly in the Right Hand palm (with the Left Arm
- * tucked out of view until pin-pull so the two arms never cross), pull the safety pin
- * with the Left Hand from the left side, wind back the right arm, and open the fingers on release.
+ * Unified First-Person Grenade Hand Rig powered by the Kinemation tactical arms
+ * (`arms_base.glb`) and its native grenade clips (`Grenade_Pose`, `GrenadeThrow_Start`,
+ * `GrenadeThrow_End`). Eliminates the legacy 11 MB `m4_fps_pack.glb` dependency.
  */
 export class GrenadeFirstPersonHandRig {
   public readonly root = new THREE.Group();
   public readonly grenadeSocket = new THREE.Group();
 
-  private m4HandsMount = new THREE.Group();
+  private armsMount = new THREE.Group();
+  private armsRotateY = new THREE.Group();
   private fallbackHandGroup = new THREE.Group();
-  private m4Loaded = false;
 
-  private bones = new Map<string, THREE.Bone>();
-  private restQuats = new Map<string, THREE.Quaternion>();
-  private restPositions = new Map<string, THREE.Vector3>();
+  private armsLoaded = false;
+  private mixer: THREE.AnimationMixer | null = null;
+  private actions: Record<string, THREE.AnimationAction> = {};
+  private activeClipName: string | null = null;
+  private lastThrowTime = -1;
 
   constructor() {
-    this.root.add(this.m4HandsMount);
+    this.armsRotateY.rotation.y = Math.PI;
+    this.armsMount.add(this.armsRotateY);
+    this.root.add(this.armsMount);
     this.root.add(this.fallbackHandGroup);
 
     this.grenadeSocket.position.set(0.085, -0.075, -0.255);
     this.fallbackHandGroup.add(this.grenadeSocket);
 
-    this.loadRiggedM4Hands();
+    this.loadUnifiedKinemationHands();
   }
 
-  private loadRiggedM4Hands(): void {
+  private loadUnifiedKinemationHands(): void {
     const loader = createGameGltfLoader();
-    loader.register((parser) => new SpecularGlossinessHandPlugin(parser));
+    loader.load(
+      resolveAssetUrl(KINEMATION_ARMS_BASE_URL),
+      (gltf) => {
+        const model = gltf.scene;
+        calibrateKinemationMaterialScene(model, true);
+        this.armsRotateY.add(model);
 
-    const onLoaded = (gltf: { scene: THREE.Group }) => {
-      const model = gltf.scene;
-      const gunNodeNames = new Set([
-        'Main_j_049',
-        'Mag1_j_050',
-        'Mag2_j_051',
-        'Bolt_j_052',
-        'BoltCatch_j_053',
-        'Trigger_j_054',
-        'Main',
-      ]);
-
-      model.traverse((child) => {
-        if (gunNodeNames.has(child.name)) {
-          child.visible = false;
-        }
-        if ((child as THREE.Bone).isBone) {
-          const bone = child as THREE.Bone;
-          this.bones.set(bone.name, bone);
-          this.restQuats.set(bone.name, bone.quaternion.clone());
-          this.restPositions.set(bone.name, bone.position.clone());
-        }
-        if ((child as THREE.Mesh).isMesh) {
-          const mesh = child as THREE.Mesh;
-          mesh.frustumCulled = false;
-          mesh.castShadow = false;
-          mesh.receiveShadow = true;
-          const matName = (mesh.material as THREE.Material)?.name || '';
+        const mixer = new THREE.AnimationMixer(model);
+        this.mixer = mixer;
+        for (const clip of gltf.animations || []) {
           if (
-            matName.includes('M4_D') ||
-            matName.includes('Bullet') ||
-            mesh.name.includes('M4_D')
+            clip.name === 'Grenade_Pose' ||
+            clip.name === 'GrenadeThrow_Start' ||
+            clip.name === 'GrenadeThrow_Loop' ||
+            clip.name === 'GrenadeThrow_End'
           ) {
-            mesh.visible = false;
+            this.actions[clip.name] = mixer.clipAction(clip);
           }
         }
-      });
 
-      this.m4HandsMount.add(model);
+        // Attach grenadeSocket directly to Kinemation `hand_r` palm (cm space -> 100x scale)
+        const handR = model.getObjectByName('hand_r');
+        if (handR) {
+          handR.add(this.grenadeSocket);
+          this.grenadeSocket.position.set(-9.6, -2.6, 1.4);
+          this.grenadeSocket.scale.setScalar(100);
+          this.grenadeSocket.rotation.set(0.15, 0, -Math.PI / 2 + 0.18);
+        }
 
-      // Attach grenadeSocket directly into the M4 skeleton's `RightHand_05` palm bone (cm space)
-      const rightHandBone = this.bones.get('RightHand_05');
-      if (rightHandBone) {
-        rightHandBone.add(this.grenadeSocket);
-        this.grenadeSocket.position.set(1.2, 11.2, 3.3);
-        this.grenadeSocket.scale.setScalar(100);
-        this.grenadeSocket.rotation.set(0, 0, -Math.PI / 2);
+        this.fallbackHandGroup.visible = false;
+        this.armsLoaded = true;
+        this.playPoseClip('Grenade_Pose', 0);
+      },
+      undefined,
+      () => {
+        // Keep lightweight fallback grenade socket visible if load fails
       }
-
-      this.fallbackHandGroup.visible = false;
-      this.m4Loaded = true;
-      this.setRightHandGripCurl(1.0);
-    };
-
-    loader.load(M4_FPS_PACK_LOCAL_URL, onLoaded, undefined, () => {
-      loader.load(M4_FPS_PACK_GITHUB_RAW_URL, onLoaded, undefined, () => {});
-    });
+    );
   }
 
-  private setBoneEulerOffset(
-    boneName: string,
-    rx: number,
-    ry: number,
-    rz: number
-  ): void {
-    const bone = this.bones.get(boneName);
-    const rest = this.restQuats.get(boneName);
-    if (!bone || !rest) return;
-    _eulerTemp.set(rx, ry, rz, 'XYZ');
-    _qOffset.setFromEuler(_eulerTemp);
-    bone.quaternion.copy(rest).multiply(_qOffset);
-  }
+  private playPoseClip(clipName: string, timeSec: number): void {
+    if (!this.mixer) return;
+    const targetAct = this.actions[clipName];
+    if (!targetAct) return;
 
-  private hideLeftArmBelowViewport(): void {
-    const leftArm = this.bones.get('LeftArm_026');
-    if (leftArm) {
-      leftArm.position.set(42, -55, -35);
-      leftArm.scale.setScalar(0.0001);
-    }
-  }
-
-  public setRightHandGripCurl(gripAlpha: number): void {
-    if (!this.m4Loaded) return;
-    const c = THREE.MathUtils.clamp(gripAlpha, 0, 1.15);
-
-    const idx1 = this.bones.get('RightHandIndex1_010');
-    const idx2 = this.bones.get('RightHandIndex2_011');
-    const idx3 = this.bones.get('RightHandIndex3_012');
-    const idx1Rest = this.restQuats.get('RightHandIndex1_010');
-    if (idx1 && idx1Rest) {
-      idx1.quaternion.copy(_qIdentity).slerp(_qCurl1, c);
-      idx1.quaternion.slerp(idx1Rest, 0.25);
-    }
-    if (idx2) idx2.quaternion.copy(_qIdentity).slerp(_qCurl2, c);
-    if (idx3) idx3.quaternion.copy(_qIdentity).slerp(_qCurl3, c);
-
-    const gripFingerBones = [
-      'RightHandMiddle1_014',
-      'RightHandMiddle2_015',
-      'RightHandMiddle3_016',
-      'RightHandRing1_018',
-      'RightHandRing2_019',
-      'RightHandRing3_020',
-      'RightHandPinky1_022',
-      'RightHandPinky2_023',
-      'RightHandPinky3_024',
-    ];
-    for (const name of gripFingerBones) {
-      const bone = this.bones.get(name);
-      const rest = this.restQuats.get(name);
-      if (bone && rest) {
-        bone.quaternion.copy(_qIdentity).slerp(rest, Math.min(1, c));
+    if (this.activeClipName !== clipName) {
+      for (const name of Object.keys(this.actions)) {
+        const act = this.actions[name];
+        if (name !== clipName) {
+          act.stop();
+          act.weight = 0;
+        }
       }
+      targetAct.setLoop(THREE.LoopOnce, 1);
+      targetAct.clampWhenFinished = true;
+      targetAct.weight = 1.0;
+      targetAct.timeScale = 1.0;
+      targetAct.reset();
+      targetAct.play();
+      this.activeClipName = clipName;
     }
 
-    const th1 = this.bones.get('RightHandThumb1_06');
-    const th2 = this.bones.get('RightHandThumb2_07');
-    const th1Rest = this.restQuats.get('RightHandThumb1_06');
-    const th2Rest = this.restQuats.get('RightHandThumb2_07');
-    if (th1 && th1Rest) {
-      th1.quaternion.copy(_qIdentity).slerp(th1Rest, Math.min(1, c));
-    }
-    if (th2 && th2Rest) {
-      th2.quaternion.copy(th2Rest).slerp(_qThumbCurl, Math.max(0, c - 0.5));
-    }
+    const dur = Math.max(0.01, targetAct.getClip().duration);
+    this.mixer.setTime(THREE.MathUtils.clamp(timeSec, 0, dur));
+  }
+
+  public setRightHandGripCurl(_gripAlpha: number): void {
+    // Finger grip is author-animated by Kinemation Grenade clips
   }
 
   /**
-   * Idle/Aiming pose: ONLY the Right Hand holding the grenade is visible in the bottom-right view.
-   * The M4 Left Arm (which in the M4 rifle bind pose stretches across the screen to hold an invisible barrel)
-   * is tucked below the viewport so the arms never look crossed.
+   * Idle/Aiming pose using native Kinemation `Grenade_Pose` with tactical breathing & walk bob.
    */
   public updateHoldPose(idleTime: number, walkBobAmp: number): void {
-    const breathX = Math.sin(idleTime * 1.8) * 0.0035;
-    const breathY = Math.cos(idleTime * 3.6) * 0.003;
-    const bobX = Math.cos(idleTime * 8.5) * 0.008 * walkBobAmp;
-    const bobY = Math.abs(Math.sin(idleTime * 8.5)) * -0.009 * walkBobAmp;
+    const breathX = Math.sin(idleTime * 1.8) * 0.0032;
+    const breathY = Math.cos(idleTime * 3.6) * 0.0028;
+    const bobX = Math.cos(idleTime * 8.5) * 0.0075 * walkBobAmp;
+    const bobY = Math.abs(Math.sin(idleTime * 8.5)) * -0.0085 * walkBobAmp;
 
     this.grenadeSocket.visible = true;
-    this.setRightHandGripCurl(1.0);
+    this.lastThrowTime = -1;
 
-    if (!this.m4Loaded) {
+    if (!this.armsLoaded) {
       this.grenadeSocket.position.set(
         0.085 + breathX + bobX,
         -0.075 + breathY + bobY,
@@ -292,94 +170,48 @@ export class GrenadeFirstPersonHandRig {
       return;
     }
 
-    // Place M4 Right Hand & grenade at [X = +0.080m, Y = -0.088m, Z = -0.241m]
-    this.m4HandsMount.position.set(
-      0.085 + breathX + bobX,
-      -1.425 + breathY + bobY,
-      -0.315
+    this.playPoseClip('Grenade_Pose', 0);
+    this.armsMount.position.set(
+      -0.155 + breathX + bobX,
+      -1.615 + breathY + bobY,
+      0.015
     );
-    this.m4HandsMount.rotation.set(
-      0.08 + breathY * 1.6,
-      Math.PI - 0.28 + breathX * 1.8,
-      -0.05
+    this.armsMount.rotation.set(
+      breathY * 1.2,
+      breathX * 1.4,
+      0
     );
-
-    this.setBoneEulerOffset('RightArm_03', 0, 0, 0);
-    this.setBoneEulerOffset('RightForeArm_04', 0, 0, 0);
-    this.setBoneEulerOffset('RightHand_05', 0.18, -0.25, 0.15);
-
-    // Keep Left Arm completely out of view while holding/aiming so arms never cross
-    this.hideLeftArmBelowViewport();
   }
 
   /**
-   * 3-Stage Pin-Pull, Wind-Up, and Forward Throw Animation:
-   * - Stage 1 (0.00s..0.30s): Left Hand reaches from the left side to top of grenade, hooks pin ring & pulls it left
-   * - Stage 2 (0.30s..0.46s): Left Hand drops away; Right Arm winds back and upward
-   * - Stage 3 (0.46s..0.72s): Right Arm whips forward and all 5 fingers open wide on release
+   * 3-Stage Pin-Pull, Wind-Up, and Forward Throw Animation powered by native
+   * Kinemation `GrenadeThrow_Start` (pin pull + cock) & `GrenadeThrow_End` (forward throw).
    */
   public updateThrowSequence(
     t: number,
     pinMesh: THREE.Object3D | null,
     leverMesh: THREE.Object3D | null
   ): { shouldReleaseNow: boolean; finished: boolean } {
+    this.lastThrowTime = t;
+
     if (t < 0.30) {
       const p = t / 0.30;
-      const reachAlpha = Math.min(1, p / 0.42);
       const pullAlpha = p > 0.42 ? (p - 0.42) / 0.58 : 0;
       const easePull = 1 - Math.pow(1 - pullAlpha, 3);
 
       this.grenadeSocket.visible = true;
-      this.setRightHandGripCurl(1.05);
 
-      if (this.m4Loaded) {
-        this.m4HandsMount.position.set(
-          THREE.MathUtils.lerp(0.085, 0.045, reachAlpha),
-          THREE.MathUtils.lerp(-1.425, -1.405, reachAlpha),
-          THREE.MathUtils.lerp(-0.315, -0.325, reachAlpha)
+      if (this.armsLoaded) {
+        const startClip = this.actions['GrenadeThrow_Start'];
+        const startDur = startClip ? startClip.getClip().duration : 1.5;
+        // Scrub first 72% of GrenadeThrow_Start (left hand pulls safety pin)
+        this.playPoseClip('GrenadeThrow_Start', p * startDur * 0.72);
+        this.armsMount.position.set(
+          THREE.MathUtils.lerp(-0.155, -0.135, p),
+          THREE.MathUtils.lerp(-1.615, -1.605, p),
+          THREE.MathUtils.lerp(0.015, 0.005, p)
         );
-        this.m4HandsMount.rotation.set(
-          0.1,
-          Math.PI - 0.22,
-          -0.04 + easePull * 0.1
-        );
-        this.setBoneEulerOffset(
-          'RightHand_05',
-          0.2,
-          -0.2,
-          0.16 + easePull * 0.12
-        );
-
-        // Bring Left Hand cleanly from bottom-left (never crossing in front of Right Hand) to pull pin left
-        const leftArm = this.bones.get('LeftArm_026');
-        const leftArmRestPos = this.restPositions.get('LeftArm_026');
-        if (leftArm && leftArmRestPos) {
-          leftArm.scale.setScalar(1.0);
-          leftArm.position.set(
-            THREE.MathUtils.lerp(36, 16, reachAlpha) + easePull * 14,
-            THREE.MathUtils.lerp(-22, -4, reachAlpha) - easePull * 5,
-            THREE.MathUtils.lerp(-8, 12, reachAlpha)
-          );
-        }
-        this.setBoneEulerOffset(
-          'LeftArm_026',
-          0.15,
-          -0.25 + easePull * 0.32,
-          -0.2
-        );
-        this.setBoneEulerOffset(
-          'LeftForeArm_027',
-          0.22,
-          -0.35 + easePull * 0.28,
-          0.1
-        );
-        // Rotate LeftHand_028 palm-down/right so thumb & index pinch the safety pin ring from the left
-        this.setBoneEulerOffset(
-          'LeftHand_028',
-          1.45,
-          -0.35 - easePull * 0.25,
-          -0.65
-        );
+        this.armsMount.rotation.set(0.02, 0, easePull * 0.05);
       }
 
       if (pinMesh && pullAlpha > 0) {
@@ -398,29 +230,22 @@ export class GrenadeFirstPersonHandRig {
         pinMesh.visible = false;
       }
 
-      if (this.m4Loaded) {
-        this.hideLeftArmBelowViewport();
-
-        // Cock Right Arm back and up to the right before throwing
-        this.m4HandsMount.position.set(
-          THREE.MathUtils.lerp(0.045, 0.145, ease),
-          THREE.MathUtils.lerp(-1.405, -1.355, ease),
-          THREE.MathUtils.lerp(-0.325, -0.255, ease)
+      if (this.armsLoaded) {
+        const startClip = this.actions['GrenadeThrow_Start'];
+        const startDur = startClip ? startClip.getClip().duration : 1.5;
+        // Finish wind-up portion (72% -> 100%)
+        this.playPoseClip(
+          'GrenadeThrow_Start',
+          THREE.MathUtils.lerp(startDur * 0.72, startDur, ease)
         );
-        this.m4HandsMount.rotation.set(
-          THREE.MathUtils.lerp(0.1, 0.42, ease),
-          THREE.MathUtils.lerp(Math.PI - 0.22, Math.PI - 0.45, ease),
-          THREE.MathUtils.lerp(0.06, -0.22, ease)
+        this.armsMount.position.set(
+          THREE.MathUtils.lerp(-0.135, -0.105, ease),
+          THREE.MathUtils.lerp(-1.605, -1.585, ease),
+          THREE.MathUtils.lerp(0.005, 0.045, ease)
         );
-        this.setBoneEulerOffset(
-          'RightHand_05',
-          0.2 + ease * 0.35,
-          -0.2 - ease * 0.12,
-          0.24
-        );
+        this.armsMount.rotation.set(ease * 0.08, -ease * 0.06, -ease * 0.05);
       }
 
-      this.setRightHandGripCurl(1.0);
       return { shouldReleaseNow: false, finished: false };
     }
 
@@ -428,31 +253,23 @@ export class GrenadeFirstPersonHandRig {
       const p = (t - 0.46) / 0.26;
       const ease = 1 - Math.pow(1 - p, 3);
 
-      const openCurl = Math.max(0.05, 1.0 - Math.min(1, p * 2.8) * 0.95);
-      this.setRightHandGripCurl(openCurl);
-
       if (leverMesh) {
         leverMesh.rotation.z = -p * 1.6;
       }
 
-      if (this.m4Loaded) {
-        this.hideLeftArmBelowViewport();
-
-        this.m4HandsMount.position.set(
-          THREE.MathUtils.lerp(0.145, -0.025, ease),
-          THREE.MathUtils.lerp(-1.355, -1.495, ease),
-          THREE.MathUtils.lerp(-0.255, -0.385, Math.sin(p * Math.PI * 0.78))
+      if (this.armsLoaded) {
+        const endClip = this.actions['GrenadeThrow_End'];
+        const endDur = endClip ? endClip.getClip().duration : 1.0;
+        this.playPoseClip('GrenadeThrow_End', p * endDur * 0.85);
+        this.armsMount.position.set(
+          THREE.MathUtils.lerp(-0.105, -0.175, ease),
+          THREE.MathUtils.lerp(-1.585, -1.655, ease),
+          THREE.MathUtils.lerp(0.045, -0.025, Math.sin(p * Math.PI * 0.78))
         );
-        this.m4HandsMount.rotation.set(
-          THREE.MathUtils.lerp(0.42, -0.58, ease),
-          THREE.MathUtils.lerp(Math.PI - 0.45, Math.PI + 0.12, ease),
-          THREE.MathUtils.lerp(-0.22, 0.18, ease)
-        );
-        this.setBoneEulerOffset(
-          'RightHand_05',
-          THREE.MathUtils.lerp(0.55, -0.48, ease),
-          -0.25,
-          0.15
+        this.armsMount.rotation.set(
+          THREE.MathUtils.lerp(0.08, -0.16, ease),
+          THREE.MathUtils.lerp(-0.06, 0.05, ease),
+          THREE.MathUtils.lerp(-0.05, 0.04, ease)
         );
       }
 
@@ -464,6 +281,7 @@ export class GrenadeFirstPersonHandRig {
       return { shouldReleaseNow, finished: false };
     }
 
+    void this.lastThrowTime;
     return { shouldReleaseNow: true, finished: true };
   }
 }

@@ -39,12 +39,13 @@ interface MinimapRadarProps {
     isAlly?: boolean;
     isRevealed?: boolean;
   }>;
+  empJammedSec?: number;
 }
 
 const YARD_RADAR_SRC = '/assets/aistudio/Yard_Map_Radar_7754e5f9.webp';
 
 export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
-  ({ playerX, playerZ, playerYaw, drillMode, yardBomb, targets }) => {
+  ({ playerX, playerZ, playerYaw, drillMode, yardBomb, targets, empJammedSec = 0 }) => {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const radarImgRef = useRef<HTMLImageElement | null>(null);
 
@@ -252,8 +253,8 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
         drawFlagPin(btFlag.x, btFlag.z, '#ef4444', yardBomb?.blackthornFlagStatus);
       }
 
-      // Target & Ally pings (Warface / Call of Duty Fog-of-War: Enemies ONLY appear when firing or eliminating an ally!)
-      if (targets && targets.length > 0) {
+      // Target & Ally pings (Warface / Call of Duty Fog-of-War: Enemies ONLY appear when firing or eliminating an ally! Disabled while EMP-jammed.)
+      if (empJammedSec <= 0 && targets && targets.length > 0) {
         const isFreeRange = drillMode === 'FREE_RANGE';
         for (let i = 0; i < targets.length; i++) {
           const t = targets[i];
@@ -316,22 +317,44 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
       ctx.stroke();
 
       ctx.restore();
-    }, [playerX, playerZ, playerYaw, drillMode, yardBomb, targets]);
+    }, [playerX, playerZ, playerYaw, drillMode, yardBomb, targets, empJammedSec]);
+
+    const isEmpJammed = empJammedSec > 0;
 
     return (
-      <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-xl bg-[#181614]/90 border border-white/35 shadow-[0_6px_20px_rgba(0,0,0,0.65)] overflow-hidden shrink-0 pointer-events-none">
+      <div
+        className={`relative w-24 h-24 sm:w-28 sm:h-28 rounded-xl bg-[#181614]/90 border shadow-[0_6px_20px_rgba(0,0,0,0.65)] overflow-hidden shrink-0 pointer-events-none ${
+          isEmpJammed ? 'border-cyan-400/80' : 'border-white/35'
+        }`}
+      >
         <canvas
           ref={canvasRef}
           width={112}
           height={112}
-          className="w-full h-full block"
+          className={`w-full h-full block transition-opacity ${isEmpJammed ? 'opacity-25 blur-[1px]' : 'opacity-100'}`}
         />
-        {/* Compass S badge at top of minimap matching reference screenshot */}
-        <div className="absolute top-1 left-1/2 -translate-x-1/2 flex items-center gap-0.5 pointer-events-none">
-          <span className="px-1 py-0.2 rounded bg-sky-500/90 text-[8px] font-black text-white leading-tight shadow">
-            S
-          </span>
-        </div>
+        {isEmpJammed ? (
+          <div
+            className="absolute inset-0 flex flex-col items-center justify-center bg-[#06131f]/80 px-1 text-center"
+            style={{
+              backgroundImage:
+                'repeating-linear-gradient(0deg, rgba(56,189,248,0.16) 0px, rgba(56,189,248,0.16) 1px, transparent 1px, transparent 4px)',
+            }}
+          >
+            <span className="text-[9px] font-black tracking-widest text-cyan-300 uppercase animate-pulse">
+              EMP · SEM SINAL
+            </span>
+            <span className="mt-0.5 text-[10px] font-bold text-white tabular-nums">
+              {Math.ceil(empJammedSec)}s
+            </span>
+          </div>
+        ) : (
+          <div className="absolute top-1 left-1/2 -translate-x-1/2 flex items-center gap-0.5 pointer-events-none">
+            <span className="px-1 py-0.2 rounded bg-sky-500/90 text-[8px] font-black text-white leading-tight shadow">
+              S
+            </span>
+          </div>
+        )}
       </div>
     );
   },
@@ -346,5 +369,6 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
     prev.yardBomb?.vanguardFlagPos?.z === next.yardBomb?.vanguardFlagPos?.z &&
     prev.yardBomb?.blackthornFlagPos?.x === next.yardBomb?.blackthornFlagPos?.x &&
     prev.yardBomb?.blackthornFlagPos?.z === next.yardBomb?.blackthornFlagPos?.z &&
+    Math.ceil(prev.empJammedSec || 0) === Math.ceil(next.empJammedSec || 0) &&
     prev.targets === next.targets
 );

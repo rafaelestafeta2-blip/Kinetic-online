@@ -51,7 +51,11 @@ service cloud.firestore {
           'activeWeapon', 'unlockedWeapons',
           'totalKills', 'totalDeaths', 'totalAssists', 'totalHeadshots',
           'matchesPlayed', 'matchesWon', 'bombsPlanted',
-          'unlockedAchievements', 'economyVersion', 'mmr', 'createdAt', 'updatedAt'
+          'unlockedAchievements', 'economyVersion', 'mmr',
+          'equippedWeaponOptics', 'equippedWeaponSkins', 'equippedWeaponGunsmith',
+          'dailyContracts', 'diamonds', 'vipBattlePass',
+          'activeOperatorId', 'unlockedOperators', 'founderDiamondsClaimed',
+          'createdAt', 'updatedAt'
         ])
         && data.uid is string
         && data.uid == request.auth.uid
@@ -79,6 +83,15 @@ service cloud.firestore {
         && isNonNegativeNumber(data.matchesWon) && data.matchesWon <= data.matchesPlayed
         && isNonNegativeNumber(data.bombsPlanted) && data.bombsPlanted <= 500000
         && data.unlockedAchievements is list && data.unlockedAchievements.size() <= 50 && (data.unlockedAchievements.size() == 0 || data.unlockedAchievements[0] is string)
+        && (!('equippedWeaponOptics' in data) || (data.equippedWeaponOptics is map && data.equippedWeaponOptics.size() <= 25))
+        && (!('equippedWeaponSkins' in data) || (data.equippedWeaponSkins is map && data.equippedWeaponSkins.size() <= 25))
+        && (!('equippedWeaponGunsmith' in data) || (data.equippedWeaponGunsmith is map && data.equippedWeaponGunsmith.size() <= 25))
+        && (!('dailyContracts' in data) || (data.dailyContracts is map && data.dailyContracts.size() <= 8))
+        && (!('diamonds' in data) || (isNonNegativeNumber(data.diamonds) && data.diamonds <= 1000000))
+        && (!('vipBattlePass' in data) || (data.vipBattlePass is map && data.vipBattlePass.size() <= 8))
+        && isValidOptionalString(data, 'activeOperatorId', 40)
+        && (!('unlockedOperators' in data) || (data.unlockedOperators is list && data.unlockedOperators.size() >= 1 && data.unlockedOperators.size() <= 20 && data.unlockedOperators[0] is string))
+        && (!('founderDiamondsClaimed' in data) || data.founderDiamondsClaimed is bool)
         && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 40
         && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 40;
     }
@@ -107,42 +120,142 @@ service cloud.firestore {
           'email', 'playerXp', 'playerCash', 'rankLevel', 'rankTitle',
           'totalKills', 'totalDeaths', 'totalAssists', 'totalHeadshots',
           'matchesPlayed', 'matchesWon', 'bombsPlanted',
-          'unlockedAchievements', 'unlockedWeapons', 'economyVersion', 'mmr', 'updatedAt'
+          'unlockedAchievements', 'unlockedWeapons', 'economyVersion', 'mmr',
+          'equippedWeaponOptics', 'equippedWeaponSkins', 'equippedWeaponGunsmith',
+          'dailyContracts', 'activeOperatorId', 'unlockedOperators', 'founderDiamondsClaimed',
+          'updatedAt'
         ]);
     }
 
-    function isPlayerProgressionUpdateAction() {
-      return incoming().playerXp >= existing().playerXp
-        && incoming().playerXp <= existing().playerXp + 6000
-        && incoming().playerCash >= existing().playerCash - 50000
-        && incoming().playerCash <= existing().playerCash + 6000
-        && (
-          !('mmr' in incoming())
-          || !('mmr' in existing())
-          || (existing().mmr == 1000 && incoming().mmr == 2450)
-          || (incoming().mmr >= existing().mmr - 65 && incoming().mmr <= existing().mmr + 65)
-        )
-        && incoming().totalKills >= existing().totalKills
-        && incoming().totalKills <= existing().totalKills + 60
-        && incoming().totalDeaths >= existing().totalDeaths
-        && incoming().totalDeaths <= existing().totalDeaths + 60
-        && incoming().totalAssists >= existing().totalAssists
-        && incoming().totalAssists <= existing().totalAssists + 60
-        && incoming().totalHeadshots >= existing().totalHeadshots
-        && incoming().totalHeadshots <= existing().totalHeadshots + 60
-        && incoming().matchesPlayed >= existing().matchesPlayed
-        && incoming().matchesPlayed <= existing().matchesPlayed + 5
-        && incoming().matchesWon >= existing().matchesWon
-        && incoming().matchesWon <= existing().matchesWon + 5
-        && incoming().bombsPlanted >= existing().bombsPlanted
-        && incoming().bombsPlanted <= existing().bombsPlanted + 20
+    function isPlayerVipPurchaseAction() {
+      return ('diamonds' in existing())
+        && existing().diamonds >= 800
+        && ('diamonds' in incoming())
+        && incoming().diamonds == existing().diamonds - 800
+        && ('vipBattlePass' in incoming())
+        && incoming().vipBattlePass is map
+        && incoming().vipBattlePass.size() <= 8
+        && ('activeUntilIso' in incoming().vipBattlePass)
+        && incoming().vipBattlePass.activeUntilIso is string
+        && incoming().vipBattlePass.activeUntilIso.size() >= 10
+        && incoming().vipBattlePass.activeUntilIso.size() <= 40
         && incoming().diff(existing()).affectedKeys().hasOnly([
           'callsign', 'callsignLocked', 'email', 'avatarDataUrl',
           'playerXp', 'rankLevel', 'rankTitle', 'playerCash',
           'activeWeapon', 'unlockedWeapons',
           'totalKills', 'totalDeaths', 'totalAssists', 'totalHeadshots',
           'matchesPlayed', 'matchesWon', 'bombsPlanted',
-          'unlockedAchievements', 'economyVersion', 'mmr', 'updatedAt'
+          'unlockedAchievements', 'economyVersion', 'mmr',
+          'equippedWeaponOptics', 'equippedWeaponSkins', 'equippedWeaponGunsmith',
+          'dailyContracts', 'diamonds', 'vipBattlePass',
+          'activeOperatorId', 'unlockedOperators', 'founderDiamondsClaimed',
+          'updatedAt'
+        ]);
+    }
+
+    function isPlayerFounderGrantAction() {
+      return (!('founderDiamondsClaimed' in existing()) || existing().founderDiamondsClaimed == false)
+        && ('founderDiamondsClaimed' in incoming())
+        && incoming().founderDiamondsClaimed == true
+        && ('diamonds' in incoming())
+        && (
+          (!('diamonds' in existing()) && incoming().diamonds <= 1500)
+          || (('diamonds' in existing()) && incoming().diamonds <= existing().diamonds + 1500)
+        )
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'callsign', 'callsignLocked', 'email', 'avatarDataUrl',
+          'playerXp', 'rankLevel', 'rankTitle', 'playerCash',
+          'activeWeapon', 'unlockedWeapons',
+          'totalKills', 'totalDeaths', 'totalAssists', 'totalHeadshots',
+          'matchesPlayed', 'matchesWon', 'bombsPlanted',
+          'unlockedAchievements', 'economyVersion', 'mmr',
+          'equippedWeaponOptics', 'equippedWeaponSkins', 'equippedWeaponGunsmith',
+          'dailyContracts', 'diamonds', 'vipBattlePass',
+          'activeOperatorId', 'unlockedOperators', 'founderDiamondsClaimed',
+          'updatedAt'
+        ]);
+    }
+
+    function isPlayerDiamondStoreAction() {
+      return ('diamonds' in existing())
+        && ('diamonds' in incoming())
+        && incoming().diamonds < existing().diamonds
+        && incoming().diamonds >= 0
+        && incoming().playerXp >= existing().playerXp
+        && incoming().playerXp <= existing().playerXp + 50000
+        && incoming().playerCash >= existing().playerCash
+        && incoming().playerCash <= existing().playerCash + 50000
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'callsign', 'callsignLocked', 'email', 'avatarDataUrl',
+          'playerXp', 'rankLevel', 'rankTitle', 'playerCash',
+          'activeWeapon', 'unlockedWeapons',
+          'totalKills', 'totalDeaths', 'totalAssists', 'totalHeadshots',
+          'matchesPlayed', 'matchesWon', 'bombsPlanted',
+          'unlockedAchievements', 'economyVersion', 'mmr',
+          'equippedWeaponOptics', 'equippedWeaponSkins', 'equippedWeaponGunsmith',
+          'dailyContracts', 'diamonds', 'vipBattlePass',
+          'activeOperatorId', 'unlockedOperators', 'founderDiamondsClaimed',
+          'updatedAt'
+        ]);
+    }
+
+    function isPlayerProgressionUpdateAction() {
+      return incoming().playerXp >= existing().playerXp
+        && incoming().playerXp <= existing().playerXp + 50000
+        && incoming().playerCash >= existing().playerCash - 50000
+        && incoming().playerCash <= existing().playerCash + 50000
+        && (
+          !('diamonds' in incoming())
+          || (!('diamonds' in existing()) && incoming().diamonds == 0)
+          || (('diamonds' in existing()) && incoming().diamonds == existing().diamonds)
+        )
+        && (
+          !('vipBattlePass' in incoming())
+          || (
+            ('activeUntilIso' in incoming().vipBattlePass)
+            && incoming().vipBattlePass.activeUntilIso is string
+            && incoming().vipBattlePass.activeUntilIso.size() <= 40
+            && (
+              incoming().vipBattlePass.activeUntilIso == ''
+              || (
+                ('vipBattlePass' in existing())
+                && ('activeUntilIso' in existing().vipBattlePass)
+                && incoming().vipBattlePass.activeUntilIso == existing().vipBattlePass.activeUntilIso
+              )
+            )
+          )
+        )
+        && (
+          !('mmr' in incoming())
+          || !('mmr' in existing())
+          || (existing().mmr == 1000 && incoming().mmr == 2450)
+          || (incoming().mmr >= existing().mmr - 250 && incoming().mmr <= existing().mmr + 250)
+        )
+        && incoming().totalKills >= existing().totalKills
+        && incoming().totalKills <= existing().totalKills + 200
+        && incoming().totalDeaths >= existing().totalDeaths
+        && incoming().totalDeaths <= existing().totalDeaths + 200
+        && incoming().totalAssists >= existing().totalAssists
+        && incoming().totalAssists <= existing().totalAssists + 200
+        && incoming().totalHeadshots >= existing().totalHeadshots
+        && incoming().totalHeadshots <= existing().totalHeadshots + 200
+        && incoming().matchesPlayed >= existing().matchesPlayed
+        && incoming().matchesPlayed <= existing().matchesPlayed + 20
+        && incoming().matchesWon >= existing().matchesWon
+        && incoming().matchesWon <= existing().matchesWon + 20
+        && incoming().bombsPlanted >= existing().bombsPlanted
+        && incoming().bombsPlanted <= existing().bombsPlanted + 50
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'callsign', 'callsignLocked', 'email', 'avatarDataUrl',
+          'playerXp', 'rankLevel', 'rankTitle', 'playerCash',
+          'activeWeapon', 'unlockedWeapons',
+          'totalKills', 'totalDeaths', 'totalAssists', 'totalHeadshots',
+          'matchesPlayed', 'matchesWon', 'bombsPlanted',
+          'unlockedAchievements', 'economyVersion', 'mmr',
+          'equippedWeaponOptics', 'equippedWeaponSkins', 'equippedWeaponGunsmith',
+          'dailyContracts', 'diamonds', 'vipBattlePass',
+          'activeOperatorId', 'unlockedOperators', 'founderDiamondsClaimed',
+          'updatedAt'
         ]);
     }
 
@@ -168,7 +281,9 @@ service cloud.firestore {
         || mode == 'INDUSTRIA_BOMB_5V5'
         || mode == 'HANGAR_BOMB_5V5'
         || mode == 'EASTERN_CITY_BOMB_5V5'
-        || mode == 'MIRAGE_ANUBIS_BOMB_5V5';
+        || mode == 'MIRAGE_ANUBIS_BOMB_5V5'
+        || mode == 'STATION_TDM_5V5'
+        || mode == 'STATION_CAPTURE_5V5';
     }
 
     function isValidMultiplayerRoom(data) {
@@ -257,14 +372,20 @@ service cloud.firestore {
         && isValidId(userId)
         && isValidPlayerProfile(incoming())
         && incoming().playerXp <= 1000000
-        && incoming().playerCash <= 1000000;
+        && incoming().playerCash <= 1000000
+        && (
+          !('diamonds' in incoming())
+          || incoming().diamonds == 0
+          || (incoming().diamonds <= 1500 && ('founderDiamondsClaimed' in incoming()) && incoming().founderDiamondsClaimed == true)
+        )
+        && (!('vipBattlePass' in incoming()) || (incoming().vipBattlePass.activeUntilIso == ''));
       allow update: if isOwner(userId)
         && isValidId(userId)
         && isValidPlayerProfile(incoming())
         && incoming().uid == existing().uid
         && incoming().createdAt == existing().createdAt
         && (!('callsignLocked' in existing()) || !existing().callsignLocked || (incoming().callsign == existing().callsign && incoming().callsignLocked))
-        && (isPlayerEconomyMigrationAction() || isPlayerAccountResetAction() || isPlayerProgressionUpdateAction());
+        && (isPlayerEconomyMigrationAction() || isPlayerAccountResetAction() || isPlayerVipPurchaseAction() || isPlayerFounderGrantAction() || isPlayerDiamondStoreAction() || isPlayerProgressionUpdateAction());
       allow delete: if isOwner(userId) && isValidId(userId);
     }
 

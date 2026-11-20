@@ -1,5 +1,6 @@
 import React from 'react';
 import { getRequiredXpForWeapon } from '../progression/ranks';
+import { getSkinDefinition } from '../progression/weaponSkins';
 import { useGrenadeThumbnail3D } from '../three/grenadeThumbnail3D';
 import { useWeaponThumbnail3D } from '../three/weaponThumbnail3D';
 import { GrenadeType, WeaponId } from '../types/game';
@@ -8,7 +9,10 @@ import { FragGrenadeIcon, SmokeGrenadeIcon } from './hudTapUtils';
 interface WeaponVisualCardProps {
   weaponId: WeaponId;
   unlocked: boolean;
-  isEquipped: boolean;
+  isEquipped?: boolean;
+  selected?: boolean;
+  skinId?: string;
+  compact?: boolean;
 }
 
 export const WEAPON_REAL_META: Record<
@@ -16,37 +20,43 @@ export const WEAPON_REAL_META: Record<
   { name: string; caliber: string; category: string; unlockLevel: number }
 > = {
   KNIFE_TACTICAL: {
-    name: 'KARAMBIT TÁTICA',
+    name: 'FACA TÁTICA COMBATE',
     caliber: 'Aço Carbono',
     category: 'Corpo a Corpo',
     unlockLevel: 1,
   },
   P50_PISTOL: {
-    name: 'MARK 23 TÁTICA',
-    caliber: '.45 ACP',
+    name: 'DESERT EAGLE .50AE',
+    caliber: '.50 Action Express',
     category: 'Pistola Pesada',
     unlockLevel: 1,
   },
+  M1911_PISTOL: {
+    name: 'COLT M1911A1 .45',
+    caliber: '.45 ACP Tactical',
+    category: 'Pistola Tática',
+    unlockLevel: 1,
+  },
   M4_CARBINE: {
-    name: 'M4A1 SOPMOD',
+    name: 'MX16A4 / M4 TÁTICA',
     caliber: '5.56x45mm NATO',
     category: 'Fuzil de Assalto',
     unlockLevel: 1,
   },
   SMG_45: {
-    name: 'VECTOR .45 SUB',
-    caliber: '.45 ACP',
-    category: 'Submetralhadora',
+    name: 'V18 SPECTRE SILENCIADA',
+    caliber: '9x19mm Subsonic',
+    category: 'SMG Engenheiro Silenciada',
     unlockLevel: 1,
   },
   SMG_MP5: {
-    name: 'MP5A3 TÁTICA',
+    name: 'MPS5 TÁTICA 9MM',
     caliber: '9x19mm Parabellum',
     category: 'Submetralhadora',
     unlockLevel: 4,
   },
   SHOTGUN_12: {
-    name: 'M870 BREACHER 12GA',
+    name: 'DRAKE-12 BREACHER',
     caliber: 'Calibre 12 Buckshot',
     category: 'Escopeta Pump 12GA',
     unlockLevel: 1,
@@ -61,10 +71,10 @@ export const WEAPON_REAL_META: Record<
     name: 'AK-47 COMANDO',
     caliber: '7.62x39mm',
     category: 'Fuzil de Assalto',
-    unlockLevel: 6,
+    unlockLevel: 1,
   },
   AK12_RIFLE: {
-    name: 'AK-12 SPETSNAZ',
+    name: 'AK-200 TÁTICA',
     caliber: '5.45x39mm',
     category: 'Fuzil de Assalto',
     unlockLevel: 1,
@@ -88,16 +98,34 @@ export const WEAPON_REAL_META: Record<
     unlockLevel: 14,
   },
   SNIPER_TACTICAL: {
-    name: 'M110 SASS S&B',
+    name: 'MK14 EBR TÁTICA',
     caliber: '.308 Winchester',
-    category: 'Sniper Tática',
+    category: 'Sniper / DMR',
     unlockLevel: 18,
   },
   SNIPER_BOLT: {
-    name: 'AWP BOLT-ACTION',
-    caliber: '.338 Lapua Mag',
-    category: 'Sniper Pesada',
+    name: 'KAR98K PRECISÃO',
+    caliber: '7.92x57mm Mauser',
+    category: 'Sniper Ferrolho',
     unlockLevel: 25,
+  },
+  SNIPER_AWP: {
+    name: 'AWP-M .338 LUNETA',
+    caliber: '.338 Lapua Magnum',
+    category: 'Sniper Ferrolho 6x',
+    unlockLevel: 1,
+  },
+  SNIPER_HEAVY: {
+    name: 'M200 INTERVENTION',
+    caliber: '.408 CheyTac',
+    category: 'Sniper Anti-Material',
+    unlockLevel: 6,
+  },
+  RPG7_LAUNCHER: {
+    name: 'RPG-7V LANÇA-FOGUETES',
+    caliber: '85mm PG-7V HEAT',
+    category: 'Lançador Pesado',
+    unlockLevel: 8,
   },
 };
 
@@ -151,7 +179,12 @@ export const WeaponIllustration2D: React.FC<{
     );
   }
 
-  if (weaponId === 'SNIPER_BOLT' || weaponId === 'SNIPER_TACTICAL') {
+  if (
+    weaponId === 'SNIPER_BOLT' ||
+    weaponId === 'SNIPER_TACTICAL' ||
+    weaponId === 'SNIPER_AWP' ||
+    weaponId === 'SNIPER_HEAVY'
+  ) {
     return (
       <svg viewBox="0 0 130 40" fill="none" className={className}>
         <rect x="42" y="5" width="34" height="6.5" rx="1.5" fill={locked ? '#1e293b' : '#0284c7'} stroke={color} strokeWidth="1" />
@@ -306,11 +339,12 @@ export const WeaponIllustration2D: React.FC<{
 
 export const WeaponPreview3D: React.FC<{
   weaponId: WeaponId;
+  skinId?: string;
   className?: string;
   locked?: boolean;
   alt?: string;
-}> = ({ weaponId, className = 'w-full h-12', locked = false, alt }) => {
-  const thumbUrl = useWeaponThumbnail3D(weaponId);
+}> = ({ weaponId, skinId, className = 'w-full h-12', locked = false, alt }) => {
+  const thumbUrl = useWeaponThumbnail3D(weaponId, skinId);
 
   if (!thumbUrl) {
     return (
@@ -365,17 +399,24 @@ export const GrenadePreview3D: React.FC<{
 export const WeaponVisualCard: React.FC<WeaponVisualCardProps> = ({
   weaponId,
   unlocked,
-  isEquipped,
+  isEquipped = false,
+  selected = false,
+  skinId,
+  compact = false,
 }) => {
+  const effectiveEquipped = isEquipped || selected;
   const meta = WEAPON_REAL_META[weaponId];
   const reqInfo = getRequiredXpForWeapon(weaponId);
   const unlockLevel = meta?.unlockLevel || reqInfo.requiredLevel || 1;
+  const skinDef = skinId && skinId !== 'default' ? getSkinDefinition(skinId) : null;
 
   return (
     <div
-      className={`relative rounded-xl border p-2.5 sm:p-3 flex flex-col justify-between overflow-hidden transition-all ${
+      className={`relative rounded-xl border ${
+        compact ? 'p-2' : 'p-2.5 sm:p-3'
+      } flex flex-col justify-between overflow-hidden transition-all ${
         unlocked
-          ? isEquipped
+          ? effectiveEquipped
             ? 'bg-gradient-to-br from-amber-500/20 via-[#101622] to-amber-950/30 border-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.25)]'
             : 'bg-white/[0.04] hover:bg-white/[0.07] border-emerald-500/40'
           : 'bg-black/55 border-white/10 opacity-80'
@@ -383,46 +424,68 @@ export const WeaponVisualCard: React.FC<WeaponVisualCardProps> = ({
     >
       {/* Top Header do Card: Nome e Categoria */}
       <div className="flex items-start justify-between gap-1 mb-1">
-        <div>
+        <div className="min-w-0">
           <div className="flex items-center gap-1.5">
             <span
-              className={`font-display font-black text-xs sm:text-sm uppercase tracking-wider ${
-                unlocked ? (isEquipped ? 'text-amber-300' : 'text-white') : 'text-slate-400'
+              className={`font-display font-black text-xs sm:text-sm uppercase tracking-wider truncate ${
+                unlocked
+                  ? effectiveEquipped
+                    ? 'text-amber-300'
+                    : 'text-white'
+                  : 'text-slate-400'
               }`}
             >
               {meta.name}
             </span>
           </div>
-          <div className="font-mono text-[9px] text-slate-400">
+          <div className="font-mono text-[9px] text-slate-400 truncate">
             {meta.category} · {meta.caliber}
           </div>
         </div>
 
-        {/* Badge de Status */}
-        {unlocked ? (
+        {/* Badge de Status / Skin */}
+        {skinDef ? (
+          <span className="px-1.5 py-0.5 rounded bg-black/55 border border-amber-400/50 text-[8px] font-mono font-bold text-amber-200 uppercase flex items-center gap-1 shrink-0">
+            <span className="flex items-center gap-0.5">
+              {skinDef.swatchColors.map((hex, idx) => (
+                <span
+                  key={idx}
+                  className="w-2 h-2 rounded-full border border-white/30"
+                  style={{ backgroundColor: hex }}
+                />
+              ))}
+            </span>
+            <span>{skinDef.shortName}</span>
+          </span>
+        ) : unlocked ? (
           <span
-            className={`px-1.5 py-0.5 rounded text-[8px] font-mono font-bold uppercase tracking-wider ${
-              isEquipped
+            className={`px-1.5 py-0.5 rounded text-[8px] font-mono font-bold uppercase tracking-wider shrink-0 ${
+              effectiveEquipped
                 ? 'bg-amber-500 text-slate-950 shadow-[0_0_8px_rgba(245,158,11,0.8)]'
                 : 'bg-emerald-500/20 border border-emerald-400/40 text-emerald-300'
             }`}
           >
-            {isEquipped ? '★ EQUIPADA' : '✓ DESBLOQUEADA'}
+            {effectiveEquipped ? '★ EQUIPADA' : '✓ DESBLOQUEADA'}
           </span>
         ) : (
-          <span className="px-1.5 py-0.5 rounded bg-red-500/20 border border-red-500/40 text-red-300 text-[8px] font-mono font-bold uppercase flex items-center gap-1">
+          <span className="px-1.5 py-0.5 rounded bg-red-500/20 border border-red-500/40 text-red-300 text-[8px] font-mono font-bold uppercase flex items-center gap-1 shrink-0">
             <span>🔒 NÍV. {unlockLevel}</span>
           </span>
         )}
       </div>
 
       {/* Renderização 3D Real da Arma (.GLB / PBR Sculpted) */}
-      <div className="relative py-2 flex items-center justify-center min-h-[56px]">
+      <div
+        className={`relative ${
+          compact ? 'py-1.5 min-h-[46px]' : 'py-2 min-h-[56px]'
+        } flex items-center justify-center`}
+      >
         <WeaponPreview3D
           weaponId={weaponId}
+          skinId={skinId}
           locked={!unlocked}
           alt={meta.name}
-          className="w-full h-14"
+          className={compact ? 'w-full h-12' : 'w-full h-14'}
         />
         {!unlocked && (
           <div className="absolute inset-0 bg-black/60 backdrop-blur-[1px] rounded-lg flex flex-col items-center justify-center gap-1 border border-dashed border-white/15">
@@ -434,13 +497,21 @@ export const WeaponVisualCard: React.FC<WeaponVisualCardProps> = ({
         )}
       </div>
 
-      {/* Rodapé do Card com Patente Requerida */}
+      {/* Rodapé do Card com Patente Requerida ou Skin */}
       <div className="mt-1 pt-1.5 border-t border-white/10 flex items-center justify-between text-[9px] font-mono">
         <span className="text-slate-400">
-          {unlocked ? 'PRONTA PARA COMBATE' : `PATENTE REQUERIDA:`}
+          {skinDef
+            ? `PINTURA 3D:`
+            : unlocked
+              ? 'PRONTA PARA COMBATE'
+              : `PATENTE REQUERIDA:`}
         </span>
         <span className={unlocked ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
-          {unlocked ? 'ATIVADA NO ARSENAL' : `NÍV. ${unlockLevel} (${reqInfo.rankTitle})`}
+          {skinDef
+            ? skinDef.name.toUpperCase()
+            : unlocked
+              ? 'ATIVADA NO ARSENAL'
+              : `NÍV. ${unlockLevel} (${reqInfo.rankTitle})`}
         </span>
       </div>
     </div>

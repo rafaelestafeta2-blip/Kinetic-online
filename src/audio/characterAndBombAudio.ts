@@ -19,12 +19,12 @@ const GH_BASE =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/36c457bb15ef7a22d1b66f754c211465857d2b02/Sound/Personagem';
 
 const SOUND_URLS: Record<CharacterSoundKey, SoundSourceUrls> = {
-  CASING_BOUNCE: { local: '/sounds/casing_bounce.wav', github: `${GH_BASE}/678887__drinkingwindgames__firearm-casing-bounce-6.wav` },
-  SPRINT_PANTING: { local: '/sounds/sprint_panting.wav', github: `${GH_BASE}/422987__wakuwakuwakuwaku__sfxpantingafterrun.wav` },
-  C4_BEEP: { local: '/sounds/c4_beep.flac', github: `${GH_BASE}/875010__cb9382__digital-watch-beep.flac` },
+  CASING_BOUNCE: { local: '/sounds/casing_bounce.mp3', github: `${GH_BASE}/678887__drinkingwindgames__firearm-casing-bounce-6.wav` },
+  SPRINT_PANTING: { local: '/sounds/sprint_panting.mp3', github: `${GH_BASE}/422987__wakuwakuwakuwaku__sfxpantingafterrun.wav` },
+  C4_BEEP: { local: '/sounds/c4_beep.mp3', github: `${GH_BASE}/875010__cb9382__digital-watch-beep.flac` },
   BOMB_PLANTED_VOICE: { local: '/sounds/bomb_planted_voice.mp3', github: `${GH_BASE}/ElevenLabs_2026-11-11T16_56_40_Le%C3%B3nidas%20-%20Legendary%20Spartan%20Warrior_pvc_s50_m2.mp3` },
-  PLAYER_HIT_GRUNT: { local: '/sounds/player_hit_grunt.wav', github: `${GH_BASE}/90164__snaginneb__gruntsound.wav` },
-  GRENADE_BOUNCE: { local: '/sounds/grenade_bounce.wav', github: `${GH_BASE}/466453__patrick_corra__grenade-bouncing.wav` },
+  PLAYER_HIT_GRUNT: { local: '/sounds/player_hit_grunt.mp3', github: `${GH_BASE}/90164__snaginneb__gruntsound.wav` },
+  GRENADE_BOUNCE: { local: '/sounds/grenade_bounce.mp3', github: `${GH_BASE}/466453__patrick_corra__grenade-bouncing.wav` },
 };
 
 const rawArrayBuffers = new Map<CharacterSoundKey, ArrayBuffer>();
@@ -307,10 +307,10 @@ export function playC4KeypadDigitSound(digitStep: number): void {
   }
 }
 
-const MATCH_VICTORY_LOCAL = '/sounds/match_victory_fanfare.mp3';
+const MATCH_VICTORY_LOCAL = '/sounds/match_victory_fanfare.m4a';
 const MATCH_VICTORY_GITHUB =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/2114b7f72a1293400bf8f5fd4c70e85dd73e74ea/Sound/Victory%20fanfare%20sound%20effect%20(4).mp3';
-const MATCH_DEFEAT_LOCAL = '/sounds/match_defeat_fanfare.mp3';
+const MATCH_DEFEAT_LOCAL = '/sounds/match_defeat_fanfare.m4a';
 const MATCH_DEFEAT_GITHUB =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/2114b7f72a1293400bf8f5fd4c70e85dd73e74ea/Sound/Victory%20fanfare%20sound%20effect%20(3).mp3';
 

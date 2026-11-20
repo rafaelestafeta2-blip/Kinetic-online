@@ -16,12 +16,23 @@ import {
   equipWeaponOptic,
   equipWeaponSkin,
   getCompatibleOpticsForWeapon,
+  getEquippedWeaponGunsmith,
   getEquippedWeaponOptic,
   getEquippedWeaponSkinId,
   isWeaponSkinOwned,
   purchaseWeaponSkinWithCash,
+  setWeaponGunsmithAttachment,
   subscribePlayerInventory,
 } from '../progression/loadoutSystem';
+import {
+  computeEffectiveMagCapacity,
+  computeGunsmithModifiersForLoadout,
+  getGunsmithAttachmentSpec,
+  GUNSMITH_ATTACHMENTS_BY_SLOT,
+  GUNSMITH_SLOT_META,
+  WeaponGunsmithLoadout,
+  weaponSupportsGunsmith,
+} from '../progression/gunsmithSystem';
 import {
   getAvailableSkinsForWeapon,
   getSkinDefinition,
@@ -31,31 +42,20 @@ import { applyWeaponSkinToObject3D } from '../three/weaponSkinMaterial';
 import {
   AK47_RIFLE_GITHUB_RAW_URL,
   AK47_RIFLE_LOCAL_URL,
-  AK12_RIFLE_GITHUB_RAW_URL,
-  AK12_RIFLE_LOCAL_URL,
   CARBINE_AR_GITHUB_RAW_URL,
   CARBINE_AR_LOCAL_URL,
   L49_LMG_GITHUB_RAW_URL,
   L49_LMG_LOCAL_URL,
-  M4_FPS_PACK_GITHUB_RAW_URL,
-  M4_FPS_PACK_LOCAL_URL,
-  MARK_23_GITHUB_RAW_URL,
-  MARK_23_LOCAL_URL,
   SMG_45_GITHUB_RAW_URL,
   SMG_45_LOCAL_URL,
-  SHOTGUN_12_GITHUB_RAW_URL,
-  SHOTGUN_12_LOCAL_URL,
   SHOTGUN_SPAS_GITHUB_RAW_URL,
   SHOTGUN_SPAS_LOCAL_URL,
-  SNIPER_BOLT_GITHUB_RAW_URL,
-  SNIPER_BOLT_LOCAL_URL,
-  SNIPER_TACTICAL_GITHUB_RAW_URL,
-  SNIPER_TACTICAL_LOCAL_URL,
   S_MILITARY_GITHUB_RAW_URL,
   S_MILITARY_LOCAL_URL,
   KNIFE_GITHUB_RAW_URL,
   KNIFE_LOCAL_URL,
 } from '../three/weaponBuilder';
+import { calibrateKinemationMaterialScene } from '../three/kinemationArmsRig';
 import { createBotThirdPersonWeaponMesh } from '../three/botWeaponProps';
 import {
   preloadAllScopeThumbnails3D,
@@ -146,7 +146,15 @@ interface WeaponInspectionModalProps {
   onStartTraining: () => void;
 }
 
-type WeaponCategory = 'ALL' | 'ASSALTO' | 'ESCOPETA' | 'SMG' | 'SNIPER' | 'LMG' | 'PISTOLA';
+type WeaponCategory =
+  | 'ALL'
+  | 'ASSALTO'
+  | 'ESCOPETA'
+  | 'SMG'
+  | 'SNIPER'
+  | 'LMG'
+  | 'PESADA'
+  | 'PISTOLA';
 
 interface WeaponSpec {
   id: WeaponId;
@@ -172,12 +180,12 @@ interface WeaponSpec {
 const WEAPON_SPECS: Record<WeaponId, WeaponSpec> = {
   M4_CARBINE: {
     id: 'M4_CARBINE',
-    name: 'M4A1 SOPMOD',
+    name: 'MX16A4 / M4 TÁTICA',
     caliber: '5.56x45mm NATO',
     categoryTag: 'Fuzil de Assalto',
     category: 'ASSALTO',
     description:
-      'O padrão ouro em fuzis de assalto táticos. Versátil, equilibrado e com excelente controle de recuo.',
+      'Plataforma modular AR-15/MX16A4 com trilho Picatinny completo, recuo linear e ergonomia de combate tático.',
     firepower: 85,
     accuracy: 84,
     mobility: 78,
@@ -185,9 +193,9 @@ const WEAPON_SPECS: Record<WeaponId, WeaponSpec> = {
     fireRate: '800 RPM',
     magSize: 30,
     reserve: 120,
-    localUrl: M4_FPS_PACK_LOCAL_URL,
-    githubUrl: M4_FPS_PACK_GITHUB_RAW_URL,
-    readyClipName: 'allanims',
+    localUrl: '/models/kinemation/weapons/mx16a4.glb',
+    githubUrl: '/models/kinemation/weapons/mx16a4.glb',
+    readyClipName: 'Pose',
     readyPoseTime: 0,
     targetSpan: 0.78,
   },
@@ -214,12 +222,12 @@ const WEAPON_SPECS: Record<WeaponId, WeaponSpec> = {
   },
   AK12_RIFLE: {
     id: 'AK12_RIFLE',
-    name: 'AK-12 SPETSNAZ',
+    name: 'AK-200 TÁTICA',
     caliber: '5.45x39mm Russian',
     categoryTag: 'Fuzil de Assalto',
     category: 'ASSALTO',
     description:
-      'Fuzil de assalto moderno russo de 5ª geração com trilhos Picatinny integrados, mira óptica tática e recuo controlado.',
+      'Fuzil de assalto moderno AK-200 com trilhos Picatinny integrados, mira de ferro ajustável e controle preciso em rajada.',
     firepower: 93,
     accuracy: 86,
     mobility: 76,
@@ -227,9 +235,9 @@ const WEAPON_SPECS: Record<WeaponId, WeaponSpec> = {
     fireRate: '700 RPM',
     magSize: 30,
     reserve: 120,
-    localUrl: AK12_RIFLE_LOCAL_URL,
-    githubUrl: AK12_RIFLE_GITHUB_RAW_URL,
-    readyClipName: 'Idle',
+    localUrl: '/models/kinemation/weapons/ak200.glb',
+    githubUrl: '/models/kinemation/weapons/ak200.glb',
+    readyClipName: 'Pose',
     readyPoseTime: 0,
     targetSpan: 0.8,
   },
@@ -277,33 +285,32 @@ const WEAPON_SPECS: Record<WeaponId, WeaponSpec> = {
   },
   SMG_45: {
     id: 'SMG_45',
-    name: 'SMG .45 SUB',
-    caliber: '.45 ACP Sub',
-    categoryTag: 'Submetralhadora',
+    name: 'V18 SPECTRE SILENCIADA',
+    caliber: '9x19mm Subsonic',
+    categoryTag: 'SMG Engenheiro Silenciada',
     category: 'SMG',
     description:
-      'Submetralhadora compacta de tiro rápido (900 RPM). Ideal para incursões CQB e combate dinâmico.',
-    firepower: 75,
-    accuracy: 78,
-    mobility: 92,
-    range: '35m',
+      'Submetralhadora tática V18 de Engenheiro com supressor acústico integral, mira holográfica embutida e altíssima cadência em CQB.',
+    firepower: 84,
+    accuracy: 86,
+    mobility: 93,
+    range: '42m',
     fireRate: '900 RPM',
     magSize: 32,
     reserve: 128,
-    localUrl: SMG_45_LOCAL_URL,
-    githubUrl: SMG_45_GITHUB_RAW_URL,
-    readyClipName: 'allanims',
+    localUrl: '/models/weapons/v18_engineer_smg.glb',
+    githubUrl: '/models/weapons/v18_engineer_smg.glb',
     readyPoseTime: 0,
-    targetSpan: 0.68,
+    targetSpan: 0.76,
   },
   SMG_MP5: {
     id: 'SMG_MP5',
-    name: 'MP5A3 TÁTICA',
+    name: 'MPS5 TÁTICA 9MM',
     caliber: '9x19mm Parabellum',
     categoryTag: 'Submetralhadora',
     category: 'SMG',
     description:
-      'Submetralhadora clássica de forças especiais com controle excepcional de rajada e carregador curvo 9mm.',
+      'Submetralhadora clássica de forças especiais com mira dióptrica real, carregador curvo 9mm e recuo ultra controlado.',
     firepower: 72,
     accuracy: 85,
     mobility: 94,
@@ -311,19 +318,20 @@ const WEAPON_SPECS: Record<WeaponId, WeaponSpec> = {
     fireRate: '830 RPM',
     magSize: 30,
     reserve: 120,
-    localUrl: '',
-    githubUrl: '',
+    localUrl: '/models/kinemation/weapons/mps5.glb',
+    githubUrl: '/models/kinemation/weapons/mps5.glb',
+    readyClipName: 'Pose',
     readyPoseTime: 0,
     targetSpan: 0.7,
   },
   SHOTGUN_12: {
     id: 'SHOTGUN_12',
-    name: 'M870 BREACHER 12GA',
+    name: 'DRAKE-12 BREACHER',
     caliber: 'Calibre 12 Buckshot',
     categoryTag: 'Escopeta Pump 12GA',
     category: 'ESCOPETA',
     description:
-      'Escopeta tática Pump-Action de curto alcance. Dispara 8 bagos de chumbo 00-Buckshot letais em combate próximo.',
+      'Escopeta tática Pump-Action Drake-12 com 8 bagos 00-Buckshot de alto impacto para domínio em curta distância.',
     firepower: 100,
     accuracy: 62,
     mobility: 82,
@@ -331,11 +339,11 @@ const WEAPON_SPECS: Record<WeaponId, WeaponSpec> = {
     fireRate: 'Pump 88 RPM',
     magSize: 6,
     reserve: 24,
-    localUrl: SHOTGUN_12_LOCAL_URL,
-    githubUrl: SHOTGUN_12_GITHUB_RAW_URL,
-    readyClipName: 'allanims',
+    localUrl: '/models/kinemation/weapons/drake12.glb',
+    githubUrl: '/models/kinemation/weapons/drake12.glb',
+    readyClipName: 'Pose',
     readyPoseTime: 0,
-    targetSpan: 0.78,
+    targetSpan: 0.8,
   },
   SHOTGUN_SPAS: {
     id: 'SHOTGUN_SPAS',
@@ -360,12 +368,12 @@ const WEAPON_SPECS: Record<WeaponId, WeaponSpec> = {
   },
   SNIPER_TACTICAL: {
     id: 'SNIPER_TACTICAL',
-    name: 'SNIPER TÁTICA S&B',
-    caliber: '.308 Winchester',
-    categoryTag: 'Fuzil Sniper',
+    name: 'MK14 EBR TÁTICA',
+    caliber: '7.62x51mm (.308 Win)',
+    categoryTag: 'Fuzil DMR / Sniper',
     category: 'SNIPER',
     description:
-      'Fuzil semiautomático de longo alcance equipado com luneta LPVO para neutralização rápida.',
+      'Fuzil de precisão semiautomático MK14 EBR em chassi tático. Compatível com mira de ferro real ou luneta LPVO 3D.',
     firepower: 98,
     accuracy: 96,
     mobility: 58,
@@ -373,20 +381,20 @@ const WEAPON_SPECS: Record<WeaponId, WeaponSpec> = {
     fireRate: 'Semi-Auto',
     magSize: 10,
     reserve: 40,
-    localUrl: SNIPER_TACTICAL_LOCAL_URL,
-    githubUrl: SNIPER_TACTICAL_GITHUB_RAW_URL,
-    readyClipName: 'Scene',
-    readyPoseTime: 8.15,
-    targetSpan: 0.84,
+    localUrl: '/models/kinemation/weapons/mk14.glb',
+    githubUrl: '/models/kinemation/weapons/mk14.glb',
+    readyClipName: 'Pose',
+    readyPoseTime: 0,
+    targetSpan: 0.82,
   },
   SNIPER_BOLT: {
     id: 'SNIPER_BOLT',
-    name: 'SNIPER BOLT-ACTION',
-    caliber: '.338 Lapua Magnum',
-    categoryTag: 'Fuzil de Precisão',
+    name: 'KAR98K PRECISÃO',
+    caliber: '7.92x57mm Mauser',
+    categoryTag: 'Fuzil de Ferrolho',
     category: 'SNIPER',
     description:
-      'Poder letal absoluto a 150m+. Cada disparo exige ciclagens manuais precisas do ferrolho tático.',
+      'Fuzil clássico de ferrolho manual Kar98K com poder letal a longa distância e suporte a mira de ferro ou LPVO.',
     firepower: 100,
     accuracy: 99,
     mobility: 50,
@@ -394,11 +402,53 @@ const WEAPON_SPECS: Record<WeaponId, WeaponSpec> = {
     fireRate: 'Ferrolho',
     magSize: 5,
     reserve: 25,
-    localUrl: SNIPER_BOLT_LOCAL_URL,
-    githubUrl: SNIPER_BOLT_GITHUB_RAW_URL,
-    readyClipName: 'allanims',
+    localUrl: '/models/kinemation/weapons/kar98k.glb',
+    githubUrl: '/models/kinemation/weapons/kar98k.glb',
+    readyClipName: 'Fire',
     readyPoseTime: 0,
     targetSpan: 0.86,
+  },
+  SNIPER_AWP: {
+    id: 'SNIPER_AWP',
+    name: 'AWP-M .338 LUNETA',
+    caliber: '.338 Lapua Magnum',
+    categoryTag: 'Fuzil Sniper Ferrolho',
+    category: 'SNIPER',
+    description:
+      'Fuzil de precisão AWP-M .338 com luneta óptica de alta ampliação embutida para eliminação em disparo único.',
+    firepower: 100,
+    accuracy: 100,
+    mobility: 52,
+    range: '180m+',
+    fireRate: 'Ferrolho',
+    magSize: 5,
+    reserve: 20,
+    localUrl: '/models/sniper_animated.glb',
+    githubUrl: '/models/sniper_animated.glb',
+    readyClipName: 'allanims',
+    readyPoseTime: 0.1,
+    targetSpan: 0.9,
+  },
+  SNIPER_HEAVY: {
+    id: 'SNIPER_HEAVY',
+    name: 'M200 INTERVENTION',
+    caliber: '.408 CheyTac',
+    categoryTag: 'Fuzil Sniper Pesado',
+    category: 'SNIPER',
+    description:
+      'Sniper anti-material de longuíssimo alcance com luneta balística integrada e perfuração extrema de blindagem.',
+    firepower: 100,
+    accuracy: 100,
+    mobility: 46,
+    range: '200m+',
+    fireRate: 'Ferrolho',
+    magSize: 5,
+    reserve: 20,
+    localUrl: '/models/sniper_fps_animation.glb',
+    githubUrl: '/models/sniper_fps_animation.glb',
+    readyClipName: 'Scene',
+    readyPoseTime: 0.1,
+    targetSpan: 0.9,
   },
   L49_LMG: {
     id: 'L49_LMG',
@@ -421,26 +471,68 @@ const WEAPON_SPECS: Record<WeaponId, WeaponSpec> = {
     readyPoseTime: 0,
     targetSpan: 0.8,
   },
+  RPG7_LAUNCHER: {
+    id: 'RPG7_LAUNCHER',
+    name: 'RPG-7V LANÇA-FOGUETES',
+    caliber: '85mm PG-7V HEAT',
+    categoryTag: 'Lançador Anticarro',
+    category: 'PESADA',
+    description:
+      'Lança-foguetes portátil de ogiva explosiva de alto impacto. Destrói cobertura e neutraliza múltiplos inimigos em área.',
+    firepower: 100,
+    accuracy: 74,
+    mobility: 48,
+    range: '150m',
+    fireRate: 'Monotiro',
+    magSize: 1,
+    reserve: 4,
+    localUrl: '/models/kinemation/weapons/rpg7.glb',
+    githubUrl: '/models/kinemation/weapons/rpg7.glb',
+    readyClipName: 'Pose',
+    readyPoseTime: 0,
+    targetSpan: 0.88,
+  },
   P50_PISTOL: {
     id: 'P50_PISTOL',
-    name: 'MARK 23 TÁTICA',
-    caliber: '.45 ACP Heavy',
+    name: 'DESERT EAGLE .50AE',
+    caliber: '.50 Action Express',
     categoryTag: 'Pistola Pesada',
     category: 'PISTOLA',
     description:
-      'Pistola tática de alta precisão com excelente poder de parada em curtas distâncias.',
-    firepower: 65,
+      'Pistola semiautomática de grosso calibre com acabamento metálico e altíssimo poder de parada.',
+    firepower: 82,
     accuracy: 88,
-    mobility: 95,
-    range: '25m',
+    mobility: 94,
+    range: '45m',
     fireRate: 'Semi-Auto',
-    magSize: 12,
-    reserve: 48,
-    localUrl: MARK_23_LOCAL_URL,
-    githubUrl: MARK_23_GITHUB_RAW_URL,
-    readyClipName: 'Shoot',
+    magSize: 7,
+    reserve: 35,
+    localUrl: '/models/kinemation/weapons/dgl50.glb',
+    githubUrl: '/models/kinemation/weapons/dgl50.glb',
+    readyClipName: 'Pose',
     readyPoseTime: 0,
-    targetSpan: 0.52,
+    targetSpan: 0.5,
+  },
+  M1911_PISTOL: {
+    id: 'M1911_PISTOL',
+    name: 'COLT M1911A1 .45',
+    caliber: '.45 ACP Tactical',
+    categoryTag: 'Pistola Tática',
+    category: 'PISTOLA',
+    description:
+      'Pistola militar clássica .45 ACP com saque ultrarrápido, recuo controlável e excelente precisão de ferro.',
+    firepower: 68,
+    accuracy: 90,
+    mobility: 96,
+    range: '42m',
+    fireRate: 'Semi-Auto',
+    magSize: 8,
+    reserve: 32,
+    localUrl: '/models/kinemation/weapons/m1911.glb',
+    githubUrl: '/models/kinemation/weapons/m1911.glb',
+    readyClipName: 'Pose',
+    readyPoseTime: 0,
+    targetSpan: 0.48,
   },
   KNIFE_TACTICAL: {
     id: 'KNIFE_TACTICAL',
@@ -487,7 +579,6 @@ const HIDDEN_ARM_MATERIAL_NAMES = new Set([
 ]);
 
 const HIDDEN_ARM_NODE_NAMES = new Set([
-  'object_7',
   'object_8',
   'object_25',
   'object_26',
@@ -600,7 +691,7 @@ const WeaponIconSilhouette: React.FC<{
   weaponId: WeaponId;
   className?: string;
 }> = ({ weaponId, className = 'w-16 h-8' }) => {
-  if (weaponId === 'P50_PISTOL') {
+  if (weaponId === 'P50_PISTOL' || weaponId === 'M1911_PISTOL') {
     return (
       <svg viewBox="0 0 64 28" fill="none" className={className}>
         <path
@@ -618,7 +709,12 @@ const WeaponIconSilhouette: React.FC<{
       </svg>
     );
   }
-  if (weaponId === 'SNIPER_BOLT' || weaponId === 'SNIPER_TACTICAL') {
+  if (
+    weaponId === 'SNIPER_BOLT' ||
+    weaponId === 'SNIPER_TACTICAL' ||
+    weaponId === 'SNIPER_AWP' ||
+    weaponId === 'SNIPER_HEAVY'
+  ) {
     return (
       <svg viewBox="0 0 88 28" fill="none" className={className}>
         <path
@@ -679,6 +775,9 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
   const [equippedOptic, setEquippedOptic] = useState<OpticType>(() =>
     getEquippedWeaponOptic(activeWeapon, playerXp)
   );
+  const [equippedGunsmith, setEquippedGunsmith] = useState<WeaponGunsmithLoadout>(
+    () => getEquippedWeaponGunsmith(activeWeapon)
+  );
   const [playerCash, setPlayerCash] = useState<number>(() =>
     loadSavedPlayerCash()
   );
@@ -714,14 +813,34 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
   const compatibleOptics = getCompatibleOpticsForWeapon(selectedId);
   const currentOpticSpec =
     SCOPE_PACK_CATALOG[equippedOptic] || SCOPE_PACK_CATALOG.iron;
+  const supportsGunsmith = weaponSupportsGunsmith(selectedId);
+  const gunsmithMods = computeGunsmithModifiersForLoadout(
+    selectedId,
+    equippedGunsmith
+  );
+  const effectiveAccuracy = Math.min(
+    100,
+    Math.max(10, spec.accuracy + gunsmithMods.accuracyDelta)
+  );
+  const effectiveMobility = Math.min(
+    100,
+    Math.max(10, spec.mobility + gunsmithMods.mobilityDelta)
+  );
+  const effectiveMagSize = computeEffectiveMagCapacity(
+    selectedId,
+    spec.magSize,
+    gunsmithMods
+  );
 
   useEffect(() => {
     preloadAllScopeThumbnails3D();
     setEquippedSkinId(getEquippedWeaponSkinId(selectedId));
     setEquippedOptic(getEquippedWeaponOptic(selectedId, playerXp));
+    setEquippedGunsmith(getEquippedWeaponGunsmith(selectedId));
     const unsub = subscribePlayerInventory(() => {
       setEquippedSkinId(getEquippedWeaponSkinId(selectedId));
       setEquippedOptic(getEquippedWeaponOptic(selectedId, playerXp));
+      setEquippedGunsmith(getEquippedWeaponGunsmith(selectedId));
       setPlayerCash(loadSavedPlayerCash());
     });
     return unsub;
@@ -975,6 +1094,12 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
     }
 
     const wSpec = WEAPON_SPECS[selectedId];
+    const activeSkinDef = getSkinDefinition(equippedSkinId);
+    const effectiveModelUrl =
+      activeSkinDef.modelOverrideUrl &&
+      (!activeSkinDef.weaponIds || activeSkinDef.weaponIds.includes(selectedId))
+        ? activeSkinDef.modelOverrideUrl
+        : wSpec.localUrl;
 
     const onModelLoaded = (gltf: {
       scene: THREE.Group;
@@ -1010,7 +1135,7 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
             (child.name === 'Holoshort001' ||
               child.name === 'Scr010' ||
               child.name === 'Scr003')) ||
-          (selectedId === 'SNIPER_BOLT' &&
+          (selectedId === 'SNIPER_AWP' &&
             (child.name === 'scope' ||
               child.name === 'scope_sniper_0' ||
               child.name === 'scoperender' ||
@@ -1025,14 +1150,26 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
         if (m.isMesh) {
           m.castShadow = false;
           m.receiveShadow = true;
+          const matsArr = Array.isArray(m.material)
+            ? m.material
+            : m.material
+              ? [m.material]
+              : [];
+          if (
+            selectedId === 'SNIPER_BOLT' &&
+            matsArr.some((mt) => (mt?.name || '').toLowerCase() === 'm_kar98k_clip')
+          ) {
+            m.visible = false;
+            return;
+          }
           const fixMat = (mat: THREE.Material) => {
             const std = mat as THREE.MeshStandardMaterial;
             if (std.map) {
               std.map.colorSpace = THREE.SRGBColorSpace;
               std.map.needsUpdate = true;
-            }
-            if (std.color) {
-              std.color.setHex(0xffffff);
+              if (std.color) {
+                std.color.setHex(0xffffff);
+              }
             }
             const matLower = (std.name || '').toLowerCase();
             if (
@@ -1053,15 +1190,17 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
               std.depthWrite = false;
               m.renderOrder = 12;
             }
+            if (m.geometry?.getAttribute('color') && (std.name || '') !== 'Legion_Emissive_MI') {
+              std.vertexColors = true;
+            }
             std.needsUpdate = true;
           };
-          if (Array.isArray(m.material)) {
-            m.material.forEach(fixMat);
-          } else if (m.material) {
-            fixMat(m.material);
-          }
+          matsArr.forEach(fixMat);
         }
       });
+
+      // Calibra PBR tático em armas Kinemation sem textura embutida (evita armas brancas/lavadas)
+      calibrateKinemationMaterialScene(modelScene, false);
 
       // 2) Evaluate the ready/assembled animation pose so magazine, bolt, and scope sit in place
       if (gltf.animations && gltf.animations.length > 0) {
@@ -1103,24 +1242,27 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
 
       // 3) Compute exact world-space bounding box of ONLY visible weapon parts
       const currentOptic = getEquippedWeaponOptic(selectedId, playerXp);
-      if (currentOptic !== 'iron') {
+      if (
+        currentOptic !== 'iron' &&
+        selectedId !== 'SNIPER_AWP' &&
+        selectedId !== 'SNIPER_HEAVY'
+      ) {
         for (const node of builtInOpticNodes) {
           node.visible = false;
         }
       }
       builtInOpticNodesRef.current = builtInOpticNodes;
 
+      if (selectedId === 'SNIPER_HEAVY') {
+        modelScene.rotation.y = Math.PI / 2;
+      }
       const centeringGroup = new THREE.Group();
       centeringGroup.add(modelScene);
       modelScene.updateMatrixWorld(true);
 
       const opticMount = new THREE.Group();
       const facesNegZ =
-        selectedId === 'SHOTGUN_SPAS' ||
-        selectedId === 'S_MILITARY' ||
-        selectedId === 'AK12_RIFLE' ||
-        selectedId === 'SNIPER_TACTICAL' ||
-        selectedId === 'SMG_MP5';
+        selectedId === 'SHOTGUN_SPAS' || selectedId === 'S_MILITARY';
       opticMount.rotation.y = facesNegZ ? 0 : Math.PI;
 
       const box = computeVisibleWeaponBounds(modelScene);
@@ -1214,7 +1356,7 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
       };
     }
 
-    loader.load(wSpec.localUrl, onModelLoaded, undefined, () => {
+    loader.load(effectiveModelUrl, onModelLoaded, undefined, () => {
       loader.load(wSpec.githubUrl, onModelLoaded, undefined, () => {
         if (!cancelled) setIsLoadingModel(false);
       });
@@ -1223,7 +1365,7 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [selectedId]);
+  }, [selectedId, equippedSkinId]);
 
   // Touch and Mouse 360° Drag Inspection Handlers
   const handlePointerDown = (e: React.PointerEvent) => {
@@ -1274,23 +1416,38 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
     setEquippedSkinId(skin.id);
   };
 
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        soundEngine.playMenuSelect();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
   return (
-    <div className="fixed inset-0 z-50 bg-[#07090d] select-none text-white font-sans flex flex-col justify-between overflow-hidden pointer-events-auto">
+    <div
+      onClick={(e) => e.stopPropagation()}
+      className="fixed inset-0 z-50 bg-[#07090d] select-none text-white font-sans flex flex-col justify-between overflow-hidden pointer-events-auto"
+    >
       {/* =================================================================== */}
       {/* 1. TOP NAV HEADER BAR                                              */}
       {/* =================================================================== */}
-      <header className="relative z-30 w-full px-3 sm:px-6 py-2 bg-[#0b0e14]/95 border-b border-white/15 flex items-center justify-between gap-2 shrink-0">
-        {/* Left: Back to Lobby Button */}
+      <header className="relative z-40 w-full px-3 sm:px-5 py-2 bg-[#0b0e14]/98 border-b border-amber-500/35 flex items-center justify-between gap-2 shrink-0 shadow-[0_4px_20px_rgba(0,0,0,0.85)]">
+        {/* Left: Prominent Back to Main Menu Button */}
         <button
           type="button"
-          onClick={() => {
+          onClick={(e) => {
+            e.stopPropagation();
             soundEngine.playMenuSelect();
             onClose();
           }}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-[11px] font-mono font-bold text-slate-200 hover:text-white transition-colors cursor-pointer shrink-0"
+          className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-[#ea580c] to-[#f97316] hover:from-[#f97316] hover:to-[#fb923c] border border-amber-300/70 rounded-lg text-[11px] sm:text-xs font-display font-black tracking-wider text-slate-950 uppercase transition-all cursor-pointer shrink-0 shadow-[0_0_14px_rgba(249,115,22,0.45)] active:scale-95"
         >
           <span>←</span>
-          <span>VOLTAR AO LOBBY</span>
+          <span>VOLTAR AO MENU</span>
         </button>
 
         {/* Center Category Filter Tabs */}
@@ -1302,6 +1459,7 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
             { id: 'SMG', label: 'SMG' },
             { id: 'SNIPER', label: 'SNIPER' },
             { id: 'LMG', label: 'LMG' },
+            { id: 'PESADA', label: 'PESADA' },
             { id: 'PISTOLA', label: 'PISTOLA' },
           ].map((cat) => {
             const isSelected = activeCategory === cat.id;
@@ -1309,7 +1467,8 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
               <button
                 key={cat.id}
                 type="button"
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   soundEngine.playMenuSelect();
                   setActiveCategory(cat.id as WeaponCategory);
                 }}
@@ -1325,12 +1484,26 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
           })}
         </div>
 
-        {/* Right: Player Warface Rank Badge */}
-        <div className="hidden sm:flex items-center gap-2 bg-black/60 border border-amber-500/40 rounded-xl px-2.5 py-1 shrink-0">
-          <WarfaceRankIcon level={currentRank.level} className="w-5 h-5" />
-          <span className="text-[10px] font-mono font-bold text-amber-300">
-            NÍV. {currentRank.level} · {currentRank.title.toUpperCase()}
-          </span>
+        {/* Right: Player Warface Rank Badge + Direct Close X Button */}
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="hidden md:flex items-center gap-2 bg-black/60 border border-amber-500/40 rounded-xl px-2.5 py-1">
+            <WarfaceRankIcon level={currentRank.level} className="w-5 h-5" />
+            <span className="text-[10px] font-mono font-bold text-amber-300">
+              NÍV. {currentRank.level} · {currentRank.title.toUpperCase()}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              soundEngine.playMenuSelect();
+              onClose();
+            }}
+            className="px-3 py-1.5 rounded-lg bg-red-600/25 hover:bg-red-600/45 border border-red-400/60 text-[11px] font-display font-black tracking-wider text-red-100 uppercase cursor-pointer transition-all active:scale-95"
+          >
+            FECHAR ✕
+          </button>
         </div>
       </header>
 
@@ -1359,9 +1532,19 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
             </div>
             <div className="space-y-1.5 font-mono text-xs">
               {[
-                { label: 'DANO', val: spec.firepower, color: 'bg-amber-500' },
-                { label: 'PRECISÃO', val: spec.accuracy, color: 'bg-emerald-500' },
-                { label: 'MOBILIDADE', val: spec.mobility, color: 'bg-sky-500' },
+                { label: 'DANO', val: spec.firepower, delta: 0, color: 'bg-amber-500' },
+                {
+                  label: 'PRECISÃO',
+                  val: effectiveAccuracy,
+                  delta: gunsmithMods.accuracyDelta,
+                  color: 'bg-emerald-500',
+                },
+                {
+                  label: 'MOBILIDADE',
+                  val: effectiveMobility,
+                  delta: gunsmithMods.mobilityDelta,
+                  color: 'bg-sky-500',
+                },
               ].map((stat) => (
                 <div key={stat.label} className="flex items-center gap-2">
                   <span className="w-20 text-[9px] text-slate-400 shrink-0">
@@ -1369,24 +1552,58 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
                   </span>
                   <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden border border-white/10">
                     <div
-                      className={`h-full ${stat.color}`}
+                      className={`h-full transition-all duration-150 ${stat.color}`}
                       style={{ width: `${stat.val}%` }}
                     />
                   </div>
-                  <span className="w-7 text-right text-[10px] font-bold text-white">
+                  <span className="w-12 text-right text-[10px] font-bold text-white">
                     {stat.val}
+                    {stat.delta !== 0 && (
+                      <span
+                        className={`ml-0.5 text-[9px] ${
+                          stat.delta > 0 ? 'text-emerald-400' : 'text-rose-400'
+                        }`}
+                      >
+                        {stat.delta > 0 ? `+${stat.delta}` : stat.delta}
+                      </span>
+                    )}
                   </span>
                 </div>
               ))}
               <div className="flex items-center justify-between text-[10px] text-slate-300 pt-1.5 mt-1 border-t border-white/10">
                 <span>
-                  ALCANCE: <b className="text-white">{spec.range}</b>
+                  ALCANCE:{' '}
+                  <b className="text-white">
+                    {spec.range}
+                    {gunsmithMods.rangeDeltaPct !== 0 && (
+                      <span
+                        className={`ml-0.5 text-[9px] ${
+                          gunsmithMods.rangeDeltaPct > 0
+                            ? 'text-emerald-400'
+                            : 'text-rose-400'
+                        }`}
+                      >
+                        {gunsmithMods.rangeDeltaPct > 0
+                          ? `+${gunsmithMods.rangeDeltaPct}%`
+                          : `${gunsmithMods.rangeDeltaPct}%`}
+                      </span>
+                    )}
+                  </b>
                 </span>
                 <span>
                   CADÊNCIA: <b className="text-white">{spec.fireRate}</b>
                 </span>
                 <span>
-                  PENTE: <b className="text-amber-300">{spec.magSize}R</b>
+                  PENTE:{' '}
+                  <b
+                    className={
+                      effectiveMagSize > spec.magSize
+                        ? 'text-emerald-400'
+                        : 'text-amber-300'
+                    }
+                  >
+                    {effectiveMagSize}R
+                  </b>
                 </span>
               </div>
             </div>
@@ -1430,6 +1647,71 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
                         setEquippedOptic(opticId);
                       }}
                     />
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Gunsmith Tactical Attachments (Real Combat Modifiers) */}
+          {supportsGunsmith && (
+            <div className="bg-black/60 border border-white/15 rounded-xl p-2.5 my-1">
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <span className="text-[9px] font-mono font-bold text-emerald-400 tracking-wider uppercase">
+                  ARMEIRO TÁTICO · GUNSMITH
+                </span>
+                <span className="text-[8px] font-mono text-slate-400">
+                  ADS {Math.round(gunsmithMods.adsSpeedMult * 100)}% · RECUO{' '}
+                  {Math.round(gunsmithMods.recoilPitchMult * 100)}%
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                {GUNSMITH_SLOT_META.map((slotMeta) => {
+                  const options = GUNSMITH_ATTACHMENTS_BY_SLOT[slotMeta.id];
+                  const activeId = equippedGunsmith[slotMeta.id];
+                  const activeSpec = getGunsmithAttachmentSpec(
+                    slotMeta.id,
+                    activeId
+                  );
+                  return (
+                    <div key={slotMeta.id} className="space-y-0.5">
+                      <div className="flex items-center justify-between text-[8px] font-mono">
+                        <span className="text-slate-400 font-bold tracking-wider">
+                          {slotMeta.label}
+                        </span>
+                        <span className="text-emerald-300/90 truncate max-w-[160px]">
+                          {activeSpec.perkSummary}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1">
+                        {options.map((opt) => {
+                          const isSelected = activeId === opt.id;
+                          return (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              title={`${opt.name} — ${opt.perkSummary}`}
+                              onClick={() => {
+                                soundEngine.playMechanicalSwitch(1.05);
+                                const next = setWeaponGunsmithAttachment(
+                                  selectedId,
+                                  slotMeta.id,
+                                  opt.id
+                                );
+                                setEquippedGunsmith(next);
+                              }}
+                              className={`px-1.5 py-1 rounded-md border text-[8px] font-mono font-bold tracking-wide transition-colors cursor-pointer truncate ${
+                                isSelected
+                                  ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
+                                  : 'bg-black/50 border-white/10 text-slate-400 hover:border-white/30 hover:text-slate-200'
+                              }`}
+                            >
+                              {opt.shortLabel}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   );
                 })}
               </div>
@@ -1544,7 +1826,10 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
             <div className="flex items-center gap-1.5 pointer-events-auto">
               <button
                 type="button"
-                onClick={() => handleZoomStep(-0.15)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleZoomStep(-0.15);
+                }}
                 className="px-2.5 py-1 rounded-lg bg-black/75 hover:bg-white/15 border border-white/20 font-mono text-xs font-bold text-white cursor-pointer"
                 title="Diminuir Zoom"
               >
@@ -1552,7 +1837,10 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => handleZoomStep(0.15)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleZoomStep(0.15);
+                }}
                 className="px-2.5 py-1 rounded-lg bg-black/75 hover:bg-white/15 border border-white/20 font-mono text-xs font-bold text-amber-300 cursor-pointer"
                 title="Aumentar Zoom"
               >
@@ -1564,35 +1852,51 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
             </div>
           </div>
 
-          {/* Bottom Bar inside Stage: Action Buttons tucked cleanly at bottom-right */}
-          <div className="absolute bottom-3 right-4 z-20 pointer-events-auto flex items-center gap-2.5">
+          {/* Bottom Bar inside Stage: Action Buttons + Direct Return to Menu button */}
+          <div className="absolute bottom-3 left-4 right-4 z-20 pointer-events-auto flex items-center justify-between gap-2.5">
             <button
               type="button"
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 soundEngine.playMenuSelect();
-                onSelectWeapon(selectedId);
+                onClose();
               }}
-              className={`px-5 py-2 rounded-xl font-display font-black text-xs sm:text-sm uppercase tracking-widest transition-all cursor-pointer ${
-                isEquipped
-                  ? 'bg-emerald-600 text-white shadow-[0_0_16px_rgba(16,185,129,0.45)]'
-                  : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-[0_0_16px_rgba(245,158,11,0.45)] active:scale-95'
-              }`}
+              className="px-4 py-2 rounded-xl font-display font-black text-xs sm:text-sm uppercase tracking-widest bg-black/85 hover:bg-white/15 border border-amber-400/50 text-amber-300 transition-all cursor-pointer active:scale-95 shadow-lg"
             >
-              {isEquipped ? 'EQUIPADA ✓' : 'EQUIPAR ARMA'}
+              ← VOLTAR AO MENU
             </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                soundEngine.playMenuSelect();
-                onSelectWeapon(selectedId);
-                onClose();
-                onStartTraining();
-              }}
-              className="px-4 py-2 rounded-xl font-display font-black text-xs sm:text-sm uppercase tracking-widest bg-black/80 hover:bg-white/20 border border-white/30 text-white transition-all cursor-pointer active:scale-95 shadow-lg"
-            >
-              TESTAR NO ESTANDE
-            </button>
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  soundEngine.playMenuSelect();
+                  onSelectWeapon(selectedId);
+                }}
+                className={`px-5 py-2 rounded-xl font-display font-black text-xs sm:text-sm uppercase tracking-widest transition-all cursor-pointer ${
+                  isEquipped
+                    ? 'bg-emerald-600 text-white shadow-[0_0_16px_rgba(16,185,129,0.45)]'
+                    : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-[0_0_16px_rgba(245,158,11,0.45)] active:scale-95'
+                }`}
+              >
+                {isEquipped ? 'EQUIPADA ✓' : 'EQUIPAR ARMA'}
+              </button>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  soundEngine.playMenuSelect();
+                  onSelectWeapon(selectedId);
+                  onClose();
+                  onStartTraining();
+                }}
+                className="px-4 py-2 rounded-xl font-display font-black text-xs sm:text-sm uppercase tracking-widest bg-black/80 hover:bg-white/20 border border-white/30 text-white transition-all cursor-pointer active:scale-95 shadow-lg"
+              >
+                TESTAR NO ESTANDE
+              </button>
+            </div>
           </div>
         </div>
       </div>

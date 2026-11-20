@@ -1010,17 +1010,25 @@ export function updateSmartBotNavigation(
     moveBotWithPhysics(bot, nav, moveTarget, moveSpeed, dt, colliders, activeGlbCollider, lookAt);
 
     const weapon = bot.weaponId || 'AK47_RIFLE';
-    const isSniper = weapon === 'SNIPER_BOLT' || weapon === 'SNIPER_TACTICAL';
+    const isSniper =
+      weapon === 'SNIPER_BOLT' ||
+      weapon === 'SNIPER_TACTICAL' ||
+      weapon === 'SNIPER_AWP' ||
+      weapon === 'SNIPER_HEAVY';
+    const empDisrupted =
+      !bot.isAlly &&
+      Number(bot.root.userData?.empDisruptedUntilMs || 0) > performance.now();
 
     // Human fire gates: LOS + acquire + peek swing-out delay; jiggle peeks don't commit.
     const peekReady =
       nav.tacticalState !== 'PEEK' ||
       (!nav.isJigglePeek && (nav.peekPrefireTimer || 0) <= 0);
-    const acquireNeed = isVisibleTargetPlayer
-      ? nav.tacticalState === 'PEEK'
-        ? 0.16 + (nav.peekPrefireDelay || 0.12) * 0.35
-        : 0.24
-      : 0.08;
+    const acquireNeed =
+      (isVisibleTargetPlayer
+        ? nav.tacticalState === 'PEEK'
+          ? 0.16 + (nav.peekPrefireDelay || 0.12) * 0.35
+          : 0.24
+        : 0.08) * (empDisrupted ? 1.55 : 1);
     const canFireAtVisible =
       (nav.tacticalState === 'COMBAT' || nav.tacticalState === 'PEEK') &&
       visibleEnemyPos &&
@@ -1030,11 +1038,16 @@ export function updateSmartBotNavigation(
     if (canFireAtVisible && visibleEnemyPos && !isBotReloading(bot)) {
       if (nav.burstShotsLeft <= 0 && nav.fireCooldown <= 0) {
         // Shorter controlled bursts — less laser hose.
-        nav.burstShotsLeft = isSniper ? 1 : 1 + Math.floor(Math.random() * 3);
+        nav.burstShotsLeft = isSniper
+          ? 1
+          : empDisrupted
+            ? 1
+            : 1 + Math.floor(Math.random() * 3);
         nav.burstShotTimer = 0;
-        nav.fireCooldown = isSniper
+        const baseCd = isSniper
           ? 1.85 + Math.random() * 0.65
           : 0.72 + Math.random() * 0.55 + (nav.aimRecoil || 0) * 0.25;
+        nav.fireCooldown = empDisrupted ? baseCd * 1.75 : baseCd;
       }
 
       if (nav.burstShotsLeft > 0) {
@@ -1045,7 +1058,10 @@ export function updateSmartBotNavigation(
           triggerBotFireAnimation(bot);
           if (!bot.isAlly) {
             bot.root.userData = bot.root.userData || {};
-            bot.root.userData.radarRevealedUntilMs = performance.now() + 3400;
+            bot.root.userData.radarRevealedUntilMs = Math.max(
+              Number(bot.root.userData.radarRevealedUntilMs || 0),
+              performance.now() + 3400
+            );
           }
           if (isBotReloading(bot)) {
             nav.burstShotsLeft = 0;
@@ -1056,17 +1072,21 @@ export function updateSmartBotNavigation(
           // Humanized aim: torso bias, recoil climb, controlled miss, drift recovery.
           const acquireFrac = Math.min(1, (nav.acquireTimer || 0) / 0.55);
           const recoil = nav.aimRecoil || 0;
-          const baseSpread = isSniper ? 0.22 : 0.48;
+          const baseSpread = (isSniper ? 0.22 : 0.48) * (empDisrupted ? 1.85 : 1);
           const recoilSpread = baseSpread * (0.65 + recoil * 1.85);
           const firstShotMiss =
             acquireFrac < 0.55 ? 0.55 + Math.random() * 0.55 : 0.18 + Math.random() * 0.28;
-          const intentionalMiss = Math.random() < (isSniper ? 0.22 : 0.34) * (1.15 - acquireFrac * 0.5);
+          const intentionalMiss =
+            Math.random() <
+            (isSniper ? 0.22 : 0.34) *
+              (1.15 - acquireFrac * 0.5) *
+              (empDisrupted ? 1.65 : 1);
           const missMul = intentionalMiss ? firstShotMiss * (1.4 + Math.random() * 1.1) : 1;
           // Body center (not head laser); occasional limb/foot miss.
           let bodyY = intentionalMiss && Math.random() < 0.35
             ? 0.35 + Math.random() * 0.45
             : 0.95 + Math.random() * 0.38;
-          if (!intentionalMiss && Math.random() < 0.12) bodyY = 1.38; // rare head try
+          if (!intentionalMiss && !empDisrupted && Math.random() < 0.12) bodyY = 1.38; // rare head try
           nav.aimDriftX =
             (nav.aimDriftX || 0) * 0.72 + (Math.random() - 0.5) * recoilSpread * missMul;
           nav.aimDriftY =

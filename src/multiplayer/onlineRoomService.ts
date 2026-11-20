@@ -27,6 +27,7 @@ import {
   OnlinePlayerState,
   OnlineRoomState,
   OnlineRoundEvent,
+  OnlineScorestreakEvent,
   OnlineTeam,
 } from './onlineTypes';
 import { pushPeerPose, resetPeerSnapshotBuffers } from './peerSnapshotBuffer';
@@ -40,6 +41,7 @@ export interface OnlineBombEvent {
 type RoomSubscriber = (room: OnlineRoomState | null) => void;
 type HitSubscriber = (hit: OnlineHitEvent) => void;
 type GrenadeSubscriber = (evt: OnlineGrenadeEvent) => void;
+type ScorestreakSubscriber = (evt: OnlineScorestreakEvent) => void;
 type ClassSupportSubscriber = (evt: ClassSupportPacket) => void;
 type BombSubscriber = (evt: OnlineBombEvent) => void;
 type RoundSubscriber = (evt: OnlineRoundEvent) => void;
@@ -47,11 +49,13 @@ type RoundSubscriber = (evt: OnlineRoundEvent) => void;
 const roomSubscribers = new Set<RoomSubscriber>();
 const hitSubscribers = new Set<HitSubscriber>();
 const grenadeSubscribers = new Set<GrenadeSubscriber>();
+const scorestreakSubscribers = new Set<ScorestreakSubscriber>();
 const classSupportSubscribers = new Set<ClassSupportSubscriber>();
 const bombSubscribers = new Set<BombSubscriber>();
 const roundSubscribers = new Set<RoundSubscriber>();
 const processedHitIds = new Set<string>();
 const processedGrenadeIds = new Set<string>();
+const processedScorestreakIds = new Set<string>();
 const processedClassSupportIds = new Set<string>();
 const processedRoundEventIds = new Set<string>();
 
@@ -82,8 +86,38 @@ function rememberGrenadeEventId(eventId: string): void {
   }
 }
 
+function rememberScorestreakEventId(eventId: string): void {
+  if (!eventId) return;
+  processedScorestreakIds.add(eventId);
+  if (processedScorestreakIds.size > 120) {
+    const first = processedScorestreakIds.values().next().value;
+    if (first) processedScorestreakIds.delete(first);
+  }
+}
+
 export function isWebSocketConnected(): boolean {
   return wsConnected && wsClient !== null && wsClient.readyState === WebSocket.OPEN;
+}
+
+type VoiceWireHandler = (msg: Record<string, unknown>) => void;
+let voiceWireHandler: VoiceWireHandler | null = null;
+
+export function registerVoiceWireHandler(fn: VoiceWireHandler | null): void {
+  voiceWireHandler = fn;
+}
+
+export function sendRawWsMessage(payload: Record<string, unknown>): boolean {
+  if (!wsClient || wsClient.readyState !== WebSocket.OPEN) return false;
+  try {
+    wsClient.send(JSON.stringify(payload));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function getLocalEffectiveUid(): string {
+  return getEffectiveLocalUid();
 }
 
 function emitRoomState(): void {
@@ -428,6 +462,22 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
           ) {
             rememberGrenadeEventId(evt.eventId);
             grenadeSubscribers.forEach((fn) => fn(evt));
+          }
+        } else if (msg.type === 'SCORESTREAK_EVENT') {
+          const streakMsg = msg as unknown as {
+            event?: OnlineScorestreakEvent;
+            senderUid?: string;
+          };
+          const evt = streakMsg.event;
+          if (
+            evt &&
+            evt.eventId &&
+            (evt.streak === 'UAV' || evt.streak === 'ADVANCED_UAV') &&
+            evt.senderUid !== localUid &&
+            !processedScorestreakIds.has(evt.eventId)
+          ) {
+            rememberScorestreakEventId(evt.eventId);
+            scorestreakSubscribers.forEach((fn) => fn(evt));
           }
         } else if (msg.type === 'BOMB_EVENT') {
           if (msg.bombStatus) activeRoom.bombStatus = msg.bombStatus;
@@ -897,6 +947,37 @@ export function publishGrenadeThrow(
   }
 }
 
+export function publishScorestreakEvent(
+  streak: 'UAV' | 'ADVANCED_UAV',
+  durationSec: number
+): void {
+  if (!activeRoom) return;
+  const uid = getEffectiveLocalUid();
+  const me = activeRoom.players[uid];
+  if (!me) return;
+  const nowMs = Date.now();
+  const event: OnlineScorestreakEvent = {
+    eventId: `stk_${uid}_${nowMs}_${Math.random().toString(36).slice(2, 6)}`,
+    senderUid: uid,
+    senderCallsign: me.callsign || 'OPERADOR',
+    senderTeam: me.team,
+    streak,
+    durationSec: Math.max(10, Math.min(24, Math.round(durationSec))),
+    ts: nowMs,
+  };
+  rememberScorestreakEventId(event.eventId);
+  if (wsClient && wsClient.readyState === WebSocket.OPEN) {
+    wsClient.send(
+      JSON.stringify({
+        type: 'SCORESTREAK_EVENT',
+        roomId: activeRoom.roomId,
+        event,
+        ts: nowMs,
+      })
+    );
+  }
+}
+
 export function publishCombatHit(targetUid: string, damage: number, isHeadshot: boolean, weaponId: WeaponId | 'GRENADE'): void {
   const hit = publishRoomCombatHit(
     activeRoom,
@@ -1146,6 +1227,13 @@ export function subscribeOnlineHitEvents(fn: HitSubscriber): () => void {
 export function subscribeOnlineGrenadeEvents(fn: GrenadeSubscriber): () => void {
   grenadeSubscribers.add(fn);
   return () => grenadeSubscribers.delete(fn);
+}
+
+export function subscribeOnlineScorestreakEvents(
+  fn: ScorestreakSubscriber
+): () => void {
+  scorestreakSubscribers.add(fn);
+  return () => scorestreakSubscribers.delete(fn);
 }
 
 export function subscribeOnlineBombEvents(fn: BombSubscriber): () => void {

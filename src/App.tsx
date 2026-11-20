@@ -19,6 +19,7 @@ import { ControlSettings, loadControlSettings, saveControlSettings } from './con
 import { applyGraphicsToEngine } from './graphics/applyGraphicsToEngine';
 import { FpsLimit, GameSettings, getDefaultSettings, loadGameSettings, saveGameSettings } from './graphics/graphicsSettings';
 import { mobileHardware } from './mobile/nativeHardware';
+import { runOtaUpdateCheck } from './ota/otaUpdateManager';
 import { getClassCombatModifiers } from './progression/loadoutSystem';
 import { TacticalFPSEngine } from './three/fpsEngine';
 import { prefetchMapAssetsForMode } from './three/mapAssetCatalog';
@@ -223,26 +224,41 @@ export default function App() {
 
   useEffect(() => {
     if (hud.screen === 'LOADING' && engineRef.current) {
+      let cancelled = false;
       setPreloadProgress(0);
-      setPreloadStatus('LIMPANDO MEMÓRIA E INICIALIZANDO CARREGAMENTO...');
+      setPreloadStatus('VERIFICANDO ATUALIZAÇÕES OTA NO SERVIDOR...');
 
-      engineRef.current
-        .preloadAssets((pct, status) => {
-          setPreloadProgress(pct);
-          setPreloadStatus(status);
-        })
-        .then(() => {
-          if (engineRef.current) {
+      (async () => {
+        try {
+          await runOtaUpdateCheck((otaPct, otaStatus) => {
+            if (cancelled) return;
+            setPreloadProgress(otaPct);
+            setPreloadStatus(otaStatus);
+          });
+          if (cancelled || !engineRef.current) return;
+          await engineRef.current.preloadAssets((enginePct, engineStatus) => {
+            if (cancelled) return;
+            const scaledPct = 30 + Math.round((enginePct / 100) * 70);
+            setPreloadProgress(Math.min(100, scaledPct));
+            setPreloadStatus(engineStatus);
+          });
+          if (!cancelled && engineRef.current) {
             applyGraphicsToEngine(engineRef.current, gameSettingsRef.current);
           }
-        })
-        .catch((err) => {
+        } catch (err) {
           console.warn('Asset preloader finished with fallback:', err);
-          setPreloadProgress(100);
-          if (engineRef.current) {
-            applyGraphicsToEngine(engineRef.current, gameSettingsRef.current);
+          if (!cancelled) {
+            setPreloadProgress(100);
+            if (engineRef.current) {
+              applyGraphicsToEngine(engineRef.current, gameSettingsRef.current);
+            }
           }
-        });
+        }
+      })();
+
+      return () => {
+        cancelled = true;
+      };
     }
   }, [hud.screen]);
 
@@ -398,6 +414,7 @@ export default function App() {
             }}
             onPause={() => engineRef.current?.pauseGame()}
             onPlantBomb={() => engineRef.current?.triggerPlantBomb()}
+            onActivateStreak={() => engineRef.current?.activateReadyStreak()}
             onCycleSpectator={(dir) => engineRef.current?.cycleSpectator(dir)}
             onReturnToMenu={() => {
               setMatchmakingTargetMode(null);

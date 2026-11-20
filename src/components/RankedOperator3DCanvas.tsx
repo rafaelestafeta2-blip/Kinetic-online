@@ -16,6 +16,12 @@ import {
   createSecondaryWebGLRenderer,
   disposeSecondaryWebGLRenderer,
 } from '../three/webglContextGuard';
+import {
+  applyOperatorSuitToCharacter3D,
+  getOperatorDefinition,
+  getOperatorOwnershipState,
+  subscribeOperatorOwnership,
+} from '../progression/operatorSkinsSystem';
 import { applyWeaponSkinToObject3D } from '../three/weaponSkinMaterial';
 import { WeaponId } from '../types/game';
 import { WarfaceClassId } from './WarfaceClassIcons';
@@ -24,6 +30,7 @@ interface RankedOperator3DCanvasProps {
   activeWeapon: WeaponId;
   weaponSkinId?: string;
   operatorClass?: WarfaceClassId;
+  operatorSkinId?: string;
   team?: 'VANGUARD' | 'BLACKTHORN';
   externalRotateSignal?: { nonce: number; delta: number };
 }
@@ -32,28 +39,42 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
   activeWeapon,
   weaponSkinId = 'default',
   operatorClass,
+  operatorSkinId,
   team = 'VANGUARD',
   externalRotateSignal,
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [equippedOpId, setEquippedOpId] = useState<string>(
+    () => getOperatorOwnershipState().activeOperatorId
+  );
+  const effectiveOpId = operatorSkinId || equippedOpId;
   const weaponRef = useRef<WeaponId>(activeWeapon);
   const skinRef = useRef<string>(weaponSkinId);
   const classRef = useRef<WarfaceClassId | undefined>(operatorClass);
+  const opSkinRef = useRef<string>(effectiveOpId);
   const swapSelectionRef = useRef<
-    ((w: WeaponId, c?: WarfaceClassId, s?: string) => void) | null
+    ((w: WeaponId, c?: WarfaceClassId, s?: string, opId?: string) => void) | null
   >(null);
   const nudgeYawRef = useRef<((delta: number) => void) | null>(null);
   const isBlackthorn = team === 'BLACKTHORN';
 
   useEffect(() => {
+    const unsub = subscribeOperatorOwnership((st) => {
+      setEquippedOpId(st.activeOperatorId);
+    });
+    return unsub;
+  }, []);
+
+  useEffect(() => {
     weaponRef.current = activeWeapon;
     classRef.current = operatorClass;
     skinRef.current = weaponSkinId;
+    opSkinRef.current = effectiveOpId;
     if (swapSelectionRef.current) {
-      swapSelectionRef.current(activeWeapon, operatorClass, weaponSkinId);
+      swapSelectionRef.current(activeWeapon, operatorClass, weaponSkinId, effectiveOpId);
     }
-  }, [activeWeapon, operatorClass, weaponSkinId]);
+  }, [activeWeapon, operatorClass, weaponSkinId, effectiveOpId]);
 
   useEffect(() => {
     if (externalRotateSignal && externalRotateSignal.nonce > 0 && nudgeYawRef.current) {
@@ -244,13 +265,19 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
     const mountCharacterForSelection = (
       targetWeapon: WeaponId,
       targetClass?: WarfaceClassId,
-      targetSkin?: string
+      targetSkin?: string,
+      targetOpId?: string
     ) => {
       if (disposed) return;
+      const opDef = getOperatorDefinition(targetOpId || opSkinRef.current);
+      const effectiveClass =
+        opDef.id !== 'op_vanguard_default'
+          ? opDef.preferredClass
+          : targetClass;
       const cloned = cloneVanguardCharacterAvatar(
         isSoftwareGl,
         targetWeapon,
-        targetClass
+        effectiveClass
       );
       if (!cloned) return;
 
@@ -330,6 +357,8 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
         }
       });
 
+      applyOperatorSuitToCharacter3D(modelRoot, opDef.id);
+
       // Plant feet on pedestal (Tripo medic bind can leave a tiny Y offset).
       modelRoot.updateMatrixWorld(true);
       const footBox = new THREE.Box3().setFromObject(modelRoot);
@@ -348,6 +377,7 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
         true,
         targetSkin || skinRef.current
       );
+      weaponProp.userData = { ...(weaponProp.userData || {}), isWeaponProp: true };
       operatorPivot.add(weaponProp);
 
       mixer = new THREE.AnimationMixer(modelRoot);
@@ -367,15 +397,22 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
     swapSelectionRef.current = (
       nextWeapon: WeaponId,
       nextClass?: WarfaceClassId,
-      nextSkin?: string
+      nextSkin?: string,
+      nextOpId?: string
     ) => {
       if (disposed) return;
       const desiredSkin = nextSkin || 'default';
-      const wantKind = resolveCharacterAvatarKind(nextWeapon, nextClass, true);
+      const opDef = getOperatorDefinition(nextOpId || opSkinRef.current);
+      const effectiveClass =
+        opDef.id !== 'op_vanguard_default'
+          ? opDef.preferredClass
+          : nextClass;
+      const wantKind = resolveCharacterAvatarKind(nextWeapon, effectiveClass, true);
       if (currentModelRoot === null || currentAvatarKind !== wantKind) {
-        mountCharacterForSelection(nextWeapon, nextClass, desiredSkin);
+        mountCharacterForSelection(nextWeapon, nextClass, desiredSkin, opDef.id);
         return;
       }
+      applyOperatorSuitToCharacter3D(currentModelRoot, opDef.id);
       if (!rHandBone) return;
       if (mountedWeaponId !== nextWeapon || !weaponProp) {
         if (weaponProp) {
@@ -383,6 +420,7 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
         }
         mountedWeaponId = nextWeapon;
         weaponProp = createBotThirdPersonWeaponMesh(nextWeapon, true, desiredSkin);
+        weaponProp.userData = { ...(weaponProp.userData || {}), isWeaponProp: true };
         operatorPivot.add(weaponProp);
         operatorPivot.updateMatrixWorld(true);
         alignWeaponPropToMixamoHands(weaponProp, operatorPivot, rHandBone, lHandBone);
@@ -401,7 +439,8 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
       mountCharacterForSelection(
         weaponRef.current,
         classRef.current,
-        skinRef.current
+        skinRef.current,
+        opSkinRef.current
       );
     });
 

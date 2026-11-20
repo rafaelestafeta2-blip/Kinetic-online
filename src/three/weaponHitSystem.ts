@@ -7,6 +7,7 @@ import {
   isOnlineMatchActive,
   publishCombatHit,
 } from '../multiplayer/onlineRoomService';
+import { getWeaponGunsmithModifiers } from '../progression/loadoutSystem';
 import { WeaponId } from '../types/game';
 import { triggerBotHitAnimation } from './botCharacterSystem';
 import { alertBotsToPlayerCombat } from './botNavigationSystem';
@@ -19,9 +20,12 @@ export function handleTargetHit(engine: any, targetId: string, hitZone: 'HEAD' |
     if (!target || target.isDown || (target as YardBotEntity).isAlly) return;
 
     const weaponId = engine.state.activeWeapon as WeaponId;
+    const gunsmith = getWeaponGunsmithModifiers(weaponId);
+    const effectiveDistance =
+      distanceMeters / Math.max(0.75, gunsmith.rangeMult);
     const ballisticsHit = computeBallisticDamage(
       weaponId,
-      distanceMeters,
+      effectiveDistance,
       hitZone === 'STEEL_GONG' ? 'TORSO_A' : hitZone,
       Boolean(engine.state.suppressorAttached)
     );
@@ -45,7 +49,9 @@ export function handleTargetHit(engine: any, targetId: string, hitZone: 'HEAD' |
 
     const isSniper =
       weaponId === 'SNIPER_BOLT' ||
-      weaponId === 'SNIPER_TACTICAL';
+      weaponId === 'SNIPER_TACTICAL' ||
+      weaponId === 'SNIPER_AWP' ||
+      weaponId === 'SNIPER_HEAVY';
 
     if (hitZone === 'ARMOR' && target.armorHealth > 0) {
       if (ballisticsHit.armorPiercing) {

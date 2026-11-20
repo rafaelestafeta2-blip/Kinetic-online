@@ -2,9 +2,11 @@ import React from 'react';
 import { soundEngine } from '../audio/soundEngine';
 import { CloudSyncState } from '../firebase/playerCloudSync';
 import { RankDefinition } from '../progression/ranks';
+import { isVipBattlePassActive } from '../progression/vipBattlePassSystem';
 
 export type MainMenuTab =
   | 'PLAY'
+  | 'STORE'
   | 'INVENTORY'
   | 'WEAPON'
   | 'RANKS'
@@ -39,10 +41,8 @@ export const MainMenuTopNav: React.FC<MainMenuTopNavProps> = ({
   newsBadgeCount = 3,
   socialBadgeCount = 0,
 }) => {
-  const diamondCount = Math.max(
-    120,
-    Math.round((syncState.profile.playerXp || 1000) * 0.25 + (syncState.profile.totalKills || 0) * 15)
-  );
+  const diamondCount = Math.max(0, Math.floor(Number(syncState.profile.diamonds) || 0));
+  const vipActive = isVipBattlePassActive(syncState.profile.vipBattlePass);
 
   return (
     <header className="relative z-30 w-full h-9 lg:h-12 px-2 sm:px-4 bg-gradient-to-b from-[#0b0d13]/96 via-[#07090e]/95 to-[#05060a]/92 border-b border-red-500/45 flex items-center justify-between gap-2 shrink-0 backdrop-blur-md shadow-[0_4px_24px_rgba(0,0,0,0.8)]">
@@ -78,7 +78,14 @@ export const MainMenuTopNav: React.FC<MainMenuTopNavProps> = ({
             <span className="font-display font-black text-[11px] sm:text-xs text-white uppercase tracking-wide max-w-[82px] sm:max-w-[116px] truncate group-hover:text-red-300 transition-colors">
               {syncState.profile.callsign}
             </span>
-            <span className="text-[10px] text-amber-400" title="Operador VIP">♛</span>
+            {vipActive && (
+              <span
+                className="text-[10px] text-amber-400 drop-shadow-[0_0_6px_rgba(251,191,36,0.85)]"
+                title="Passe VIP Ativo (+50% XP Online)"
+              >
+                ♛
+              </span>
+            )}
           </div>
           <div className="flex items-center justify-between gap-2 mt-1">
             <span className="font-mono font-bold text-[9px] text-slate-200 tabular-nums">
@@ -121,16 +128,16 @@ export const MainMenuTopNav: React.FC<MainMenuTopNavProps> = ({
           </span>
         </button>
 
-        {/* Pontos Elite / Arsenal */}
+        {/* Diamantes Premium (Loja Warface & Baús Aleatórios) */}
         <button
           type="button"
           onClick={(e) => {
             e.stopPropagation();
             soundEngine.playMenuSelect();
-            onSelectTab('WEAPON');
+            onSelectTab('STORE');
           }}
-          title="Tokens Arsenal · Abrir Arsenal"
-          className="hidden sm:flex items-center gap-1.5 bg-[#0f131b]/95 hover:bg-[#171d29] border border-white/15 hover:border-sky-400/60 rounded-sm pl-1.5 pr-1 py-0.5 cursor-pointer transition-all shrink-0"
+          title="Diamantes · Abrir Loja Warface & Caixas Aleatórias"
+          className="flex items-center gap-1.5 bg-[#0f131b]/95 hover:bg-[#171d29] border border-sky-400/35 hover:border-sky-400/80 rounded-sm pl-1.5 pr-1 py-0.5 cursor-pointer transition-all shrink-0 shadow-[0_0_12px_rgba(56,189,248,0.18)]"
         >
           <span className="w-4 h-4 rounded-xs bg-gradient-to-br from-sky-300 to-blue-600 rotate-45 scale-75 border border-sky-100 shadow-[0_0_8px_rgba(56,189,248,0.55)]" />
           <span className="font-mono font-bold text-[10px] sm:text-xs text-white tabular-nums px-0.5">

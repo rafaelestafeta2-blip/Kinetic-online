@@ -140,6 +140,112 @@ function createCamoPatternCanvas(pattern: CamoPatternType): HTMLCanvasElement {
         }
       }
     }
+  } else if (pattern === 'anubis_gold') {
+    // Royal Anubis 24K Gold & Lapis Lazuli Obsidian
+    ctx.fillStyle = '#0e1424';
+    ctx.fillRect(0, 0, size, size);
+    const step = 24;
+    for (let y = 0; y < size; y += step) {
+      for (let x = 0; x < size; x += step) {
+        const alt = ((x / step + y / step) | 0) % 2 === 0;
+        ctx.fillStyle = alt ? '#172554' : '#0b101e';
+        ctx.fillRect(x, y, step - 1, step - 1);
+      }
+    }
+    for (let s = -size; s < size * 2; s += 96) {
+      ctx.save();
+      ctx.translate(s, 0);
+      ctx.rotate(Math.PI / 4);
+      ctx.fillStyle = '#eab308';
+      ctx.fillRect(0, -size, 18, size * 3);
+      ctx.fillStyle = '#fef08a';
+      ctx.fillRect(20, -size, 4, size * 3);
+      ctx.fillStyle = '#1d4ed8';
+      ctx.fillRect(26, -size, 8, size * 3);
+      ctx.restore();
+    }
+  } else if (pattern === 'cyber_cobalt') {
+    const rand = mulberry32(61423);
+    ctx.fillStyle = '#0b1120';
+    ctx.fillRect(0, 0, size, size);
+    for (let i = 0; i < 64; i++) {
+      const color =
+        i % 4 === 0
+          ? '#0284c7'
+          : i % 4 === 1
+            ? '#38bdf8'
+            : i % 4 === 2
+              ? '#1e3a8a'
+              : '#1e293b';
+      ctx.fillStyle = color;
+      const x = rand() * size;
+      const y = rand() * size;
+      const w = 40 + rand() * 95;
+      const h = 8 + rand() * 22;
+      for (let ox = -size; ox <= size; ox += size) {
+        for (let oy = -size; oy <= size; oy += size) {
+          ctx.save();
+          ctx.translate(x + ox, y + oy);
+          ctx.rotate(-Math.PI / 6);
+          ctx.fillRect(-w / 2, -h / 2, w, h);
+          ctx.restore();
+        }
+      }
+    }
+  } else if (pattern === 'emerald_viper') {
+    const rand = mulberry32(77319);
+    ctx.fillStyle = '#091410';
+    ctx.fillRect(0, 0, size, size);
+    const tones = ['#059669', '#10b981', '#064e3b', '#18181b', '#27272a'];
+    for (let i = 0; i < 74; i++) {
+      drawWrappedBlob(
+        rand() * size,
+        rand() * size,
+        24 + rand() * 48,
+        10 + rand() * 24,
+        -Math.PI / 4 + (rand() - 0.5) * 0.4,
+        tones[i % tones.length]
+      );
+    }
+  } else if (pattern === 'arctic_frost') {
+    const rand = mulberry32(88241);
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillRect(0, 0, size, size);
+    const tones = ['#f8fafc', '#cbd5e1', '#93c5fd', '#475569', '#1e293b'];
+    for (let i = 0; i < 68; i++) {
+      drawWrappedBlob(
+        rand() * size,
+        rand() * size,
+        26 + rand() * 56,
+        14 + rand() * 30,
+        rand() * Math.PI,
+        tones[i % tones.length]
+      );
+    }
+  } else if (pattern === 'aemondir_legion') {
+    // Aemondir Bucky Legion: Obsidian Dragon Scales + Imperial Bronze Gold + Molten Crimson Filigree
+    ctx.fillStyle = '#18141c';
+    ctx.fillRect(0, 0, size, size);
+    const step = 20;
+    for (let y = 0; y < size; y += step) {
+      for (let x = 0; x < size; x += step) {
+        const alt = ((x / step + y / step) | 0) % 2 === 0;
+        ctx.fillStyle = alt ? '#5c1118' : '#231c26';
+        ctx.fillRect(x, y, step - 1, step - 1);
+      }
+    }
+    for (let s = -size; s < size * 2; s += 80) {
+      ctx.save();
+      ctx.translate(s, 0);
+      ctx.rotate(Math.PI / 5);
+      ctx.fillStyle = '#d4af37';
+      ctx.fillRect(0, -size, 14, size * 3);
+      ctx.fillStyle = '#ef4444';
+      ctx.fillRect(16, -size, 8, size * 3);
+      ctx.fillStyle = '#fde047';
+      ctx.fillRect(26, -size, 3, size * 3);
+      ctx.restore();
+    }
   } else {
     // carbon_gold
     ctx.fillStyle = '#15171c';
@@ -246,6 +352,9 @@ function isProtectedNonWeaponPart(
     'scoperender',
     'laser',
     'muzzle',
+    'legion_emissive',
+    'scope_glass',
+    'scope_reticle_emi',
   ];
   for (const tok of tokens) {
     if (m.includes(tok) || n.includes(tok) || mat.includes(tok)) {
@@ -298,18 +407,23 @@ function ensureClonedOwnMaterial(
 function applySkinDefToMaterial(
   mat: THREE.MeshStandardMaterial,
   skin: WeaponSkinDefinition,
-  urlTex: THREE.Texture | null
+  urlTex: THREE.Texture | null,
+  hasVertexColors = false
 ): void {
   const orig = mat.userData.__origSkinState as OriginalMaterialSkinState | undefined;
   if (!orig) return;
 
-  if (skin.id === 'default') {
+  if (
+    skin.id === 'default' ||
+    (skin.id === 'shotgun_aemondir_legion' && hasVertexColors)
+  ) {
     mat.map = orig.map;
     if (mat.map) {
       mat.map.colorSpace = THREE.SRGBColorSpace;
       mat.map.needsUpdate = true;
     }
     if (mat.color) mat.color.setHex(orig.colorHex);
+    mat.vertexColors = hasVertexColors;
     mat.roughness = orig.roughness;
     mat.metalness = orig.metalness;
     mat.bumpMap = orig.bumpMap;
@@ -387,7 +501,8 @@ export function applyWeaponSkinToObject3D(
         const ownMat = ensureClonedOwnMaterial(mesh, i, raw);
         if (!ownMat || seenMats.has(ownMat)) continue;
         seenMats.add(ownMat);
-        applySkinDefToMaterial(ownMat, skin, urlTex);
+        const hasVertexColors = Boolean(mesh.geometry?.getAttribute('color'));
+        applySkinDefToMaterial(ownMat, skin, urlTex, hasVertexColors);
       }
     });
     onApplied?.();

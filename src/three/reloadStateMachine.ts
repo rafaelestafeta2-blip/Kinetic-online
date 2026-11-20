@@ -137,6 +137,7 @@ export function updateReloadStateMachine(engine: any, dt: number): void {
 
     const hasCustomReloadSound =
       engine.state.activeWeapon === 'P50_PISTOL' ||
+      engine.state.activeWeapon === 'M1911_PISTOL' ||
       engine.state.activeWeapon === 'SMG_MP5' ||
       engine.state.activeWeapon === 'SMG_45' ||
       engine.state.activeWeapon === 'M4_CARBINE' ||
@@ -147,6 +148,8 @@ export function updateReloadStateMachine(engine: any, dt: number): void {
       engine.state.activeWeapon === 'L49_LMG' ||
       engine.state.activeWeapon === 'SNIPER_BOLT' ||
       engine.state.activeWeapon === 'SNIPER_TACTICAL' ||
+      engine.state.activeWeapon === 'SNIPER_AWP' ||
+      engine.state.activeWeapon === 'SNIPER_HEAVY' ||
       engine.state.activeWeapon === 'SHOTGUN_12' ||
       engine.state.activeWeapon === 'SHOTGUN_SPAS';
 

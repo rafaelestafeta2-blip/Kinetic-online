@@ -101,6 +101,47 @@
           "type": "number",
           "description": "Skill Rating (MMR) for Ranked 5v5 matchmaking (100 to 10000)."
         },
+        "equippedWeaponOptics": {
+          "type": "object",
+          "description": "Map of WeaponId to equipped OpticType (up to 25 entries)."
+        },
+        "equippedWeaponSkins": {
+          "type": "object",
+          "description": "Map of WeaponId to equipped weapon skin ID (up to 25 entries)."
+        },
+        "equippedWeaponGunsmith": {
+          "type": "object",
+          "description": "Map of WeaponId to Gunsmith slot attachments (barrel, underbarrel, magazine, stock; up to 25 entries)."
+        },
+        "dailyContracts": {
+          "type": "object",
+          "description": "Daily tactical contracts progress and claimed reward IDs keyed by dayKey (up to 8 entries)."
+        },
+        "diamonds": {
+          "type": "number",
+          "description": "Real-money premium Diamonds balance credited by verified payment gateway (0 to 1000000)."
+        },
+        "vipBattlePass": {
+          "type": "object",
+          "description": "Monthly VIP Battle Pass status, expiration timestamp, weapon of the month, XP/Cash boosts, and claimed season tiers (up to 8 entries)."
+        },
+        "activeOperatorId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "description": "Currently equipped 3D Operator skin ID."
+        },
+        "unlockedOperators": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Array of unlocked 3D Operator skin IDs (1 to 20 items)."
+        },
+        "founderDiamondsClaimed": {
+          "type": "boolean",
+          "description": "True once the one-time Founder Welcome 1,500 Diamonds grant has been claimed."
+        },
         "createdAt": {
           "type": "string",
           "format": "date-time",
@@ -195,7 +236,9 @@
             "INDUSTRIA_BOMB_5V5",
             "HANGAR_BOMB_5V5",
             "EASTERN_CITY_BOMB_5V5",
-            "MIRAGE_ANUBIS_BOMB_5V5"
+            "MIRAGE_ANUBIS_BOMB_5V5",
+            "STATION_TDM_5V5",
+            "STATION_CAPTURE_5V5"
           ],
           "description": "Selected 5v5 map mode."
         },

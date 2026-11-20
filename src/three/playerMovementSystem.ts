@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { soundEngine } from '../audio/soundEngine';
+import { getWeaponGunsmithModifiers } from '../progression/loadoutSystem';
+import { WeaponId } from '../types/game';
 import { YardBotEntity } from './yardPropsBuilder';
 import {
   _forward,
@@ -342,9 +344,22 @@ export function updatePlayerMovementAndCollision(engine: any, dt: number): void 
 
       // Slight top-speed trim (~6%) kept from sprint tune.
       let maxSpeed = 4.55;
-      if (engine.state.stance === 'SPRINT') maxSpeed = 6.7;
-      else if (engine.state.stance === 'CROUCH') maxSpeed = 2.55;
-      else if (engine.state.stance === 'PRONE') maxSpeed = 1.2;
+      if (engine.state.stance === 'SPRINT') {
+        const classSprint =
+          typeof engine.cachedClassSprintMult === 'number'
+            ? engine.cachedClassSprintMult
+            : 1;
+        maxSpeed = 6.7 * classSprint;
+      } else if (engine.state.stance === 'CROUCH') {
+        maxSpeed = 2.55;
+      } else if (engine.state.stance === 'PRONE') {
+        maxSpeed = 1.2;
+      }
+
+      const gunsmithMove = getWeaponGunsmithModifiers(
+        engine.state.activeWeapon as WeaponId
+      ).moveSpeedMult;
+      maxSpeed *= gunsmithMove;
 
       // Sticky ADS walk: slower top speed + heavier accel/decel (scales with adsAlpha).
       const adsA = Math.max(

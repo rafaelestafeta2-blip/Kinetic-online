@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { mobileHardware } from '../mobile/nativeHardware';
+import { getInstalledOtaState } from '../ota/otaUpdateManager';
+import { hasExternalAssetCdn } from '../utils/assetUrl';
 
 const loadingArtwork = '/assets/images/tactical_loading_art_1794056561341.jpg';
 
@@ -10,12 +11,12 @@ interface LoadingScreenProps {
 }
 
 const TIPS = [
+  'DICA: Abra a LOJA & BAÚS no menu principal para resgatar seus +1.500 Diamantes de Fundador e girar as Caixas Warface.',
   'DICA: No estande de tiro, aproxime-se da parede de armas e aperte [E] para pegar qualquer armamento.',
   'DICA: O rifle Sniper Bolt cicla o ferrolho a cada tiro — aguarde o engatilhamento da próxima bala.',
-  'DICA: Disparos em semi-automático oferecem maior precisão e controle de recuo em alvos distantes.',
-  'DICA: No estande balístico, atire nos gongos de aço AR500 para ouvir o impacto sonoro característico.',
-  'DICA: Pressione [H] para abrir a bancada e personalizar mira holográfica, LPVO, supressor e laser PEQ.',
-  'DICA: Suba de patente no sistema Warface eliminando alvos para desbloquear novas armas e mira telescópica LPVO.',
+  'DICA: Novos Operadores 3D mudam o traje e a blindagem do seu personagem em tempo real no Lobby e nas partidas.',
+  'DICA: Pressione [H] ou abra o Arsenal 3D para personalizar mira holográfica, LPVO, supressor e pinturas exclusivas.',
+  'DICA: Suba de patente em partidas 5v5 online para desbloquear novas armas, conquistas e recompensas do Passe VIP.',
 ];
 
 export const LoadingScreen: React.FC<LoadingScreenProps> = ({
@@ -24,6 +25,8 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
   statusLabel,
 }) => {
   const [tipIndex, setTipIndex] = useState(0);
+  const otaState = getInstalledOtaState();
+  const cdnActive = hasExternalAssetCdn();
 
   const displayProgress = Math.min(100, Math.max(0, progress));
 
@@ -62,7 +65,7 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
       </div>
 
       {/* Top Header Bar */}
-      <div className="relative z-10 px-6 py-6 sm:px-10 sm:py-8 flex items-start justify-between">
+      <div className="relative z-10 px-6 py-6 sm:px-10 sm:py-8 flex items-start justify-between gap-4">
         <div className="flex items-center gap-3.5">
           <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/50 flex items-center justify-center font-display font-black text-amber-400 text-lg shadow-[0_0_20px_rgba(245,158,11,0.3)]">
             RG
@@ -72,24 +75,31 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
               RAFAEL GAMES
             </h2>
             <p className="font-mono text-[10px] text-amber-400/90 tracking-widest uppercase">
-              KINETIC TACTICAL FPS · SIMULAÇÃO MILITAR
+              KINETIC TACTICAL FPS · OTA LIVE CLIENT v{otaState.version}
             </p>
           </div>
         </div>
 
-        {/* System Telemetry Check */}
-        <div className="hidden sm:flex flex-col items-end gap-1 font-mono text-[10px] tabular-nums text-slate-400 bg-black/60 px-3 py-2 rounded-lg border border-white/10">
+        {/* OTA & CDN Patch Status Box */}
+        <div className="hidden sm:flex flex-col items-end gap-1 font-mono text-[10px] tabular-nums text-slate-300 bg-black/70 px-3.5 py-2.5 rounded-xl border border-amber-400/30 shadow-[0_0_24px_rgba(0,0,0,0.75)]">
           <div className="flex items-center gap-2">
-            <span className="text-slate-500">PRELOADER:</span>
-            <span className="text-emerald-400 font-semibold">THREE.LoadingManager + GPU Shaders</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-slate-400">VERSÃO OTA:</span>
+            <span className="text-amber-300 font-bold">
+              v{otaState.version} ({otaState.assetRevision})
+            </span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-slate-500">ARSENAL 3D:</span>
-            <span className="text-emerald-400 font-semibold">8 ARMAS COMPILAÇÃO TOTAL</span>
+            <span className="text-slate-400">CDN / STORAGE:</span>
+            <span className="text-emerald-400 font-semibold">
+              {cdnActive ? 'FIREBASE STORAGE CDN ATIVO' : 'SYNC HÍBRIDO OTA ATIVO'}
+            </span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-slate-500">FÍSICA BALÍSTICA:</span>
-            <span className="text-amber-400 font-semibold">ALTA PRECISÃO 120HZ</span>
+            <span className="text-slate-400">PATCH ATUAL:</span>
+            <span className="text-sky-300 font-semibold">
+              {otaState.patchTitle}
+            </span>
           </div>
         </div>
       </div>

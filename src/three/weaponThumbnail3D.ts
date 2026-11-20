@@ -13,8 +13,8 @@ import {
 const THUMB_W = 480;
 const THUMB_H = 200;
 
-const thumbnailCache = new Map<WeaponId, string>();
-const inFlightCache = new Map<WeaponId, Promise<string | null>>();
+const thumbnailCache = new Map<string, string>();
+const inFlightCache = new Map<string, Promise<string | null>>();
 const scopeThumbnailCache = new Map<OpticType, string>();
 const scopeInFlightCache = new Map<OpticType, Promise<string | null>>();
 const sharedScopeGltfLoader = createGameGltfLoader();
@@ -45,7 +45,7 @@ function getSharedStudioRig(): SharedStudioRig | null {
     renderer.setPixelRatio(1);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.38;
+    renderer.toneMappingExposure = 1.14;
     renderer.setClearColor(0x000000, 0);
 
     const scene = new THREE.Scene();
@@ -54,10 +54,10 @@ function getSharedStudioRig(): SharedStudioRig | null {
     scene.environment = envTex;
     pmrem.dispose();
 
-    const hemi = new THREE.HemisphereLight(0xdbeafe, 0x1e293b, 1.35);
+    const hemi = new THREE.HemisphereLight(0xdbeafe, 0x1e293b, 1.05);
     scene.add(hemi);
 
-    const keyLight = new THREE.DirectionalLight(0xfff5e8, 2.8);
+    const keyLight = new THREE.DirectionalLight(0xfff5e8, 2.15);
     keyLight.position.set(1.4, 2.2, 3.2);
     scene.add(keyLight);
 
@@ -80,13 +80,19 @@ function getSharedStudioRig(): SharedStudioRig | null {
   }
 }
 
+function getThumbKey(weaponId: WeaponId, skinId?: string): string {
+  return skinId && skinId !== 'default' ? `${weaponId}::${skinId}` : weaponId;
+}
+
 async function renderWeaponThumbnailInternal(
-  weaponId: WeaponId
+  weaponId: WeaponId,
+  skinId?: string
 ): Promise<string | null> {
-  const existing = thumbnailCache.get(weaponId);
+  const cacheKey = getThumbKey(weaponId, skinId);
+  const existing = thumbnailCache.get(cacheKey);
   if (existing) return existing;
 
-  const model = await buildLevel3DWeaponPreviewGroup(weaponId);
+  const model = await buildLevel3DWeaponPreviewGroup(weaponId, skinId);
   if (!model) return null;
 
   return new Promise<string | null>((resolve) => {
@@ -142,44 +148,52 @@ async function renderWeaponThumbnailInternal(
       const dataUrl = renderer.domElement.toDataURL('image/png');
       pivot.remove(orientGroup);
 
-      thumbnailCache.set(weaponId, dataUrl);
+      thumbnailCache.set(cacheKey, dataUrl);
       resolve(dataUrl);
     });
   });
 }
 
-export function getCachedWeaponThumbnail3D(weaponId: WeaponId): string | null {
-  return thumbnailCache.get(weaponId) || null;
+export function getCachedWeaponThumbnail3D(
+  weaponId: WeaponId,
+  skinId?: string
+): string | null {
+  return thumbnailCache.get(getThumbKey(weaponId, skinId)) || null;
 }
 
 export function requestWeaponThumbnail3D(
-  weaponId: WeaponId
+  weaponId: WeaponId,
+  skinId?: string
 ): Promise<string | null> {
-  const cached = thumbnailCache.get(weaponId);
+  const key = getThumbKey(weaponId, skinId);
+  const cached = thumbnailCache.get(key);
   if (cached) return Promise.resolve(cached);
 
-  const inFlight = inFlightCache.get(weaponId);
+  const inFlight = inFlightCache.get(key);
   if (inFlight) return inFlight;
 
-  const promise = renderWeaponThumbnailInternal(weaponId).finally(() => {
-    inFlightCache.delete(weaponId);
+  const promise = renderWeaponThumbnailInternal(weaponId, skinId).finally(() => {
+    inFlightCache.delete(key);
   });
-  inFlightCache.set(weaponId, promise);
+  inFlightCache.set(key, promise);
   return promise;
 }
 
-export function useWeaponThumbnail3D(weaponId: WeaponId): string | null {
+export function useWeaponThumbnail3D(
+  weaponId: WeaponId,
+  skinId?: string
+): string | null {
   const [url, setUrl] = useState<string | null>(() =>
-    getCachedWeaponThumbnail3D(weaponId)
+    getCachedWeaponThumbnail3D(weaponId, skinId)
   );
 
   useEffect(() => {
-    const cached = getCachedWeaponThumbnail3D(weaponId);
+    const cached = getCachedWeaponThumbnail3D(weaponId, skinId);
     setUrl(cached);
     if (cached) return;
 
     let cancelled = false;
-    void requestWeaponThumbnail3D(weaponId).then((res) => {
+    void requestWeaponThumbnail3D(weaponId, skinId).then((res) => {
       if (!cancelled && res) {
         setUrl(res);
       }
@@ -187,7 +201,7 @@ export function useWeaponThumbnail3D(weaponId: WeaponId): string | null {
     return () => {
       cancelled = true;
     };
-  }, [weaponId]);
+  }, [weaponId, skinId]);
 
   return url;
 }

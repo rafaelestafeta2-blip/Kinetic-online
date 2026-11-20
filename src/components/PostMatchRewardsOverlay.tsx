@@ -11,19 +11,23 @@ interface PostMatchRewardsOverlayProps {
 }
 
 const WEAPON_LABELS: Partial<Record<WeaponId, string>> = {
-  M4_CARBINE: 'M4A1 Carbine',
-  AK47_RIFLE: 'AK-47',
-  AK12_RIFLE: 'AK-12',
+  M4_CARBINE: 'MX16A4 / M4',
+  AK47_RIFLE: 'AK-47 Comando',
+  AK12_RIFLE: 'AK-200 Tática',
   S_MILITARY: 'SCAR-L S-Military',
   SMG_45: 'SMG .45',
-  SMG_MP5: 'MP5A3',
-  SHOTGUN_12: 'M870',
+  SMG_MP5: 'MPS5 9mm',
+  SHOTGUN_12: 'Drake-12',
   SHOTGUN_SPAS: 'SPAS-12',
-  CARBINE_AR: 'HK416',
+  CARBINE_AR: 'Carabina HK416',
   L49_LMG: 'L49 LMG',
-  SNIPER_BOLT: 'Bolt Sniper',
-  SNIPER_TACTICAL: 'M110 SASS',
-  P50_PISTOL: 'Desert Eagle',
+  SNIPER_BOLT: 'Kar98k Precisão',
+  SNIPER_TACTICAL: 'MK14 EBR',
+  SNIPER_AWP: 'AWP-M .338',
+  SNIPER_HEAVY: 'M200 Intervention',
+  RPG7_LAUNCHER: 'RPG-7V',
+  P50_PISTOL: 'Desert Eagle .50',
+  M1911_PISTOL: 'Colt M1911 .45',
 };
 
 export const PostMatchRewardsOverlay: React.FC<PostMatchRewardsOverlayProps> = ({

@@ -22,6 +22,9 @@ interface HudTopRightControlsProps {
   onToggleDock: () => void;
   onToggleFullscreen: () => void;
   onPause: () => void;
+  showScoreboardButton?: boolean;
+  scoreboardOpen?: boolean;
+  onToggleScoreboard?: () => void;
 }
 
 export const HudTopRightControls: React.FC<HudTopRightControlsProps> = ({
@@ -34,16 +37,19 @@ export const HudTopRightControls: React.FC<HudTopRightControlsProps> = ({
   onToggleDock,
   onToggleFullscreen,
   onPause,
+  showScoreboardButton = false,
+  scoreboardOpen = false,
+  onToggleScoreboard,
 }) => {
   const compatibleScopes = getCompatibleOpticsForWeapon(hud.activeWeapon);
   const activeScopeSpec = SCOPE_PACK_CATALOG[hud.optic] || SCOPE_PACK_CATALOG.iron;
 
   return (
     <>
-      {/* TOP-LEFT: CIRCULAR PAUSE BUTTON (||) MATCHING REFERENCE SCREENSHOT */}
+      {/* TOP-LEFT: CIRCULAR PAUSE BUTTON (||) + DISCREET SCOREBOARD TOGGLE (MOBILE/PC) */}
       <div
         onPointerDown={(e) => e.stopPropagation()}
-        className="fixed top-2.5 left-3 z-40 pointer-events-auto select-none"
+        className="fixed top-2.5 left-3 z-40 pointer-events-auto select-none flex items-center gap-2"
         style={{ touchAction: 'manipulation' }}
       >
         <button
@@ -58,6 +64,29 @@ export const HudTopRightControls: React.FC<HudTopRightControlsProps> = ({
             <rect x="14" y="4" width="4" height="16" rx="1" />
           </svg>
         </button>
+
+        {showScoreboardButton && onToggleScoreboard && (
+          <button
+            type="button"
+            {...bindTap(onToggleScoreboard)}
+            aria-label="Placar da Partida"
+            title="Placar Tático da Partida [TAB]"
+            className={`w-10 h-10 rounded-full border shadow-[0_4px_14px_rgba(0,0,0,0.65)] flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
+              scoreboardOpen
+                ? 'bg-amber-500 border-amber-200 text-slate-950'
+                : 'bg-[#102033]/80 hover:bg-[#162d47]/90 border-sky-400/35 text-white'
+            }`}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M4 6h16M4 12h16M4 18h10"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* TOP-RIGHT: SINGLE GEAR BUTTON + ROUNDED SQUARE MINIMAP MATCHING REFERENCE SCREENSHOT */}
@@ -96,6 +125,7 @@ export const HudTopRightControls: React.FC<HudTopRightControlsProps> = ({
           drillMode={hud.drillMode}
           yardBomb={hud.yardBomb}
           targets={hud.radarTargets}
+          empJammedSec={hud.empJammedSec}
         />
       </div>
 

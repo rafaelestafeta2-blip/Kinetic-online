@@ -31,6 +31,7 @@ import {
   KillfeedEntry,
   OpticType,
   QualityPreset,
+  TacticalScorestreakId,
   WeaponId,
 } from '../types/game';
 import {
@@ -41,11 +42,13 @@ import {
   savePlayerXp,
 } from '../progression/ranks';
 import { canGrantMatchProgressionRewards } from '../progression/matchProgressionGate';
+import { computeEffectiveMagCapacity } from '../progression/gunsmithSystem';
 import {
   equipWeaponOptic,
   getClassCombatModifiers,
   getEquippedWeaponOptic,
   getEquippedWeaponSkinId,
+  getWeaponGunsmithModifiers,
   isOpticCompatibleWithWeapon,
   subscribePlayerInventory,
 } from '../progression/loadoutSystem';
@@ -146,13 +149,19 @@ import {
   publishCombatHit,
   publishGrenadeThrow,
   publishRoundEvent,
+  publishScorestreakEvent,
   resetLocalOnlinePlayerForNextRound,
   subscribeOnlineBombEvents,
   subscribeOnlineClassSupport,
   subscribeOnlineGrenadeEvents,
   subscribeOnlineHitEvents,
   subscribeOnlineRoundEvents,
+  subscribeOnlineScorestreakEvents,
 } from '../multiplayer/onlineRoomService';
+import {
+  getActiveVipCashMultiplier,
+  getActiveVipXpMultiplier,
+} from '../progression/vipBattlePassSystem';
 import {
   applyOnlineTeamSpawnToLocalPlayer,
   enforceUnusedBotVisibility,
@@ -239,6 +248,7 @@ export class TacticalFPSEngine {
   private onHudUpdate: (state: HudState) => void;
   private unsubOnlineHits: (() => void) | null = null;
   private unsubOnlineGrenades: (() => void) | null = null;
+  private unsubOnlineScorestreaks: (() => void) | null = null;
   private unsubOnlineClassSupport: (() => void) | null = null;
   private unsubOnlineBomb: (() => void) | null = null;
   private unsubOnlineRounds: (() => void) | null = null;
@@ -423,6 +433,12 @@ export class TacticalFPSEngine {
   private primaryWeapon: WeaponId = 'M4_CARBINE';
   private secondaryWeapon: WeaponId = 'P50_PISTOL';
   private cachedRadarTargets: HudRadarCacheEntry[] = [];
+  private cachedClassAdsMult = 1;
+  private cachedClassSprintMult = 1;
+  private streakReloadBoostSec = 0;
+  private streakBannerTimer = 0;
+  private uavOutlineSyncTimer = 0;
+  private uavOutlinedActive = false;
 
   // Public HUD state mirror (All players start with M4_CARBINE as primary and P50_PISTOL as secondary)
   public state: HudState = {
@@ -500,6 +516,12 @@ export class TacticalFPSEngine {
     killConfirmLabel: '',
     damageFlashAlpha: 0,
     killfeed: [],
+    killStreak: 0,
+    readyStreak: 'NONE',
+    activeUavSec: 0,
+    activeEmpSec: 0,
+    empJammedSec: 0,
+    streakBannerText: null,
 
     // Warface Rank Progression System
     playerXp: 0,
@@ -668,6 +690,9 @@ export class TacticalFPSEngine {
     );
     this.camera.add(this.weaponRig.root);
     this.unsubInventory = subscribePlayerInventory(() => {
+      const classMods = getClassCombatModifiers();
+      this.cachedClassAdsMult = classMods.adsSpeedMult;
+      this.cachedClassSprintMult = classMods.sprintSpeedMult;
       const w = this.state.activeWeapon;
       this.weaponRig.applyWeaponSkin(w, getEquippedWeaponSkinId(w));
       const eqOptic = getEquippedWeaponOptic(w, this.state.playerXp);
@@ -935,7 +960,7 @@ export class TacticalFPSEngine {
           const atk = room?.players?.[hit.attackerUid];
           const killerPos =
             atk != null
-              ? new THREE.Vector3(atk.x, atk.y, atk.z)
+              ? _worldPos.set(atk.x, atk.y, atk.z)
               : null;
           this.triggerPlayerDeathSequence(
             hit.isHeadshot,
@@ -1004,19 +1029,19 @@ export class TacticalFPSEngine {
       if (!isOnlineMatchActive()) return;
       const localOp = getLocalOnlinePlayerState();
       if (localOp && evt.senderUid === localOp.uid) return;
-      const originVec = new THREE.Vector3(
+      _worldPos.set(
         Number(evt.origin?.[0] || 0),
         Number(evt.origin?.[1] || 0),
         Number(evt.origin?.[2] || 0)
       );
-      const velVec = new THREE.Vector3(
+      _worldPos2.set(
         Number(evt.velocity?.[0] || 0),
         Number(evt.velocity?.[1] || 0),
         Number(evt.velocity?.[2] || 0)
       );
       this.grenadeSystem?.spawnBotGrenade(
-        originVec,
-        velVec,
+        _worldPos,
+        _worldPos2,
         evt.grenadeType === 'SMOKE' ? 'SMOKE' : 'FRAG',
         true
       );
@@ -1027,6 +1052,54 @@ export class TacticalFPSEngine {
           break;
         }
       }
+    });
+
+    this.unsubOnlineScorestreaks?.();
+    this.unsubOnlineScorestreaks = subscribeOnlineScorestreakEvents((evt) => {
+      if (!isOnlineMatchActive() || this.state.screen !== 'PLAYING') return;
+      const localOp = getLocalOnlinePlayerState();
+      if (!localOp || evt.senderUid === localOp.uid) return;
+      const nowMs = performance.now();
+      const dur = Math.max(10, Math.min(24, Number(evt.durationSec) || 18));
+
+      if (evt.senderTeam === localOp.team) {
+        this.state.activeUavSec = Math.max(this.state.activeUavSec, dur);
+        this.uavOutlinedActive = true;
+        this.uavOutlineSyncTimer = 0;
+        const revealUntil = nowMs + dur * 1000 + 500;
+        for (let i = 0; i < this.targets.length; i++) {
+          const t = this.targets[i];
+          if (
+            t &&
+            t.type === 'COMBAT_BOT' &&
+            !t.isDown &&
+            !(t as YardBotEntity).isAlly
+          ) {
+            t.root.userData = t.root.userData || {};
+            t.root.userData.radarRevealedUntilMs = Math.max(
+              Number(t.root.userData.radarRevealedUntilMs || 0),
+              revealUntil
+            );
+            setBotEnemyOutline(t, true);
+          }
+        }
+        const label =
+          evt.streak === 'ADVANCED_UAV'
+            ? `${evt.senderCallsign} ATIVOU UAV AVANÇADO (${dur}s)`
+            : `${evt.senderCallsign} ATIVOU UAV TÁTICO (${dur}s)`;
+        this.showStreakBanner(label, 3.2);
+        soundEngine.playMechanicalSwitch(1.3);
+      } else if (evt.streak === 'ADVANCED_UAV') {
+        this.state.empJammedSec = Math.max(this.state.empJammedSec, 10);
+        this.showStreakBanner(
+          'PULSO EMP INIMIGO · RADAR INTERROMPIDO (10s)',
+          3.6
+        );
+        soundEngine.playMechanicalSwitch(0.75);
+      } else {
+        this.showStreakBanner('ALERTA · UAV INIMIGO DETECTADO NO SETOR', 2.8);
+      }
+      this.emitHud(true);
     });
 
     this.unsubOnlineBomb?.();
@@ -1045,7 +1118,7 @@ export class TacticalFPSEngine {
         (xp, cash) => {
           this.addPlayerXp(xp);
           if (canGrantMatchProgressionRewards() && cash > 0) {
-            addPlayerCash(cash);
+            addPlayerCash(Math.round(cash * getActiveVipCashMultiplier()));
           }
           this.state.score += xp;
           this.emitHud();
@@ -1110,6 +1183,7 @@ export class TacticalFPSEngine {
   public returnToMainMenu(): void {
     stopMatchEndFanfare();
     this.clearEnemyAimOutline();
+    this.clearTacticalStreaks(true);
     if (isOnlineMatchActive()) {
       void leaveActiveRoom();
     }
@@ -1458,7 +1532,145 @@ export class TacticalFPSEngine {
       this.state.yardBomb = { ...this.yardBombSystem.info };
     }
 
+    if (
+      killerName === 'VOCÊ' &&
+      victimTeam === 'BLACKTHORN' &&
+      this.state.drillMode !== 'FREE_RANGE'
+    ) {
+      this.state.killStreak += 1;
+      const ks = this.state.killStreak;
+      if (ks === 3) {
+        this.state.readyStreak = 'UAV';
+        this.showStreakBanner('UAV TÁTICO PRONTO · PRESSIONE [4]', 3.4);
+        soundEngine.playMechanicalSwitch(1.25);
+      } else if (ks === 5) {
+        this.state.readyStreak = 'ARMOR_PACK';
+        this.showStreakBanner('PACOTE TÁTICO PRONTO · PRESSIONE [4]', 3.4);
+        soundEngine.playMechanicalSwitch(1.3);
+      } else if (ks >= 7 && (ks === 7 || (ks - 7) % 4 === 0)) {
+        this.state.readyStreak = 'ADVANCED_UAV';
+        this.showStreakBanner('UAV AVANÇADO + EMP PRONTO · PRESSIONE [4]', 3.6);
+        soundEngine.playMechanicalSwitch(1.35);
+      }
+    }
+
     this.emitHud();
+  }
+
+  private showStreakBanner(text: string, durationSec = 3.2): void {
+    this.state.streakBannerText = text;
+    this.streakBannerTimer = durationSec;
+  }
+
+  private clearTacticalStreaks(resetReady: boolean): void {
+    this.state.killStreak = 0;
+    if (resetReady) {
+      this.state.readyStreak = 'NONE';
+    }
+    this.state.activeUavSec = 0;
+    this.state.activeEmpSec = 0;
+    this.state.empJammedSec = 0;
+    this.streakReloadBoostSec = 0;
+    this.streakBannerTimer = 0;
+    this.state.streakBannerText = null;
+    if (this.uavOutlinedActive) {
+      this.uavOutlinedActive = false;
+      for (let i = 0; i < this.targets.length; i++) {
+        const t = this.targets[i];
+        if (t && t.id !== this.outlinedEnemyBotId) {
+          setBotEnemyOutline(t, false);
+        }
+      }
+    }
+  }
+
+  public activateReadyStreak(): void {
+    if (
+      this.state.screen !== 'PLAYING' ||
+      this.isPlayerDying ||
+      this.playerDeathTp?.isActive()
+    ) {
+      return;
+    }
+    const streak: TacticalScorestreakId = this.state.readyStreak;
+    if (streak === 'NONE') return;
+    this.state.readyStreak = 'NONE';
+
+    const nowMs = performance.now();
+    if (streak === 'UAV') {
+      this.state.activeUavSec = Math.max(this.state.activeUavSec, 18);
+      this.uavOutlinedActive = true;
+      this.uavOutlineSyncTimer = 0;
+      for (let i = 0; i < this.targets.length; i++) {
+        const t = this.targets[i];
+        if (
+          t &&
+          t.type === 'COMBAT_BOT' &&
+          !t.isDown &&
+          !(t as YardBotEntity).isAlly
+        ) {
+          t.root.userData = t.root.userData || {};
+          t.root.userData.radarRevealedUntilMs = Math.max(
+            Number(t.root.userData.radarRevealedUntilMs || 0),
+            nowMs + 18500
+          );
+          setBotEnemyOutline(t, true);
+        }
+      }
+      if (isOnlineMatchActive()) {
+        publishScorestreakEvent('UAV', 18);
+      }
+      this.showStreakBanner('UAV TÁTICO ATIVO · RADAR & CONTORNO (18s)', 3.2);
+      soundEngine.playMechanicalSwitch(1.35);
+      triggerTacticalRadioCallout('TARGET_DOWN');
+    } else if (streak === 'ARMOR_PACK') {
+      this.state.armor = this.state.maxArmor;
+      if (this.state.activeWeapon !== 'KNIFE_TACTICAL') {
+        const cap = this.state.magCapacity;
+        this.state.magazines = [cap, cap, cap, cap];
+      }
+      this.streakReloadBoostSec = 15;
+      this.showStreakBanner(
+        'PACOTE TÁTICO · COLETE 100% + MUNIÇÃO + RECARGA RÁPIDA',
+        3.4
+      );
+      soundEngine.playMechanicalSwitch(1.2);
+    } else if (streak === 'ADVANCED_UAV') {
+      this.state.activeUavSec = Math.max(this.state.activeUavSec, 22);
+      this.state.activeEmpSec = Math.max(this.state.activeEmpSec, 12);
+      this.uavOutlinedActive = true;
+      this.uavOutlineSyncTimer = 0;
+      for (let i = 0; i < this.targets.length; i++) {
+        const t = this.targets[i];
+        if (
+          t &&
+          t.type === 'COMBAT_BOT' &&
+          !t.isDown &&
+          !(t as YardBotEntity).isAlly
+        ) {
+          t.root.userData = t.root.userData || {};
+          t.root.userData.radarRevealedUntilMs = Math.max(
+            Number(t.root.userData.radarRevealedUntilMs || 0),
+            nowMs + 22500
+          );
+          t.root.userData.empDisruptedUntilMs = Math.max(
+            Number(t.root.userData.empDisruptedUntilMs || 0),
+            nowMs + 12500
+          );
+          setBotEnemyOutline(t, true);
+        }
+      }
+      if (isOnlineMatchActive()) {
+        publishScorestreakEvent('ADVANCED_UAV', 22);
+      }
+      this.showStreakBanner(
+        'UAV AVANÇADO + PULSO EMP · RADAR 22s · SENSORES INTERROMPIDOS',
+        3.6
+      );
+      soundEngine.playMechanicalSwitch(1.4);
+      triggerTacticalRadioCallout('TARGET_DOWN');
+    }
+    this.emitHud(true);
   }
 
   public triggerPlayerDeathSequence(
@@ -1470,6 +1682,7 @@ export class TacticalFPSEngine {
     killerPos?: THREE.Vector3 | null
   ): void {
     if (this.isPlayerDying) return;
+    this.state.killStreak = 0;
     this.clearEnemyAimOutline();
     this.isPlayerDying = true;
     this.deathAnimElapsed = 0;
@@ -1536,9 +1749,10 @@ export class TacticalFPSEngine {
       this.state.lastXpGained = 0;
       return;
     }
+    const boostedAmount = Math.max(1, Math.round(amount * getActiveVipXpMultiplier()));
     const oldLevel = this.state.rankLevel;
-    this.state.playerXp += amount;
-    this.state.lastXpGained = amount;
+    this.state.playerXp += boostedAmount;
+    this.state.lastXpGained = boostedAmount;
     savePlayerXp(this.state.playerXp);
 
     const rankInfo = getRankForXp(this.state.playerXp);
@@ -1726,24 +1940,25 @@ export class TacticalFPSEngine {
     }
     if (
       this.state.activeWeapon === 'P50_PISTOL' ||
+      this.state.activeWeapon === 'M1911_PISTOL' ||
       this.state.activeWeapon === 'KNIFE_TACTICAL'
     ) {
       this.selectWeapon(this.primaryWeapon);
     } else {
-      this.selectWeapon('P50_PISTOL');
+      this.selectWeapon(this.secondaryWeapon || 'P50_PISTOL');
     }
   }
 
   public selectWeapon(weaponId: WeaponId): void {
     this.grenadeSystem?.unequipFromHand();
     this.state.equippedGrenade = null;
-    if (weaponId === 'P50_PISTOL') {
-      this.secondaryWeapon = 'P50_PISTOL';
+    if (weaponId === 'P50_PISTOL' || weaponId === 'M1911_PISTOL') {
+      this.secondaryWeapon = weaponId;
     } else if (weaponId !== 'KNIFE_TACTICAL') {
       this.primaryWeapon = weaponId;
     }
     this.state.primaryWeapon = this.primaryWeapon;
-    this.state.secondaryWeapon = 'P50_PISTOL';
+    this.state.secondaryWeapon = this.secondaryWeapon || 'P50_PISTOL';
     this.state.activeWeapon = weaponId;
     this.weaponRig.setActiveWeapon(weaponId);
     this.weaponRig.applyWeaponSkin(weaponId, getEquippedWeaponSkinId(weaponId));
@@ -1758,12 +1973,20 @@ export class TacticalFPSEngine {
     const savedOptic = getEquippedWeaponOptic(weaponId, this.state.playerXp);
     switch (weaponId) {
       case 'P50_PISTOL':
-        this.state.magCapacity = 12;
-        this.state.currentMagRounds = 12;
-        this.state.magazines = [12, 12, 12, 12];
+        this.state.magCapacity = 7;
+        this.state.currentMagRounds = 7;
+        this.state.magazines = [7, 7, 7, 7, 7];
         this.state.fireMode = 'SEMI';
         this.setOptic(savedOptic, false);
-        this.state.reloadTypeLabel = 'EQUIPADO: MARK 23 PISTOL (.45 ACP)';
+        this.state.reloadTypeLabel = 'EQUIPADO: DESERT EAGLE .50AE';
+        break;
+      case 'M1911_PISTOL':
+        this.state.magCapacity = 8;
+        this.state.currentMagRounds = 8;
+        this.state.magazines = [8, 8, 8, 8];
+        this.state.fireMode = 'SEMI';
+        this.setOptic(savedOptic, false);
+        this.state.reloadTypeLabel = 'EQUIPADO: COLT M1911A1 (.45 ACP)';
         break;
       case 'SMG_45':
         this.state.magCapacity = 32;
@@ -1779,7 +2002,7 @@ export class TacticalFPSEngine {
         this.state.magazines = [30, 30, 30, 30];
         this.state.fireMode = 'AUTO';
         this.setOptic(savedOptic, false);
-        this.state.reloadTypeLabel = 'EQUIPADO: MP5A3 TÁTICA (9x19MM)';
+        this.state.reloadTypeLabel = 'EQUIPADO: MPS5 TÁTICA (9x19MM)';
         break;
       case 'SHOTGUN_12':
         this.state.magCapacity = 6;
@@ -1787,7 +2010,7 @@ export class TacticalFPSEngine {
         this.state.magazines = [6, 6, 6, 6];
         this.state.fireMode = 'SEMI';
         this.setOptic(savedOptic, false);
-        this.state.reloadTypeLabel = 'EQUIPADO: M870 BREACHER (CALIBRE 12GA)';
+        this.state.reloadTypeLabel = 'EQUIPADO: DRAKE-12 BREACHER (12GA)';
         break;
       case 'SHOTGUN_SPAS':
         this.state.magCapacity = 8;
@@ -1803,7 +2026,7 @@ export class TacticalFPSEngine {
         this.state.magazines = [30, 30, 30, 30];
         this.state.fireMode = 'AUTO';
         this.setOptic(savedOptic, false);
-        this.state.reloadTypeLabel = 'EQUIPADO: M4A1 SOPMOD (5.56MM)';
+        this.state.reloadTypeLabel = 'EQUIPADO: MX16A4 / M4 TÁTICA (5.56MM)';
         break;
       case 'CARBINE_AR':
         this.state.magCapacity = 30;
@@ -1835,7 +2058,7 @@ export class TacticalFPSEngine {
         this.state.magazines = [30, 30, 30, 30];
         this.state.fireMode = 'AUTO';
         this.setOptic(savedOptic, false);
-        this.state.reloadTypeLabel = 'EQUIPADO: AK-12 SPETSNAZ (5.45MM)';
+        this.state.reloadTypeLabel = 'EQUIPADO: AK-200 TÁTICA (5.45MM)';
         break;
       case 'L49_LMG':
         this.state.magCapacity = 100;
@@ -1851,7 +2074,7 @@ export class TacticalFPSEngine {
         this.state.magazines = [5, 5, 5, 5];
         this.state.fireMode = 'SEMI';
         this.setOptic(savedOptic, false);
-        this.state.reloadTypeLabel = 'EQUIPADO: SNIPER BOLT-ACTION (.338 LAPUA)';
+        this.state.reloadTypeLabel = 'EQUIPADO: KAR98K PRECISÃO (7.92MM)';
         break;
       case 'SNIPER_TACTICAL':
         this.state.magCapacity = 10;
@@ -1859,7 +2082,31 @@ export class TacticalFPSEngine {
         this.state.magazines = [10, 10, 10, 10];
         this.state.fireMode = 'SEMI';
         this.setOptic(savedOptic, false);
-        this.state.reloadTypeLabel = 'EQUIPADO: SNIPER TÁTICA (.308 WIN)';
+        this.state.reloadTypeLabel = 'EQUIPADO: MK14 EBR TÁTICA (.308 WIN)';
+        break;
+      case 'SNIPER_AWP':
+        this.state.magCapacity = 5;
+        this.state.currentMagRounds = 5;
+        this.state.magazines = [5, 5, 5, 5];
+        this.state.fireMode = 'SEMI';
+        this.setOptic(savedOptic, false);
+        this.state.reloadTypeLabel = 'EQUIPADO: AWP-M .338 LUNETA (6X)';
+        break;
+      case 'SNIPER_HEAVY':
+        this.state.magCapacity = 5;
+        this.state.currentMagRounds = 5;
+        this.state.magazines = [5, 5, 5, 5];
+        this.state.fireMode = 'SEMI';
+        this.setOptic(savedOptic, false);
+        this.state.reloadTypeLabel = 'EQUIPADO: M200 INTERVENTION (.408)';
+        break;
+      case 'RPG7_LAUNCHER':
+        this.state.magCapacity = 1;
+        this.state.currentMagRounds = 0;
+        this.state.magazines = [1, 1, 1, 1];
+        this.state.fireMode = 'SEMI';
+        this.setOptic('iron', false);
+        this.state.reloadTypeLabel = 'EQUIPADO: RPG-7V LANÇA-FOGUETES (PG-7V)';
         break;
       case 'KNIFE_TACTICAL':
         this.state.magCapacity = 1;
@@ -1871,11 +2118,29 @@ export class TacticalFPSEngine {
         break;
     }
 
+    // Apply Gunsmith extended-magazine capacity modifier cleanly
+    if (weaponId !== 'RPG7_LAUNCHER' && weaponId !== 'KNIFE_TACTICAL') {
+      const gunsmith = getWeaponGunsmithModifiers(weaponId);
+      const effCap = computeEffectiveMagCapacity(
+        weaponId,
+        this.state.magCapacity,
+        gunsmith
+      );
+      if (effCap !== this.state.magCapacity) {
+        const magCount = this.state.magazines.length;
+        this.state.magCapacity = effCap;
+        this.state.currentMagRounds = effCap;
+        this.state.magazines = Array.from({ length: magCount }, () => effCap);
+      }
+    }
+
     this.magCheckTimer = 1.8;
     // Boot calls selectWeapon while the intro video is on screen. The swap
     // sample is the character-equip sound the player was hearing underneath it.
     if (this.state.screen === 'PLAYING') {
-      soundEngine.playWeaponSwap(weaponId === 'P50_PISTOL');
+      soundEngine.playWeaponSwap(
+        weaponId === 'P50_PISTOL' || weaponId === 'M1911_PISTOL'
+      );
     }
     if (
       (weaponId === 'AK47_RIFLE' || weaponId === 'AK12_RIFLE') &&
@@ -1908,19 +2173,23 @@ export class TacticalFPSEngine {
     this.state.reloadPhase = 'IDLE';
     this.weaponRig.triggerInspectAnimation();
     const names: Record<WeaponId, string> = {
-      P50_PISTOL: 'INSPECIONANDO MARK 23 PISTOL (.45 ACP)',
+      P50_PISTOL: 'INSPECIONANDO DESERT EAGLE (.50 AE)',
+      M1911_PISTOL: 'INSPECIONANDO COLT M1911A1 (.45 ACP)',
       SMG_45: 'INSPECIONANDO SMG .45 TÁTICA (.45 ACP)',
-      SMG_MP5: 'INSPECIONANDO MP5A3 TÁTICA (9x19MM)',
-      SHOTGUN_12: 'INSPECIONANDO M870 BREACHER (CALIBRE 12GA)',
+      SMG_MP5: 'INSPECIONANDO MPS5 TÁTICA (9x19MM)',
+      SHOTGUN_12: 'INSPECIONANDO DRAKE-12 BREACHER (12GA)',
       SHOTGUN_SPAS: 'INSPECIONANDO SPAS-12 TÁTICA (CALIBRE 12GA)',
-      M4_CARBINE: 'INSPECIONANDO M4A1 SOPMOD (5.56MM)',
+      M4_CARBINE: 'INSPECIONANDO MX16A4 / M4 TÁTICA (5.56MM)',
       CARBINE_AR: 'INSPECIONANDO CARABINA TÁTICA (5.56MM)',
       S_MILITARY: 'INSPECIONANDO SCAR-L S-MILITARY (5.56MM)',
       AK47_RIFLE: 'INSPECIONANDO AK-47 COMANDO (7.62MM)',
-      AK12_RIFLE: 'INSPECIONANDO AK-12 SPETSNAZ (5.45MM)',
+      AK12_RIFLE: 'INSPECIONANDO AK-200 TÁTICA (5.45MM)',
       L49_LMG: 'INSPECIONANDO LMG PESADA (5.56MM)',
-      SNIPER_BOLT: 'INSPECIONANDO SNIPER BOLT-ACTION (.338 LAPUA)',
-      SNIPER_TACTICAL: 'INSPECIONANDO SNIPER TÁTICA (.308 WIN)',
+      SNIPER_BOLT: 'INSPECIONANDO KAR98K PRECISÃO (7.92MM)',
+      SNIPER_TACTICAL: 'INSPECIONANDO MK14 EBR TÁTICA (.308 WIN)',
+      SNIPER_AWP: 'INSPECIONANDO AWP-M .338 LUNETA (6X)',
+      SNIPER_HEAVY: 'INSPECIONANDO M200 INTERVENTION (.408 CHEYTAC)',
+      RPG7_LAUNCHER: 'INSPECIONANDO RPG-7V LANÇA-FOGUETES (85MM)',
       KNIFE_TACTICAL: 'INSPECIONANDO FACA TÁTICA DE COMBATE',
     };
     this.state.reloadTypeLabel = names[this.state.activeWeapon];
@@ -2153,6 +2422,126 @@ export class TacticalFPSEngine {
             document.exitPointerLock();
           }
         }
+      }
+    }
+
+    this.emitHud();
+  }
+
+  public handleRpgExplosion(
+    blastCenter: THREE.Vector3,
+    impactNormal?: THREE.Vector3
+  ): void {
+    const blastRadius = 6.2;
+    soundEngine.playGrenadeExplosion();
+    this.fxPool.spawnImpactFX(blastCenter, impactNormal || _up, true, true);
+    this.cameraShake = Math.min(this.cameraShake + 0.032, 0.045);
+    mobileHardware.vibrateExplosion();
+    triggerShellshockTinnitus(blastCenter, this.playerPos);
+
+    let targetsHitCount = 0;
+    let killsCount = 0;
+
+    for (let i = 0; i < this.targets.length; i++) {
+      const t = this.targets[i];
+      if (t.isDown || (t as YardBotEntity).isAlly) continue;
+
+      const dist = t.root.position.distanceTo(blastCenter);
+      if (dist > blastRadius) continue;
+
+      targetsHitCount++;
+      this.state.hits += 1;
+
+      if (t.type === 'STEEL_GONG') {
+        soundEngine.playImpact('STEEL_GONG');
+        t.hitTiltVelocity = -22.0;
+        this.state.score += 120;
+        continue;
+      }
+
+      const falloff = Math.max(0.28, 1 - dist / (blastRadius * 1.12));
+      const blastDmg = Math.round(220 * falloff);
+
+      if (t.armorHealth > 0) {
+        t.armorHealth = 0;
+        if (t.armorMesh) t.armorMesh.visible = false;
+      }
+
+      t.health -= blastDmg;
+      t.hitTiltVelocity = -20.0;
+
+      const remoteUid = t.root.userData?.remotePlayerUid as string | undefined;
+      if (remoteUid && isOnlineMatchActive()) {
+        publishCombatHit(remoteUid, blastDmg, false, 'RPG7_LAUNCHER');
+      }
+
+      if (t.health <= 0) {
+        killsCount++;
+        t.isDown = true;
+        t.lastDeathWasHeadshot = false;
+        t.downTimer =
+          this.state.drillMode === 'FREE_RANGE'
+            ? 2.6
+            : this.state.drillMode === 'STATION_TDM_5V5'
+              ? 3.2
+              : 9999;
+        t.isTelegraphing = false;
+        if (t.laserLine) t.laserLine.visible = false;
+        this.state.score += 175;
+        this.state.lastHitZone = 'KILL';
+        const bot = t as YardBotEntity;
+        const localOp = getLocalOnlinePlayerState();
+        const myTeam = localOp?.team || 'VANGUARD';
+        const enemyTeam = myTeam === 'VANGUARD' ? 'BLACKTHORN' : 'VANGUARD';
+        this.registerKill(
+          localOp?.callsign || 'VOCÊ',
+          myTeam,
+          bot.callsign || 'INIMIGO-BT',
+          enemyTeam,
+          'RPG7_LAUNCHER',
+          false
+        );
+      } else {
+        this.state.score += 65;
+        this.state.lastHitZone = 'TORSO';
+      }
+    }
+
+    if (targetsHitCount > 0) {
+      this.state.hitMarkerAlpha = 1.0;
+      this.state.hitMarkerIsCrit = killsCount > 0;
+      this.state.hitMarkerIsKill = killsCount > 0;
+      if (killsCount > 0) {
+        this.state.killConfirmAlpha = 1.0;
+        this.state.killConfirmLabel =
+          killsCount > 1 ? `${killsCount}x EXPLOSÃO RPG!` : 'ABATE RPG-7!';
+      }
+      this.state.reloadTypeLabel =
+        killsCount > 0
+          ? `DETONAÇÃO RPG-7V! ${killsCount} ALVO(S) ELIMINADO(S)`
+          : `ONDA DE CHOQUE RPG-7V EM ${targetsHitCount} ALVO(S)!`;
+      this.magCheckTimer = 2.0;
+
+      if (
+        this.state.drillMode === 'KILLHOUSE_BLITZ' ||
+        this.state.drillMode === 'TACTICAL_WAVE' ||
+        this.state.drillMode === 'YARD_BOMB_5V5' ||
+        this.state.drillMode === 'DUST2_BOMB_5V5' ||
+        this.state.drillMode === 'ASSAULT_BOMB_5V5' ||
+        this.state.drillMode === 'INDUSTRIA_BOMB_5V5' ||
+        this.state.drillMode === 'HANGAR_BOMB_5V5' ||
+        this.state.drillMode === 'EASTERN_CITY_BOMB_5V5' ||
+        this.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
+        this.state.drillMode === 'STATION_CAPTURE_5V5' ||
+        this.state.drillMode === 'STATION_TDM_5V5'
+      ) {
+        const remaining = this.targets.filter(
+          (t) =>
+            t.sector === 'KILLHOUSE' &&
+            !t.isDown &&
+            !(t as YardBotEntity).isAlly
+        ).length;
+        this.state.targetsRemaining = remaining;
       }
     }
 
@@ -2512,16 +2901,33 @@ export class TacticalFPSEngine {
     }
     this.sprintExhausted = false;
     this.sprintPoseAlpha = 0;
+    this.cachedClassAdsMult = loadoutMod.adsSpeedMult;
+    this.cachedClassSprintMult = loadoutMod.sprintSpeedMult;
     if (!keepMatchScore) {
       stopMatchEndFanfare();
+      this.clearTacticalStreaks(true);
       this.state.score = 0;
       this.state.hits = 0;
       this.state.shotsFired = 0;
       this.state.headshots = 0;
       this.state.courseTimerSec = 0;
       this.state.killfeed = [];
+    } else {
+      // Between bomb rounds, clear active UAV/EMP timers cleanly
+      this.state.activeUavSec = 0;
+      this.state.activeEmpSec = 0;
+      this.state.empJammedSec = 0;
+      this.streakReloadBoostSec = 0;
+      if (this.uavOutlinedActive) {
+        this.uavOutlinedActive = false;
+        for (let i = 0; i < this.targets.length; i++) {
+          setBotEnemyOutline(this.targets[i], false);
+        }
+      }
     }
     this.state.damageFlashAlpha = 0;
+    this.secondaryWeapon = loadoutMod.secondaryWeapon || 'P50_PISTOL';
+    this.state.secondaryWeapon = this.secondaryWeapon;
     const startingWeapon = !keepMatchScore
       ? loadoutMod.primaryWeapon
       : this.primaryWeapon || loadoutMod.primaryWeapon || 'M4_CARBINE';
@@ -3070,13 +3476,22 @@ export class TacticalFPSEngine {
         this.selectWeapon(this.primaryWeapon);
         break;
       case 'Digit2':
-        this.selectWeapon('P50_PISTOL');
+        this.selectWeapon(this.secondaryWeapon || 'P50_PISTOL');
         break;
       case 'Digit3':
         this.selectWeapon('KNIFE_TACTICAL');
         break;
       case 'Digit4':
-        this.selectWeapon('M4_CARBINE');
+        if (this.state.readyStreak !== 'NONE') {
+          this.activateReadyStreak();
+        } else if (this.state.drillMode === 'FREE_RANGE') {
+          this.selectWeapon('M4_CARBINE');
+        }
+        break;
+      case 'KeyX':
+        if (this.state.readyStreak !== 'NONE') {
+          this.activateReadyStreak();
+        }
         break;
       case 'Digit5':
         this.selectWeapon('AK47_RIFLE');
@@ -3393,7 +3808,10 @@ export class TacticalFPSEngine {
 
       const shellsToLoad = Math.min(missing, totalReserve);
       const dryReload = this.state.chambered === 0;
-      const reloadMult = Math.max(1, getClassCombatModifiers().reloadSpeedMult);
+      const reloadMult =
+        Math.max(1, getClassCombatModifiers().reloadSpeedMult) *
+        getWeaponGunsmithModifiers(this.state.activeWeapon).reloadSpeedMult *
+        (this.streakReloadBoostSec > 0 ? 1.35 : 1);
       const shellInterval = 0.46 / reloadMult;
       const firstInsertDelay = Math.min(0.24 / reloadMult, shellInterval * 0.55);
       const pumpTime = dryReload ? 0.44 / reloadMult : 0;
@@ -3458,6 +3876,9 @@ export class TacticalFPSEngine {
     if (this.state.activeWeapon === 'P50_PISTOL') {
       this.reloadDuration = dryReload ? 2.15 : 1.75;
       soundEngine.playPistolFullReload(dryReload);
+    } else if (this.state.activeWeapon === 'M1911_PISTOL') {
+      this.reloadDuration = dryReload ? 1.95 : 1.55;
+      soundEngine.playM1911FullReload(dryReload);
     } else if (
       this.state.activeWeapon === 'SMG_MP5' ||
       this.state.activeWeapon === 'SMG_45'
@@ -3486,6 +3907,15 @@ export class TacticalFPSEngine {
     } else if (this.state.activeWeapon === 'SNIPER_BOLT') {
       this.reloadDuration = 2.2;
       soundEngine.playKar98kFullReload();
+    } else if (
+      this.state.activeWeapon === 'SNIPER_AWP' ||
+      this.state.activeWeapon === 'SNIPER_HEAVY'
+    ) {
+      this.reloadDuration = dryReload ? 2.85 : 2.35;
+      soundEngine.playDmrOrLmgFullReload(dryReload);
+    } else if (this.state.activeWeapon === 'RPG7_LAUNCHER') {
+      this.reloadDuration = 2.65;
+      soundEngine.playDmrOrLmgFullReload(true);
     }
 
     this.reloadTimer = 0;
@@ -3495,7 +3925,10 @@ export class TacticalFPSEngine {
     this.state.reloadPhase = 'MAG_OUT';
     this.state.reloadProgress = 0;
     this.stageSoundFlags = { magOut: false, magIn: false, boltSlap: false };
-    const reloadMult = Math.max(1, getClassCombatModifiers().reloadSpeedMult);
+    const reloadMult =
+      Math.max(1, getClassCombatModifiers().reloadSpeedMult) *
+      getWeaponGunsmithModifiers(this.state.activeWeapon).reloadSpeedMult *
+      (this.streakReloadBoostSec > 0 ? 1.35 : 1);
     this.reloadDuration = Math.max(0.45, this.reloadDuration / reloadMult);
     this.weaponRig.triggerReloadAnimation(this.reloadDuration);
     this.emitHud();
@@ -3537,7 +3970,9 @@ export class TacticalFPSEngine {
       soundEngine.playAk47BoltRack();
     } else if (
       this.state.activeWeapon === 'SNIPER_BOLT' ||
-      this.state.activeWeapon === 'SNIPER_TACTICAL'
+      this.state.activeWeapon === 'SNIPER_TACTICAL' ||
+      this.state.activeWeapon === 'SNIPER_AWP' ||
+      this.state.activeWeapon === 'SNIPER_HEAVY'
     ) {
       soundEngine.playBoltActionCycle();
     } else {
@@ -3801,7 +4236,7 @@ export class TacticalFPSEngine {
         (xp, cash) => {
           this.addPlayerXp(xp);
           if (canGrantMatchProgressionRewards() && cash > 0) {
-            addPlayerCash(cash);
+            addPlayerCash(Math.round(cash * getActiveVipCashMultiplier()));
           }
           this.state.score += xp;
           if (isOnlineMatchActive()) {
@@ -3946,6 +4381,56 @@ export class TacticalFPSEngine {
     if (this.state.damageFlashAlpha > 0) {
       this.state.damageFlashAlpha = Math.max(0, this.state.damageFlashAlpha - dt * 2.5);
     }
+    if (this.streakBannerTimer > 0) {
+      this.streakBannerTimer -= dt;
+      if (this.streakBannerTimer <= 0) {
+        this.streakBannerTimer = 0;
+        this.state.streakBannerText = null;
+      }
+    }
+    if (this.streakReloadBoostSec > 0) {
+      this.streakReloadBoostSec = Math.max(0, this.streakReloadBoostSec - dt);
+    }
+    if (this.state.activeEmpSec > 0) {
+      this.state.activeEmpSec = Math.max(0, this.state.activeEmpSec - dt);
+    }
+    if (this.state.empJammedSec > 0) {
+      this.state.empJammedSec = Math.max(0, this.state.empJammedSec - dt);
+    }
+    if (this.state.activeUavSec > 0) {
+      this.state.activeUavSec = Math.max(0, this.state.activeUavSec - dt);
+      this.uavOutlineSyncTimer += dt;
+      if (this.uavOutlineSyncTimer >= 0.35) {
+        this.uavOutlineSyncTimer = 0;
+        const nowMs = performance.now();
+        const revealUntil = nowMs + Math.max(800, this.state.activeUavSec * 1000);
+        for (let i = 0; i < this.targets.length; i++) {
+          const t = this.targets[i];
+          if (t && t.type === 'COMBAT_BOT' && !(t as YardBotEntity).isAlly) {
+            if (!t.isDown) {
+              t.root.userData = t.root.userData || {};
+              t.root.userData.radarRevealedUntilMs = Math.max(
+                Number(t.root.userData.radarRevealedUntilMs || 0),
+                revealUntil
+              );
+              setBotEnemyOutline(t, true);
+            } else {
+              setBotEnemyOutline(t, false);
+            }
+          }
+        }
+      }
+      if (this.state.activeUavSec <= 0 && this.uavOutlinedActive) {
+        this.uavOutlinedActive = false;
+        for (let i = 0; i < this.targets.length; i++) {
+          const t = this.targets[i];
+          if (t && t.id !== this.outlinedEnemyBotId) {
+            setBotEnemyOutline(t, false);
+          }
+        }
+      }
+    }
+
     if (this.magCheckTimer > 0) {
       this.magCheckTimer -= dt;
       if (this.magCheckTimer <= 0) {
@@ -3966,7 +4451,9 @@ export class TacticalFPSEngine {
         this.sniperChamberTimer = 0;
         if (
           this.state.activeWeapon === 'SNIPER_BOLT' ||
-          this.state.activeWeapon === 'SNIPER_TACTICAL'
+          this.state.activeWeapon === 'SNIPER_TACTICAL' ||
+          this.state.activeWeapon === 'SNIPER_AWP' ||
+          this.state.activeWeapon === 'SNIPER_HEAVY'
         ) {
           if (this.state.currentMagRounds > 0) {
             this.state.currentMagRounds -= 1;
@@ -4097,7 +4584,7 @@ export class TacticalFPSEngine {
         }
       }
       if (nextHoveredEnemyId !== this.outlinedEnemyBotId) {
-        if (this.outlinedEnemyBotId) {
+        if (this.outlinedEnemyBotId && this.state.activeUavSec <= 0) {
           const oldTarget = this.targetMap.get(this.outlinedEnemyBotId);
           if (oldTarget) setBotEnemyOutline(oldTarget, false);
         }
@@ -4198,6 +4685,7 @@ export class TacticalFPSEngine {
       {
         state: this.state,
         primaryWeapon: this.primaryWeapon,
+        secondaryWeapon: this.secondaryWeapon,
         playerPos: this.playerPos,
         yaw: this.yaw,
         targets: this.targets as Array<{
@@ -4220,6 +4708,10 @@ export class TacticalFPSEngine {
     disposeTacticalPostFx(this.postFx);
     this.unsubOnlineHits?.();
     this.unsubOnlineHits = null;
+    this.unsubOnlineGrenades?.();
+    this.unsubOnlineGrenades = null;
+    this.unsubOnlineScorestreaks?.();
+    this.unsubOnlineScorestreaks = null;
     this.unsubOnlineClassSupport?.();
     this.unsubOnlineClassSupport = null;
     this.unsubOnlineBomb?.();

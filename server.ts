@@ -58,6 +58,146 @@ async function startServer(): Promise<void> {
     });
   });
 
+  const OTA_MANIFEST = {
+    version: process.env.KINETIC_OTA_VERSION?.trim() || '2.4.0-WARBOX',
+    assetRevision:
+      process.env.KINETIC_ASSET_REVISION?.trim() || '2026.11.19-wbx1',
+    cdnBaseUrl: process.env.VITE_ASSET_CDN_URL?.trim() || '',
+    publishedAt: '2026-11-19T10:30:00.000Z',
+    patchTitle: 'ATUALIZAÇÃO 2.4 · LOJA WARFACE & OPERADORES 3D',
+    patchNotes: [
+      'Loja Warface de Diamantes & 3 Caixas Aleatórias com tabela oficial (%)',
+      '6 Novos Operadores 3D com inspeção 360° e blindagem customizada',
+      '4 Novas Skins 3D Procedurais (Ouro Anubis 24K, Cobalto Cyber, Víbora, Geada)',
+      'Arsenal completo de 18 Armas + 7 Arenas 5v5 sincronizados via CDN',
+    ],
+    criticalAssets: [
+      '/models/character.glb',
+      '/models/weapons/m4a1_sopmod.glb',
+      '/models/weapons/ak47_rifle.glb',
+      '/models/weapons/p50_pistol.glb',
+    ],
+  };
+
+  app.get('/api/ota/manifest', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.json(OTA_MANIFEST);
+  });
+
+  const SERVER_DIAMOND_PACKS: Record<
+    string,
+    { id: string; sku: string; diamonds: number; bonusDiamonds: number; priceBrlCents: number; name: string }
+  > = {
+    pack_400: {
+      id: 'pack_400',
+      sku: 'kinetic_diamonds_400',
+      diamonds: 400,
+      bonusDiamonds: 0,
+      priceBrlCents: 990,
+      name: '400 Diamantes · KINETIC FPS',
+    },
+    pack_800: {
+      id: 'pack_800',
+      sku: 'kinetic_diamonds_800',
+      diamonds: 800,
+      bonusDiamonds: 80,
+      priceBrlCents: 1990,
+      name: '880 Diamantes (Passe VIP) · KINETIC FPS',
+    },
+    pack_1800: {
+      id: 'pack_1800',
+      sku: 'kinetic_diamonds_1800',
+      diamonds: 1800,
+      bonusDiamonds: 250,
+      priceBrlCents: 3990,
+      name: '2.050 Diamantes · KINETIC FPS',
+    },
+    pack_4000: {
+      id: 'pack_4000',
+      sku: 'kinetic_diamonds_4000',
+      diamonds: 4000,
+      bonusDiamonds: 800,
+      priceBrlCents: 7990,
+      name: '4.800 Diamantes · KINETIC FPS',
+    },
+  };
+
+  app.get('/api/billing/packs', (_req, res) => {
+    res.json({
+      currency: 'BRL',
+      stripeConfigured: Boolean(process.env.STRIPE_SECRET_KEY),
+      packs: Object.values(SERVER_DIAMOND_PACKS),
+    });
+  });
+
+  app.post('/api/billing/checkout', async (req, res) => {
+    const body = req.body as { uid?: string; packId?: string; platform?: string } | undefined;
+    const uid = typeof body?.uid === 'string' ? body.uid.trim() : '';
+    const packId = typeof body?.packId === 'string' ? body.packId.trim() : '';
+    const pack = SERVER_DIAMOND_PACKS[packId];
+
+    if (!uid || !/^[a-zA-Z0-9_-]{6,128}$/.test(uid)) {
+      res.status(400).json({ ok: false, error: 'Conta Google autenticada obrigatória para comprar Diamantes.' });
+      return;
+    }
+    if (!pack) {
+      res.status(400).json({ ok: false, error: 'Pacote de Diamantes inválido.' });
+      return;
+    }
+
+    const stripeKey = process.env.STRIPE_SECRET_KEY?.trim();
+    if (!stripeKey) {
+      res.status(503).json({
+        ok: false,
+        configured: false,
+        sku: pack.sku,
+        error:
+          'Gateway de pagamento real (Stripe Web / Google Play Billing Android) pronto para conexão. Configure STRIPE_SECRET_KEY no servidor ou publique os SKUs no Google Play Console para liberar compras em R$.',
+      });
+      return;
+    }
+
+    try {
+      const origin =
+        process.env.PUBLIC_APP_URL?.trim() ||
+        `${req.protocol}://${req.get('host') || 'localhost:3000'}`;
+      const totalDiamonds = pack.diamonds + pack.bonusDiamonds;
+      const params = new URLSearchParams();
+      params.set('mode', 'payment');
+      params.set('client_reference_id', uid);
+      params.set('success_url', `${origin}/?billing=success&pack=${pack.id}`);
+      params.set('cancel_url', `${origin}/?billing=cancel`);
+      params.set('line_items[0][quantity]', '1');
+      params.set('line_items[0][price_data][currency]', 'brl');
+      params.set('line_items[0][price_data][unit_amount]', String(pack.priceBrlCents));
+      params.set('line_items[0][price_data][product_data][name]', pack.name);
+      params.set('metadata[uid]', uid);
+      params.set('metadata[packId]', pack.id);
+      params.set('metadata[sku]', pack.sku);
+      params.set('metadata[totalDiamonds]', String(totalDiamonds));
+
+      const stripeRes = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${stripeKey}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: params.toString(),
+      });
+      const data = (await stripeRes.json()) as { url?: string; error?: { message?: string } };
+      if (!stripeRes.ok || !data.url) {
+        res.status(502).json({
+          ok: false,
+          error: data.error?.message || 'Erro ao criar sessão de pagamento.',
+        });
+        return;
+      }
+      res.json({ ok: true, checkoutUrl: data.url, sku: pack.sku });
+    } catch {
+      res.status(500).json({ ok: false, error: 'Falha de comunicação com o gateway de pagamento.' });
+    }
+  });
+
   const telemetryBuffer: Array<Record<string, unknown>> = [];
   const MAX_TELEMETRY_BUFFER = 200;
 
@@ -188,6 +328,7 @@ async function startServer(): Promise<void> {
 
   const httpServer = http.createServer(app);
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
+  const scorestreakCooldownByUid = new Map<string, number>();
 
   wss.on('connection', (ws) => {
     const clientMeta: WsClientMeta = {
@@ -417,6 +558,7 @@ async function startServer(): Promise<void> {
           (msg.type === 'PLAYER_STATE' ||
             msg.type === 'COMBAT_HIT' ||
             msg.type === 'GRENADE_THROW' ||
+            msg.type === 'SCORESTREAK_EVENT' ||
             msg.type === 'BOMB_EVENT' ||
             msg.type === 'CLASS_SUPPORT' ||
             msg.type === 'ROUND_EVENT' ||
@@ -478,6 +620,67 @@ async function startServer(): Promise<void> {
             }
           }
 
+          if (msg.type === 'SCORESTREAK_EVENT') {
+            const rawEvt = (msg.event || {}) as Record<string, unknown>;
+            const streak =
+              rawEvt.streak === 'ADVANCED_UAV'
+                ? 'ADVANCED_UAV'
+                : rawEvt.streak === 'UAV'
+                  ? 'UAV'
+                  : null;
+            if (!streak || !clientMeta.uid) return;
+            const nowMs = Date.now();
+            const lastStreakAt = scorestreakCooldownByUid.get(clientMeta.uid) || 0;
+            if (nowMs - lastStreakAt < 8000) return;
+            scorestreakCooldownByUid.set(clientMeta.uid, nowMs);
+            if (scorestreakCooldownByUid.size > 500) {
+              const firstKey = scorestreakCooldownByUid.keys().next().value;
+              if (firstKey) scorestreakCooldownByUid.delete(firstKey);
+            }
+
+            const meta = roomMetaMap.get(clientMeta.roomId);
+            const member = meta?.memberPlayers.get(clientMeta.uid);
+            const serverTeam =
+              member?.team === 'BLACKTHORN'
+                ? 'BLACKTHORN'
+                : member?.team === 'VANGUARD'
+                  ? 'VANGUARD'
+                  : rawEvt.senderTeam === 'BLACKTHORN'
+                    ? 'BLACKTHORN'
+                    : 'VANGUARD';
+            const serverCallsign = String(
+              member?.callsign || rawEvt.senderCallsign || clientMeta.callsign || 'OPERADOR'
+            ).slice(0, 24);
+            const durationSec = Math.max(
+              10,
+              Math.min(24, Math.round(Number(rawEvt.durationSec) || (streak === 'ADVANCED_UAV' ? 22 : 18)))
+            );
+            const eventId = String(
+              rawEvt.eventId || `stk_${clientMeta.uid}_${nowMs}`
+            ).slice(0, 64);
+
+            broadcastToRoom(
+              clientMeta.roomId,
+              {
+                type: 'SCORESTREAK_EVENT',
+                roomId: clientMeta.roomId,
+                senderUid: clientMeta.uid,
+                event: {
+                  eventId,
+                  senderUid: clientMeta.uid,
+                  senderCallsign: serverCallsign,
+                  senderTeam: serverTeam,
+                  streak,
+                  durationSec,
+                  ts: nowMs,
+                },
+                ts: nowMs,
+              },
+              clientMeta.uid
+            );
+            return;
+          }
+
           if (msg.type === 'COMBAT_HIT') {
             const verdict = validateCombatHit(
               clientMeta.roomId,
@@ -512,6 +715,102 @@ async function startServer(): Promise<void> {
               ? clientMeta.uid
               : null
           );
+          return;
+        }
+
+        // 4. Rádio Tático WebRTC de Equipe (VOICE_SIGNAL / VOICE_STATE) — Isolado por Equipe (VANGUARD / BLACKTHORN)
+        if (
+          clientMeta.roomId &&
+          clientMeta.uid &&
+          (msg.type === 'VOICE_SIGNAL' || msg.type === 'VOICE_STATE')
+        ) {
+          const roomMembers = roomsMap.get(clientMeta.roomId);
+          const meta = roomMetaMap.get(clientMeta.roomId);
+          if (!roomMembers) return;
+
+          const senderMember = meta?.memberPlayers.get(clientMeta.uid);
+          const senderTeam =
+            senderMember?.team === 'BLACKTHORN'
+              ? 'BLACKTHORN'
+              : senderMember?.team === 'VANGUARD'
+                ? 'VANGUARD'
+                : msg.team === 'BLACKTHORN'
+                  ? 'BLACKTHORN'
+                  : 'VANGUARD';
+          const senderCallsign = String(
+            senderMember?.callsign || msg.callsign || clientMeta.callsign || 'OPERADOR'
+          ).slice(0, 24);
+          const senderClassId = String(
+            senderMember?.classId || msg.classId || 'FUZILEIRO'
+          ).slice(0, 24);
+
+          if (msg.type === 'VOICE_SIGNAL') {
+            const targetUid =
+              typeof msg.targetUid === 'string' ? msg.targetUid.slice(0, 128) : '';
+            if (!targetUid || targetUid === clientMeta.uid) return;
+            const targetMember = meta?.memberPlayers.get(targetUid);
+            // Bloqueia escuta cruzada entre equipes adversárias no servidor
+            if (
+              targetMember?.team &&
+              senderMember?.team &&
+              targetMember.team !== senderMember.team
+            ) {
+              return;
+            }
+            const packet = JSON.stringify({
+              type: 'VOICE_SIGNAL',
+              roomId: clientMeta.roomId,
+              senderUid: clientMeta.uid,
+              senderCallsign,
+              senderTeam,
+              senderClassId,
+              targetUid,
+              signalType: msg.signalType,
+              sdp: msg.sdp,
+              candidate: msg.candidate,
+              ts: Date.now(),
+            });
+            roomMembers.forEach((peer) => {
+              if (peer.uid === targetUid && peer.ws.readyState === 1) {
+                peer.ws.send(packet);
+              }
+            });
+            return;
+          }
+
+          if (msg.type === 'VOICE_STATE') {
+            const packet = JSON.stringify({
+              type: 'VOICE_STATE',
+              roomId: clientMeta.roomId,
+              senderUid: clientMeta.uid,
+              senderCallsign,
+              senderTeam,
+              senderClassId,
+              micMode: msg.micMode === 'OPEN' || msg.micMode === 'PTT' ? msg.micMode : 'MUTED',
+              isSpeaking: Boolean(msg.isSpeaking),
+              audioLevel: Math.max(0, Math.min(1, Number(msg.audioLevel) || 0)),
+              quickCallout:
+                typeof msg.quickCallout === 'string'
+                  ? msg.quickCallout.slice(0, 64)
+                  : undefined,
+              ts: Date.now(),
+            });
+            roomMembers.forEach((peer) => {
+              if (!peer.uid || peer.uid === clientMeta.uid) return;
+              const peerMember = meta?.memberPlayers.get(peer.uid);
+              if (
+                peerMember?.team &&
+                senderMember?.team &&
+                peerMember.team !== senderMember.team
+              ) {
+                return;
+              }
+              if (peer.ws.readyState === 1) {
+                peer.ws.send(packet);
+              }
+            });
+            return;
+          }
         }
       } catch {
         // Ignore malformed packets

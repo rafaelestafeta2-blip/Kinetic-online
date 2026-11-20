@@ -170,7 +170,12 @@ export function setBotEnemyOutline(
 }
 
 export function isSniperWeaponId(weaponId?: WeaponId | null): boolean {
-  return weaponId === 'SNIPER_BOLT' || weaponId === 'SNIPER_TACTICAL';
+  return (
+    weaponId === 'SNIPER_BOLT' ||
+    weaponId === 'SNIPER_TACTICAL' ||
+    weaponId === 'SNIPER_AWP' ||
+    weaponId === 'SNIPER_HEAVY'
+  );
 }
 
 export function isEngineerWeaponId(weaponId?: WeaponId | null): boolean {
@@ -1020,8 +1025,14 @@ export function syncBotCharacterAppearance(
 }
 
 function magCapacityForBotWeapon(weaponId?: WeaponId | null): number {
-  if (weaponId === 'SNIPER_BOLT' || weaponId === 'SNIPER_TACTICAL') return 5;
-  if (weaponId === 'P50_PISTOL') return 12;
+  if (
+    weaponId === 'SNIPER_BOLT' ||
+    weaponId === 'SNIPER_TACTICAL' ||
+    weaponId === 'SNIPER_AWP' ||
+    weaponId === 'SNIPER_HEAVY'
+  )
+    return 5;
+  if (weaponId === 'P50_PISTOL' || weaponId === 'M1911_PISTOL') return 12;
   if (weaponId === 'SMG_45' || weaponId === 'SMG_MP5') return 30;
   if (weaponId === 'L49_LMG') return 60;
   return 30;
@@ -1362,13 +1373,24 @@ export function updateAllBotCharacters(
     }
 
     const distSq = t.root.position.distanceToSquared(playerPos);
-    // LOD: near = every frame, mid = ~30Hz, far = ~20Hz.
+    // Aggressive mobile-friendly skeletal LOD:
+    // - Urgent combat events (hit react / firing) or < 20m -> 60Hz
+    // - 20m..35m -> 30Hz (0.033s)
+    // - 35m..55m -> 18Hz (0.055s)
+    // - > 55m -> 12Hz (0.083s)
+    const urgentAnim = ctrl.hitReactTimer > 0 || ctrl.fireAnimTimer > 0;
     let steppedMixer = false;
-    if (distSq < 900) {
-      ctrl.mixer.update(dt);
+    if (urgentAnim || distSq < 400) {
+      ctrl.mixer.update(dt + ctrl.lodAccumDt);
+      ctrl.lodAccumDt = 0;
       steppedMixer = true;
     } else {
-      const interval = distSq < 2500 ? 0.033 : 0.05;
+      const interval =
+        distSq < 1225
+          ? 0.033
+          : distSq < 3025
+            ? 0.055
+            : 0.083;
       ctrl.lodAccumDt += dt;
       if (ctrl.lodAccumDt >= interval) {
         ctrl.mixer.update(ctrl.lodAccumDt);

@@ -14,6 +14,7 @@ export type GameScreenState =
 
 export type WeaponId =
   | 'P50_PISTOL'
+  | 'M1911_PISTOL'
   | 'SMG_45'
   | 'SMG_MP5'
   | 'SHOTGUN_12'
@@ -26,10 +27,14 @@ export type WeaponId =
   | 'L49_LMG'
   | 'SNIPER_BOLT'
   | 'SNIPER_TACTICAL'
+  | 'SNIPER_AWP'
+  | 'SNIPER_HEAVY'
+  | 'RPG7_LAUNCHER'
   | 'KNIFE_TACTICAL';
 export type OpticType = 'iron' | 'red_dot' | 'kolimator' | 'holo' | 'lpvo';
 export type FireMode = 'SEMI' | 'BURST' | 'AUTO';
 export type GrenadeType = 'FRAG' | 'SMOKE';
+export type TacticalScorestreakId = 'NONE' | 'UAV' | 'ARMOR_PACK' | 'ADVANCED_UAV';
 export type ReloadPhase =
   | 'IDLE'
   | 'MAG_OUT'
@@ -267,6 +272,13 @@ export interface HudState {
   killConfirmLabel: string;
   damageFlashAlpha: number;
   killfeed: KillfeedEntry[];
+  // Tactical Scorestreaks (Non-lethal support only: UAV, Armor Pack, Advanced UAV + EMP)
+  killStreak: number;
+  readyStreak: TacticalScorestreakId;
+  activeUavSec: number;
+  activeEmpSec: number;
+  empJammedSec: number;
+  streakBannerText: string | null;
 
   // Warface Rank Progression System
   playerXp: number;

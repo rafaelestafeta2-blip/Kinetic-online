@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { ReloadPhase, WeaponId } from '../types/game';
+import { OpticType, ReloadPhase, WeaponId } from '../types/game';
 import { resolveAssetUrl } from '../utils/assetUrl';
 import { getEquippedWeaponSkinId } from '../progression/loadoutSystem';
 import { applyWeaponSkinToObject3D } from './weaponSkinMaterial';
@@ -29,6 +29,28 @@ export interface KinemationWeaponAttachSpec {
   hasBoltActionFireClip?: boolean;
   /** Escopeta / arma com reload único em vez de reiniciar por cartucho (Drake-12). */
   reloadUsesFullClipOnce?: boolean;
+  /** Substrings de nós/meshes para ocultar (ex.: braços antigos embutidos no GLB). */
+  hiddenNodeSubstrings?: string[];
+  /** Substrings de materiais para ocultar (ex.: MI_Manny_01/02 na SCAR-L). */
+  hiddenMatSubstrings?: string[];
+  /** Nomes exatos de nós de mira embutida que devem sumir ao equipar mira externa 3D. */
+  builtInOpticNodeNames?: string[];
+  /** Clip específico de pose estática da arma quando diferente de 'Pose'. */
+  weaponPoseClipName?: string;
+  /** Tempo em segundos para avaliar o clip estático da arma. */
+  weaponPoseTime?: number;
+  /** Congela a pose interna da arma para permanecer acoplada às mãos Kinemation durante animações. */
+  weaponFreezeIdlePose?: boolean;
+  /** Alinhamento local direto em modelScene no espaço Kinemation (+X dir, +Y cima, +Z cano). */
+  modelAlign?: {
+    scale: number;
+    pos: [number, number, number];
+    rot?: [number, number, number];
+  };
+  /** Acopla a arma diretamente ao osso `hand_r` (ex.: Faca Tática usando Grenade_Pose). */
+  attachToHandR?: boolean;
+  /** Arma branca com golpe diagonal rápido em triggerFire(). */
+  isMeleeKnife?: boolean;
 }
 
 /**
@@ -49,6 +71,28 @@ export const KINEMATION_WEAPON_REGISTRY: Partial<
     railMountPos: [0, 0.02, -0.01],
     railMountScale: 0.68,
   },
+  M1911_PISTOL: {
+    weaponId: 'M1911_PISTOL',
+    modelUrl: '/models/kinemation/weapons/m1911.glb',
+    clipPrefix: 'M1911',
+    muzzlePos: [0, -0.004, -0.132],
+    ejectionPos: [0.016, 0.01, -0.02],
+    laserPos: [0, -0.014, -0.1],
+    railMountPos: [0, 0.015, 0.0],
+    railMountScale: 0.65,
+  },
+  SMG_45: {
+    weaponId: 'SMG_45',
+    modelUrl: '/models/weapons/v18_engineer_smg.glb',
+    clipPrefix: 'MPS5',
+    modelAlign: { scale: 0.92, pos: [0.0, 0.012, 0.04] },
+    weaponFreezeIdlePose: true,
+    muzzlePos: [0, 0.015, -0.52],
+    ejectionPos: [0.022, 0.018, -0.05],
+    laserPos: [0.026, 0.01, -0.2],
+    railMountPos: [0, 0.072, -0.02],
+    railMountScale: 0.78,
+  },
   SMG_MP5: {
     weaponId: 'SMG_MP5',
     modelUrl: '/models/kinemation/weapons/mps5.glb',
@@ -68,6 +112,57 @@ export const KINEMATION_WEAPON_REGISTRY: Partial<
     laserPos: [0.026, -0.008, -0.26],
     railMountPos: [0, 0.016, 0.01],
     railMountScale: 0.88,
+  },
+  CARBINE_AR: {
+    weaponId: 'CARBINE_AR',
+    modelUrl: '/models/fps_animated_carbine.glb',
+    clipPrefix: 'MX16A4',
+    modelAlign: { scale: 0.46, pos: [0.006, -0.135, -0.055] },
+    weaponPoseClipName: 'allanims',
+    weaponPoseTime: 0.1,
+    weaponFreezeIdlePose: true,
+    hiddenNodeSubstrings: ['armmesh'],
+    hiddenMatSubstrings: ['arms'],
+    builtInOpticNodeNames: ['scope_carbine_0', 'lens_lens_0'],
+    muzzlePos: [0, 0.0, -0.57],
+    ejectionPos: [0.024, 0.004, -0.04],
+    laserPos: [0.028, 0.002, -0.28],
+    railMountPos: [0, 0.04, -0.01],
+    railMountScale: 0.88,
+  },
+  S_MILITARY: {
+    weaponId: 'S_MILITARY',
+    modelUrl: '/models/weapons/s_military_ar.glb',
+    clipPrefix: 'MX16A4',
+    scale: 0.01,
+    attachOffset: [0.113, 0.455, -1.468],
+    weaponPoseClipName: 'Idle',
+    weaponPoseTime: 0.05,
+    weaponFreezeIdlePose: true,
+    hiddenNodeSubstrings: ['manny'],
+    hiddenMatSubstrings: ['mi_manny_01', 'mi_manny_02'],
+    builtInOpticNodeNames: ['Holoshort001', 'Scr010', 'Scr003'],
+    muzzlePos: [-0.004, -0.01, -0.615],
+    ejectionPos: [0.024, -0.004, -0.05],
+    laserPos: [-0.042, -0.005, -0.32],
+    railMountPos: [-0.002, 0.024, -0.02],
+    railMountScale: 0.9,
+  },
+  AK47_RIFLE: {
+    weaponId: 'AK47_RIFLE',
+    modelUrl: '/models/fps_ak47.glb',
+    clipPrefix: 'AKX',
+    modelAlign: { scale: 1.03, pos: [0.134, -1.521, -0.35] },
+    weaponPoseClipName: 'RIG_UE5_Comando_AK_Idle',
+    weaponPoseTime: 0.05,
+    weaponFreezeIdlePose: true,
+    hiddenNodeSubstrings: ['comando'],
+    hiddenMatSubstrings: ['m_gloves', 'm_shirt'],
+    muzzlePos: [0, 0.0, -0.52],
+    ejectionPos: [0.024, 0.01, -0.04],
+    laserPos: [0.026, 0.008, -0.24],
+    railMountPos: [0, 0.042, -0.02],
+    railMountScale: 0.86,
   },
   AK12_RIFLE: {
     weaponId: 'AK12_RIFLE',
@@ -90,6 +185,45 @@ export const KINEMATION_WEAPON_REGISTRY: Partial<
     railMountScale: 0.82,
     reloadUsesFullClipOnce: true,
   },
+  SHOTGUN_SPAS: {
+    weaponId: 'SHOTGUN_SPAS',
+    modelUrl: '/models/weapons/automatic_shotgun.glb',
+    clipPrefix: 'Drake12',
+    modelAlign: { scale: 0.0115, pos: [0.108, -1.764, -0.376] },
+    weaponPoseClipName: 'Idle',
+    weaponPoseTime: 0.05,
+    weaponFreezeIdlePose: true,
+    hiddenNodeSubstrings: ['hands_04'],
+    hiddenMatSubstrings: ['hands_04'],
+    builtInOpticNodeNames: [
+      'Automatic_Shotgun_Sight_01',
+      'Automatic_Shotgun_Sight_02',
+      'Automatic_Shotgun_Sight_03',
+      'Automatic_Shotgun_Sight_Glasses',
+    ],
+    muzzlePos: [0, 0.01, -0.52],
+    ejectionPos: [0.022, 0.015, -0.02],
+    laserPos: [0.026, -0.01, -0.3],
+    railMountPos: [0, 0.072, -0.04],
+    railMountScale: 0.84,
+    reloadUsesFullClipOnce: true,
+  },
+  L49_LMG: {
+    weaponId: 'L49_LMG',
+    modelUrl: '/models/lmg_animated.glb',
+    clipPrefix: 'MX16A4',
+    modelAlign: { scale: 0.86, pos: [-0.001, -0.075, -0.026] },
+    weaponPoseClipName: 'allanims',
+    weaponPoseTime: 0.1,
+    weaponFreezeIdlePose: true,
+    hiddenNodeSubstrings: ['armmesh'],
+    hiddenMatSubstrings: ['arms'],
+    muzzlePos: [0, 0.015, -0.74],
+    ejectionPos: [0.028, 0.012, -0.06],
+    laserPos: [0.032, 0.006, -0.32],
+    railMountPos: [0, 0.068, -0.03],
+    railMountScale: 0.88,
+  },
   SNIPER_BOLT: {
     weaponId: 'SNIPER_BOLT',
     modelUrl: '/models/kinemation/weapons/kar98k.glb',
@@ -110,6 +244,75 @@ export const KINEMATION_WEAPON_REGISTRY: Partial<
     laserPos: [0.026, -0.002, -0.34],
     railMountPos: [-0.0016, 0.021, -0.04],
     railMountScale: 0.88,
+  },
+  SNIPER_AWP: {
+    weaponId: 'SNIPER_AWP',
+    modelUrl: '/models/sniper_animated.glb',
+    clipPrefix: 'Kar98K',
+    modelAlign: { scale: 0.008, pos: [0.004, -0.077, 0.094] },
+    weaponPoseClipName: 'allanims',
+    weaponPoseTime: 0.1,
+    weaponFreezeIdlePose: true,
+    hiddenNodeSubstrings: ['arms_arms'],
+    hiddenMatSubstrings: ['arms'],
+    muzzlePos: [0, 0.01, -0.88],
+    ejectionPos: [0.024, 0.014, -0.04],
+    laserPos: [0.028, -0.006, -0.42],
+    railMountPos: [0, 0.06, -0.04],
+    railMountScale: 0.9,
+    hasBoltActionFireClip: true,
+  },
+  SNIPER_HEAVY: {
+    weaponId: 'SNIPER_HEAVY',
+    modelUrl: '/models/sniper_fps_animation.glb',
+    clipPrefix: 'MK14',
+    modelAlign: {
+      scale: 0.487,
+      pos: [0.206, 0.31, 0.004],
+      rot: [0, Math.PI / 2, 0],
+    },
+    weaponPoseClipName: 'Scene',
+    weaponPoseTime: 0.1,
+    weaponFreezeIdlePose: true,
+    hiddenNodeSubstrings: ['ch22_body'],
+    hiddenMatSubstrings: ['textura'],
+    muzzlePos: [0, 0.015, -0.75],
+    ejectionPos: [0.026, 0.012, -0.04],
+    laserPos: [0.03, -0.004, -0.38],
+    railMountPos: [0, 0.07, -0.04],
+    railMountScale: 0.9,
+  },
+  RPG7_LAUNCHER: {
+    weaponId: 'RPG7_LAUNCHER',
+    modelUrl: '/models/kinemation/weapons/rpg7.glb',
+    clipPrefix: 'RPG7',
+    muzzlePos: [0, 0.01, -0.849],
+    ejectionPos: [0, 0.01, 0.794],
+    laserPos: [0.03, 0.04, -0.25],
+    railMountPos: [0.008, 0.095, -0.01],
+    railMountScale: 0.8,
+  },
+  KNIFE_TACTICAL: {
+    weaponId: 'KNIFE_TACTICAL',
+    modelUrl: '/models/knife_animated.glb',
+    clipPrefix: 'Grenade',
+    attachToHandR: true,
+    isMeleeKnife: true,
+    modelAlign: {
+      scale: 0.0092,
+      pos: [-0.095, -0.025, 0.015],
+      rot: [Math.PI * 0.42, 0.12, -Math.PI * 0.48],
+    },
+    weaponPoseClipName: 'anims',
+    weaponPoseTime: 0.05,
+    weaponFreezeIdlePose: true,
+    hiddenNodeSubstrings: ['armmesh'],
+    hiddenMatSubstrings: ['arms'],
+    muzzlePos: [0, 0, -0.24],
+    ejectionPos: [0, 0, -0.1],
+    laserPos: [0, 0, -0.15],
+    railMountPos: [0, 0, 0],
+    railMountScale: 1.0,
   },
 };
 
@@ -195,6 +398,7 @@ interface LoadedWeaponInstance {
   poseArmsCenterOffset: THREE.Vector3;
   karClipMesh: THREE.Object3D | null;
   karCartridgeBone: THREE.Object3D | null;
+  builtInOpticNodes: THREE.Object3D[];
   loaded: boolean;
   loading: boolean;
   lastUsedAt: number;
@@ -203,6 +407,7 @@ interface LoadedWeaponInstance {
 export interface KinemationArmsRigController {
   rigRoot: THREE.Group;
   setActiveWeapon: (weaponId: WeaponId) => void;
+  setOpticType: (optic: OpticType) => void;
   prewarmWeapons: (weaponIds: WeaponId[]) => void;
   pruneUnusedWeapons: (keepIds: ReadonlySet<WeaponId>) => void;
   applySkin: (weaponId: WeaponId, skinId: string) => void;
@@ -221,7 +426,12 @@ export interface KinemationArmsRigController {
   dispose: () => void;
 }
 
-function configureKinemationMaterials(
+/**
+ * Calibra materiais PBR dos braços Kinemation (`arms_base.glb`) e das armas
+ * (tanto 1P quanto 3P / miniaturas / inspeção 3D), eliminando reflexo branco
+ * metálico nos braços e dando acabamento tático real a armas sem textura embutida.
+ */
+export function calibrateKinemationMaterialScene(
   sceneRoot: THREE.Object3D,
   isArms: boolean
 ): void {
@@ -236,6 +446,8 @@ function configureKinemationMaterials(
       const handleMat = (mat: THREE.Material) => {
         const std = mat as THREE.MeshStandardMaterial;
         if (!std) return;
+        std.vertexColors = false;
+
         if (std.map) {
           std.map.colorSpace = THREE.SRGBColorSpace;
           std.map.needsUpdate = true;
@@ -244,28 +456,176 @@ function configureKinemationMaterials(
           std.emissiveMap.colorSpace = THREE.SRGBColorSpace;
           std.emissiveMap.needsUpdate = true;
         }
+
         const mName = (std.name || '').toLowerCase();
+
+        if (isArms) {
+          // UE4 arm textures pack non-glTF metalness/roughness channels that turn skin/gloves chrome white under PMREM.
+          std.metalnessMap = null;
+          std.metalness = 0.04;
+          std.roughness = mName.includes('arm')
+            ? 0.72
+            : mName.includes('glove')
+              ? 0.68
+              : 0.84;
+          std.envMapIntensity = 0.35;
+          if (std.color && std.map) {
+            std.color.setHex(0xffffff);
+          }
+          std.needsUpdate = true;
+          return;
+        }
+
+        // SCAR-L built-in holographic reticle & transparent lens
+        if (mName.includes('m_holoshort_opacity')) {
+          std.transparent = true;
+          std.opacity = 0.92;
+          std.depthWrite = false;
+          std.blending = THREE.AdditiveBlending;
+          if (std.color) std.color.setHex(0xff3b30);
+          if (std.emissive) {
+            std.emissive.setHex(0xff2a20);
+            std.emissiveIntensity = 2.0;
+          }
+          mesh.renderOrder = 10;
+          std.needsUpdate = true;
+          return;
+        }
+        if (
+          mName === 'm_transparent' ||
+          mName === 'lens' ||
+          mName === 'glasses'
+        ) {
+          std.transparent = true;
+          std.opacity = 0.24;
+          std.depthWrite = false;
+          std.roughness = 0.08;
+          std.metalness = 0.1;
+          mesh.renderOrder = 8;
+          std.needsUpdate = true;
+          return;
+        }
+        if (mName.includes('scopereticle')) {
+          std.transparent = true;
+          std.opacity = 0.9;
+          std.depthWrite = false;
+          if (std.emissive) {
+            std.emissive.setHex(0xef4444);
+            std.emissiveIntensity = 1.4;
+          }
+          mesh.renderOrder = 10;
+          std.needsUpdate = true;
+          return;
+        }
+
         const isTranslucentMag =
           mName.includes('translucent') ||
           mName.includes('translusent') ||
-          (std.transparent && std.opacity < 0.85);
+          (std.transparent && std.opacity < 0.85 && !std.map);
 
-        if (isArms) {
-          if (std.color) std.color.setHex(0xffffff);
-          std.vertexColors = false;
-          std.envMapIntensity = 0.9;
-        } else if (isTranslucentMag) {
+        if (isTranslucentMag) {
+          if (std.color) std.color.setHex(0x242933);
           std.transparent = true;
-          std.opacity = Math.min(std.opacity || 0.38, 0.42);
+          std.opacity = 0.38;
           std.depthWrite = false;
-          std.roughness = 0.12;
+          std.roughness = 0.14;
+          std.metalness = 0.05;
+          std.envMapIntensity = 0.65;
           mesh.renderOrder = 8;
-        } else {
-          std.envMapIntensity = 1.18;
-          if (!std.map && std.roughness > 0.85 && mName.includes('finish')) {
-            std.roughness = 0.42;
-          }
+          std.needsUpdate = true;
+          return;
         }
+
+        if (std.map) {
+          if (std.color) std.color.setHex(0xffffff);
+          std.envMapIntensity = 0.75;
+          std.needsUpdate = true;
+          return;
+        }
+
+        // Untextured Kinemation firearms (M1911, MPS5, MX16A4, AK-200, MK14) — tactile dark gunmetal/polymer PBR
+        let hex = 0x22262e;
+        let met = 0.78;
+        let rgh = 0.34;
+
+        if (mName.includes('polymer_grip') || mName.includes('polymer_furniture')) {
+          hex = 0x14171c;
+          met = 0.06;
+          rgh = 0.78;
+        } else if (
+          mName.includes('polymer_mag') ||
+          mName === 'mag' ||
+          mName.startsWith('mag_')
+        ) {
+          hex = 0x2c302b;
+          met = 0.12;
+          rgh = 0.68;
+        } else if (mName.includes('polymer')) {
+          hex = 0x181b21;
+          met = 0.08;
+          rgh = 0.72;
+        } else if (mName.includes('finish_bright') || mName.includes('chromed')) {
+          hex = 0x6b7480;
+          met = 0.88;
+          rgh = 0.24;
+        } else if (
+          mName.includes('finish_secondary') ||
+          mName.includes('finish_chassis') ||
+          mName.includes('finish_alu')
+        ) {
+          hex = 0x272c35;
+          met = 0.76;
+          rgh = 0.34;
+        } else if (mName.includes('finish_dark')) {
+          hex = 0x16191e;
+          met = 0.78;
+          rgh = 0.34;
+        } else if (
+          mName.includes('finish2') ||
+          mName.includes('m_finish_milled') ||
+          mName.includes('fbx default material')
+        ) {
+          hex = 0x2a303a;
+          met = 0.8;
+          rgh = 0.32;
+        } else if (
+          mName.includes('finish') ||
+          mName.includes('m_finish') ||
+          mName.includes('bolt')
+        ) {
+          hex = 0x1d2128;
+          met = 0.82;
+          rgh = 0.3;
+        } else if (mName.includes('wood')) {
+          hex = 0x4b2814;
+          met = 0.04;
+          rgh = 0.62;
+        } else if (mName.includes('jacket') || mName.includes('bullet')) {
+          hex = 0xb8632e;
+          met = 0.88;
+          rgh = 0.26;
+        } else if (mName.includes('casing') || mName.includes('brass')) {
+          hex = 0xc89b3c;
+          met = 0.92;
+          rgh = 0.22;
+        } else if (mName.includes('primer')) {
+          hex = 0x767d86;
+          met = 0.86;
+          rgh = 0.26;
+        } else if (mName.includes('spring')) {
+          hex = 0x464c56;
+          met = 0.85;
+          rgh = 0.3;
+        } else if (mName.includes('follower_indicator')) {
+          hex = 0xc2410c;
+          met = 0.1;
+          rgh = 0.5;
+        }
+
+        if (std.color) std.color.setHex(hex);
+        std.metalness = met;
+        std.roughness = rgh;
+        std.envMapIntensity = 0.72;
         std.needsUpdate = true;
       };
 
@@ -309,6 +669,7 @@ export function createKinemationArmsRig(params: {
   let disposed = false;
   let lruClock = 0;
   let activeWeapon: WeaponId | null = null;
+  let currentOpticType: OpticType = 'iron';
   let keptWeapons = new Set<WeaponId>();
   const pendingSkinMap: Partial<Record<WeaponId, string>> = {};
 
@@ -318,15 +679,26 @@ export function createKinemationArmsRig(params: {
   let armsScene: THREE.Group | null = null;
   let armsMixer: THREE.AnimationMixer | null = null;
   let ikHandGunBone: THREE.Object3D | null = null;
+  let handRBone: THREE.Object3D | null = null;
   const armsActions: Record<string, THREE.AnimationAction> = {};
   let currentArmsBaseAction: THREE.AnimationAction | null = null;
   let currentArmsOneShot: THREE.AnimationAction | null = null;
   let currentWeaponOneShot: THREE.AnimationAction | null = null;
   let equipLiftTimer = 0;
   const EQUIP_LIFT_DUR = 0.24;
+  let meleeSlashTimer = 0;
+  const MELEE_SLASH_DUR = 0.42;
   let reloadLockActive = false;
 
   const weaponInstances = new Map<WeaponId, LoadedWeaponInstance>();
+
+  const applyBuiltInOpticVisibility = (inst: LoadedWeaponInstance) => {
+    if (inst.builtInOpticNodes.length === 0) return;
+    const showBuiltIn = currentOpticType === 'iron';
+    for (let i = 0; i < inst.builtInOpticNodes.length; i++) {
+      inst.builtInOpticNodes[i].visible = showBuiltIn;
+    }
+  };
 
   const getOrCreateWeaponInstance = (
     weaponId: WeaponId
@@ -366,6 +738,7 @@ export function createKinemationArmsRig(params: {
       poseArmsCenterOffset: new THREE.Vector3(),
       karClipMesh: null,
       karCartridgeBone: null,
+      builtInOpticNodes: [],
       loaded: false,
       loading: false,
       lastUsedAt: 0,
@@ -392,9 +765,10 @@ export function createKinemationArmsRig(params: {
     currentWeaponOneShot = null;
   };
 
-  const syncWeaponMountToIkBone = () => {
-    if (!ikHandGunBone || !armsLoaded) return;
-    computeMatrixInAncestorSpace(ikHandGunBone, rigRoot, _relMat);
+  const syncWeaponMountToIkBone = (useHandR = false) => {
+    const anchorBone = useHandR && handRBone ? handRBone : ikHandGunBone;
+    if (!anchorBone || !armsLoaded) return;
+    computeMatrixInAncestorSpace(anchorBone, rigRoot, _relMat);
     _relMat.decompose(_tmpPos, _tmpQuat, _tmpScale);
     weaponMount.position.copy(_tmpPos);
     weaponMount.quaternion.copy(_tmpQuat);
@@ -426,32 +800,43 @@ export function createKinemationArmsRig(params: {
       currentArmsBaseAction = poseAct;
     }
 
-    // Coloca a arma na pose de repouso (para Kar98K usamos Fire t=0 se existir, evitando clip solto)
+    // Coloca a arma na pose de repouso (para Kar98K usamos Fire t=0 se existir; para SCAR usamos Idle congelado)
     stopAllWeaponActions(inst);
     if (inst.mixer) {
-      const restClip =
-        inst.spec.clipPrefix === 'Kar98K'
+      const restClip = inst.spec.weaponPoseClipName
+        ? inst.actions[inst.spec.weaponPoseClipName] || inst.actions['Pose']
+        : inst.spec.clipPrefix === 'Kar98K'
           ? inst.actions['Fire'] || inst.actions['Pose']
           : inst.actions['Pose'];
       if (restClip) {
-        restClip.setLoop(THREE.LoopRepeat, Infinity);
-        restClip.clampWhenFinished = false;
+        restClip.setLoop(
+          inst.spec.weaponFreezeIdlePose ? THREE.LoopOnce : THREE.LoopRepeat,
+          inst.spec.weaponFreezeIdlePose ? 1 : Infinity
+        );
+        restClip.clampWhenFinished = Boolean(inst.spec.weaponFreezeIdlePose);
         restClip.weight = 1;
         restClip.reset();
         restClip.play();
-        inst.mixer.setTime(0);
+        inst.mixer.setTime(inst.spec.weaponPoseTime ?? 0);
       }
     }
 
-    // Avalia ik_hand_gun relativo a armsCenterGroup(0,0,0) dentro de rigRoot
-    computeMatrixInAncestorSpace(ikHandGunBone, rigRoot, _relMat);
+    // Avalia o osso âncora (`hand_r` para faca / `ik_hand_gun` para armas de fogo) relativo a rigRoot
+    const anchorBone =
+      inst.spec.attachToHandR && handRBone ? handRBone : ikHandGunBone;
+    computeMatrixInAncestorSpace(anchorBone, rigRoot, _relMat);
     _restIkPos.setFromMatrixPosition(_relMat);
 
-    // Centraliza o receptor/ik_hand_gun da pose inicial em (0, 0, 0) de rigRoot
+    // Centraliza o receptor/mão da pose inicial em (0, 0, 0) de rigRoot
     inst.poseArmsCenterOffset.copy(_restIkPos).negate();
+    if (inst.spec.isMeleeKnife) {
+      inst.poseArmsCenterOffset.x += 0.03;
+      inst.poseArmsCenterOffset.y -= 0.03;
+      inst.poseArmsCenterOffset.z += 0.04;
+    }
     armsCenterGroup.position.copy(inst.poseArmsCenterOffset);
 
-    syncWeaponMountToIkBone();
+    syncWeaponMountToIkBone(Boolean(inst.spec.attachToHandR));
 
     computeMatrixInAncestorSpace(inst.socketGroup, rigRoot, _attachWorldMat);
     inst.restAttachInRigInv = _attachWorldMat.clone().invert();
@@ -463,6 +848,7 @@ export function createKinemationArmsRig(params: {
     if (inst.karCartridgeBone) {
       inst.karCartridgeBone.scale.setScalar(0);
     }
+    applyBuiltInOpticVisibility(inst);
   };
 
   const evictOverflowWeapons = () => {
@@ -500,6 +886,7 @@ export function createKinemationArmsRig(params: {
     inst.restAttachInRigInv = null;
     inst.karClipMesh = null;
     inst.karCartridgeBone = null;
+    inst.builtInOpticNodes = [];
     if (inst.modelScene) {
       inst.socketGroup.remove(inst.modelScene);
       disposeObject3DResources(inst.modelScene, sharedProcTexSet);
@@ -520,8 +907,9 @@ export function createKinemationArmsRig(params: {
           return;
         }
         armsScene = gltf.scene;
-        configureKinemationMaterials(armsScene, true);
+        calibrateKinemationMaterialScene(armsScene, true);
         ikHandGunBone = armsScene.getObjectByName('ik_hand_gun') || null;
+        handRBone = armsScene.getObjectByName('hand_r') || null;
         armsRotateYGroup.add(armsScene);
 
         armsMixer = new THREE.AnimationMixer(armsScene);
@@ -565,9 +953,54 @@ export function createKinemationArmsRig(params: {
         }
 
         const modelScene = gltf.scene;
-        configureKinemationMaterials(modelScene, false);
+        calibrateKinemationMaterialScene(modelScene, false);
+        if (inst.spec.modelAlign) {
+          const align = inst.spec.modelAlign;
+          modelScene.scale.setScalar(align.scale);
+          modelScene.position.set(align.pos[0], align.pos[1], align.pos[2]);
+          if (align.rot) {
+            modelScene.rotation.set(align.rot[0], align.rot[1], align.rot[2]);
+          }
+        }
         inst.modelScene = modelScene;
         inst.socketGroup.add(modelScene);
+
+        const hiddenNodes = inst.spec.hiddenNodeSubstrings || [];
+        const hiddenMats = inst.spec.hiddenMatSubstrings || [];
+        const builtInOpticSet = new Set(inst.spec.builtInOpticNodeNames || []);
+        inst.builtInOpticNodes = [];
+
+        if (
+          hiddenNodes.length > 0 ||
+          hiddenMats.length > 0 ||
+          builtInOpticSet.size > 0
+        ) {
+          modelScene.traverse((child) => {
+            const cNameLow = (child.name || '').toLowerCase();
+            if (builtInOpticSet.has(child.name)) {
+              inst.builtInOpticNodes.push(child);
+            }
+            if (hiddenNodes.some((sub) => cNameLow.includes(sub))) {
+              child.visible = false;
+              return;
+            }
+            if ((child as THREE.Mesh).isMesh && hiddenMats.length > 0) {
+              const mesh = child as THREE.Mesh;
+              const mats = Array.isArray(mesh.material)
+                ? mesh.material
+                : mesh.material
+                  ? [mesh.material]
+                  : [];
+              const hasHiddenMat = mats.some((m) => {
+                const mLow = (m?.name || '').toLowerCase();
+                return hiddenMats.some((sub) => mLow.includes(sub));
+              });
+              if (hasHiddenMat) {
+                mesh.visible = false;
+              }
+            }
+          });
+        }
 
         if (inst.spec.clipPrefix === 'Kar98K') {
           modelScene.traverse((child) => {
@@ -598,6 +1031,7 @@ export function createKinemationArmsRig(params: {
         const skinId =
           pendingSkinMap[weaponId] || getEquippedWeaponSkinId(weaponId);
         applyWeaponSkinToObject3D(inst.socketGroup, weaponId, skinId);
+        applyBuiltInOpticVisibility(inst);
 
         onSubtreeLoaded?.(modelScene);
 
@@ -665,7 +1099,7 @@ export function createKinemationArmsRig(params: {
       currentArmsOneShot = armsAct;
     }
 
-    if (wAct && inst.mixer) {
+    if (wAct && inst.mixer && !inst.spec.weaponFreezeIdlePose) {
       Object.values(inst.actions).forEach((a) => {
         if (a !== wAct) {
           a.stop();
@@ -720,7 +1154,7 @@ export function createKinemationArmsRig(params: {
       currentArmsBaseAction = poseAct;
     }
 
-    if (inst.mixer) {
+    if (inst.mixer && !inst.spec.weaponFreezeIdlePose) {
       const restName =
         inst.spec.clipPrefix === 'Kar98K' && inst.actions['Fire']
           ? 'Fire'
@@ -752,6 +1186,15 @@ export function createKinemationArmsRig(params: {
       if (inst.karClipMesh) inst.karClipMesh.visible = false;
       if (inst.karCartridgeBone) inst.karCartridgeBone.scale.setScalar(0);
     }
+  };
+
+  const setOpticType = (optic: OpticType) => {
+    currentOpticType = optic;
+    weaponInstances.forEach((inst) => {
+      if (inst.loaded) {
+        applyBuiltInOpticVisibility(inst);
+      }
+    });
   };
 
   const setActiveWeapon = (weaponId: WeaponId) => {
@@ -833,14 +1276,20 @@ export function createKinemationArmsRig(params: {
     const inst = weaponInstances.get(activeWeapon);
     if (!inst?.loaded) return;
 
+    if (inst.spec.isMeleeKnife) {
+      meleeSlashTimer = MELEE_SLASH_DUR;
+      playSynchronizedPair('Throw_End', '', MELEE_SLASH_DUR, 1.0, 0.04);
+      return;
+    }
+
     if (inst.spec.hasBoltActionFireClip) {
       // Kar98K: dispara + opera o ferrolho completo com ambas as mãos + ejeta cartucho
       playSynchronizedPair('Fire', 'Fire', 1.28, 1.0, 0.05);
       return;
     }
 
-    // Armas com animação mecânica de tiro na própria arma (ex: slide blowback da DGL50)
-    if (inst.actions['Fire'] && inst.mixer) {
+    // Armas com animação mecânica de tiro na própria arma (ex: slide blowback da DGL50/M1911)
+    if (!inst.spec.weaponFreezeIdlePose && inst.actions['Fire'] && inst.mixer) {
       const fireAct = inst.actions['Fire'];
       Object.values(inst.actions).forEach((a) => {
         if (a !== fireAct) {
@@ -945,10 +1394,27 @@ export function createKinemationArmsRig(params: {
     }
 
     armsMixer.update(dt);
-    inst.mixer?.update(dt);
+    if (!inst.spec.weaponFreezeIdlePose) {
+      inst.mixer?.update(dt);
+    }
 
-    // Restaura posição base + elevação suave de equipamento quando ativa
-    if (equipLiftTimer > 0) {
+    // Restaura posição base + elevação suave de equipamento + golpe diagonal da faca
+    if (meleeSlashTimer > 0 && inst.spec.isMeleeKnife) {
+      meleeSlashTimer = Math.max(0, meleeSlashTimer - dt);
+      const p = 1 - meleeSlashTimer / MELEE_SLASH_DUR;
+      const thrust = Math.sin(p * Math.PI);
+      const slashSweep = Math.sin(Math.min(1, p * 1.45) * Math.PI);
+      armsCenterGroup.position.set(
+        inst.poseArmsCenterOffset.x - slashSweep * 0.14,
+        inst.poseArmsCenterOffset.y + Math.sin(p * Math.PI * 2) * 0.035,
+        inst.poseArmsCenterOffset.z - thrust * 0.12
+      );
+      armsCenterGroup.rotation.set(
+        -thrust * 0.18,
+        slashSweep * 0.28,
+        slashSweep * 0.42
+      );
+    } else if (equipLiftTimer > 0) {
       equipLiftTimer = Math.max(0, equipLiftTimer - dt);
       const t = equipLiftTimer / EQUIP_LIFT_DUR;
       const ease = t * t;
@@ -957,11 +1423,13 @@ export function createKinemationArmsRig(params: {
         inst.poseArmsCenterOffset.y - ease * 0.085,
         inst.poseArmsCenterOffset.z + ease * 0.05
       );
+      armsCenterGroup.rotation.set(0, 0, 0);
     } else {
       armsCenterGroup.position.copy(inst.poseArmsCenterOffset);
+      armsCenterGroup.rotation.set(0, 0, 0);
     }
 
-    syncWeaponMountToIkBone();
+    syncWeaponMountToIkBone(Boolean(inst.spec.attachToHandR));
 
     // Sincroniza weaponMotionAnchor (mira 3D, PEQ-15, muzzleFlash, ejetor) com o delta exato da arma!
     if (inst.restAttachInRigInv) {
@@ -995,12 +1463,14 @@ export function createKinemationArmsRig(params: {
       armsScene = null;
     }
     ikHandGunBone = null;
+    handRBone = null;
     armsLoaded = false;
   };
 
   return {
     rigRoot,
     setActiveWeapon,
+    setOpticType,
     prewarmWeapons,
     pruneUnusedWeapons,
     applySkin,

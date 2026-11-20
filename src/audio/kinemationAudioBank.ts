@@ -62,6 +62,12 @@ export const KINEMATION_SHOT_URLS = {
     '/sounds/kinemation/shots/dgl50_2.mp3',
     '/sounds/kinemation/shots/dgl50_3.mp3',
   ],
+  x18: [
+    '/sounds/kinemation/shots/x18_0.mp3',
+    '/sounds/kinemation/shots/x18_1.mp3',
+    '/sounds/kinemation/shots/x18_2.mp3',
+    '/sounds/kinemation/shots/x18_3.mp3',
+  ],
 } as const;
 
 export const KINEMATION_FOOTSTEP_URLS = {
@@ -101,6 +107,8 @@ export const KINEMATION_SINGLE_URLS = {
   akx200Empty: '/sounds/kinemation/reloads/akx200_empty.mp3',
   dgl50Tac: '/sounds/kinemation/reloads/dgl50_tac.mp3',
   dgl50Empty: '/sounds/kinemation/reloads/dgl50_empty.mp3',
+  m1911Tac: '/sounds/kinemation/reloads/m1911_tac.mp3',
+  m1911Empty: '/sounds/kinemation/reloads/m1911_empty.mp3',
   mk14Tac: '/sounds/kinemation/reloads/mk14_tac.mp3',
   mk14Empty: '/sounds/kinemation/reloads/mk14_empty.mp3',
   drake12Start: '/sounds/kinemation/reloads/drake12_start.mp3',

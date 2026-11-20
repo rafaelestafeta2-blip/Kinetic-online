@@ -306,6 +306,8 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
 
   const handleSelectClass = (classId: WarfaceClassId) => {
     soundEngine.playMenuSelect();
+    setSubTab('ARMAS');
+    setSelectedSlot('primaryWeapon');
     const classPrimary = setSelectedWarfaceClass(classId);
     setInspectedWeaponId(classPrimary);
     onSyncEquippedWeapon(classPrimary);
@@ -357,7 +359,7 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
     selectedSlot === 'primaryWeapon'
       ? classCombat.allowedPrimaries
       : selectedSlot === 'secondaryWeapon'
-        ? ['P50_PISTOL']
+        ? ['P50_PISTOL', 'M1911_PISTOL']
         : selectedSlot === 'meleeWeapon'
           ? ['KNIFE_TACTICAL']
           : [];
@@ -623,6 +625,7 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
             type="button"
             onClick={() => {
               soundEngine.playMenuSelect();
+              onSyncEquippedWeapon(classLoadout.primaryWeapon);
               onClose();
             }}
             className="h-7 sm:h-8 px-2.5 sm:px-3.5 rounded bg-gradient-to-r from-[#ea580c] to-[#f97316] hover:from-[#f97316] hover:to-[#fb923c] border border-amber-300/60 text-[10px] sm:text-[11px] font-display font-black tracking-wider text-slate-950 uppercase whitespace-nowrap shrink-0 cursor-pointer transition-all shadow-[0_0_12px_rgba(249,115,22,0.3)]"
@@ -958,7 +961,7 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
                           setInspectedWeaponId(wId);
                         }
                       }}
-                      className={`w-full text-left rounded-[2px] border px-2 py-1.5 transition-colors cursor-pointer ${
+                      className={`w-full text-left rounded-[2px] border px-2 py-1 transition-colors cursor-pointer ${
                         isEquipped
                           ? 'bg-[#191f2a] border-[#f97316]'
                           : isInspected
@@ -979,7 +982,7 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
                           {isEquipped ? '✓' : !isOwned ? '×' : ''}
                         </span>
                         <span
-                          className={`font-display font-bold text-[11px] truncate ${
+                          className={`font-display font-bold text-[10px] sm:text-[11px] truncate ${
                             isEquipped
                               ? 'text-[#fb923c]'
                               : isOwned
@@ -991,12 +994,12 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
                         </span>
                       </div>
 
-                      <div className="h-8 sm:h-9 flex items-center justify-center px-1 my-0.5">
+                      <div className="h-7 sm:h-8 flex items-center justify-center px-1 my-0.5">
                         <WeaponPreview3D
                           weaponId={wId}
                           locked={!isOwned}
                           alt={spec.name}
-                          className="w-full h-8"
+                          className="w-full h-7"
                         />
                       </div>
 
@@ -1511,6 +1514,7 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
                 type="button"
                 onClick={() => {
                   soundEngine.playMenuSelect();
+                  onSyncEquippedWeapon(classLoadout.primaryWeapon);
                   onClose();
                 }}
                 className="py-1.5 px-2.5 rounded-[2px] bg-[#161b24] hover:bg-[#1e2532] border border-white/15 text-[9px] sm:text-[10px] font-mono font-bold text-slate-200 uppercase cursor-pointer transition-colors shrink-0"

@@ -3,9 +3,11 @@ import { soundEngine } from '../audio/soundEngine';
 
 export type LeftSidebarButtonId =
   | 'INICIO'
+  | 'LOJA'
   | 'RANKED'
   | 'INVENTARIO'
   | 'ARSENAL'
+  | 'CONTRATOS'
   | 'PATENTES'
   | 'PASSE'
   | 'EVENTOS';
@@ -14,6 +16,7 @@ interface MainMenuLeftSidebarProps {
   activeId: LeftSidebarButtonId;
   onSelectButton: (id: LeftSidebarButtonId) => void;
   onHover: () => void;
+  contractsBadgeCount?: number;
 }
 
 const SIDEBAR_ITEMS: Array<{
@@ -25,6 +28,13 @@ const SIDEBAR_ITEMS: Array<{
     id: 'INICIO',
     label: 'INÍCIO',
     icon: <path d="M12 3L2 11.5h2.8V20h5.4v-5.5h3.6V20h5.4v-8.5H22L12 3z" />,
+  },
+  {
+    id: 'LOJA',
+    label: 'LOJA & BAÚS',
+    icon: (
+      <path d="M19 3H5L2 9l10 12L22 9l-3-6zM9.62 8l1.5-3h1.76l1.5 3H9.62zM11 10v6.68L5.44 10H11zm2 0h5.56L13 16.68V10zm6.26-2h-2.65l-1.5-3h2.65l1.5 3zM6.24 5h2.65l-1.5 3H4.74l1.5-3z" />
+    ),
   },
   {
     id: 'RANKED',
@@ -45,6 +55,13 @@ const SIDEBAR_ITEMS: Array<{
     label: 'ARSENAL 3D',
     icon: (
       <path d="M3 7h17l1 2.5-2 1.5h-5.5l-1.2 2.5H9.8l-.8 5.5H4.8l1.4-6.5L4.5 11H3V7zm11.2 4h2.6v-1.2h-2.6V11z" />
+    ),
+  },
+  {
+    id: 'CONTRATOS',
+    label: 'CONTRATOS',
+    icon: (
+      <path d="M19 3h-4.18C14.4 1.84 13.3 1 12 1s-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm-2 14l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z" />
     ),
   },
   {
@@ -74,6 +91,7 @@ export const MainMenuLeftSidebar: React.FC<MainMenuLeftSidebarProps> = ({
   activeId,
   onSelectButton,
   onHover,
+  contractsBadgeCount = 0,
 }) => {
   return (
     <nav className="relative w-[152px] sm:w-[176px] lg:w-[222px] max-h-full my-auto flex flex-col justify-center gap-1 lg:gap-1.5 pl-2 lg:pl-3 py-0.5 shrink-0 overflow-y-auto no-scrollbar pointer-events-auto">
@@ -82,6 +100,7 @@ export const MainMenuLeftSidebar: React.FC<MainMenuLeftSidebarProps> = ({
 
       {SIDEBAR_ITEMS.map((item) => {
         const isActive = activeId === item.id;
+        const showBadge = item.id === 'CONTRATOS' && contractsBadgeCount > 0;
         return (
           <button
             key={item.id}
@@ -120,15 +139,22 @@ export const MainMenuLeftSidebar: React.FC<MainMenuLeftSidebarProps> = ({
               </span>
             </div>
 
-            <span
-              className={`font-display font-black text-xs lg:text-sm leading-none shrink-0 ${
-                isActive
-                  ? 'text-red-400 drop-shadow-[0_0_8px_rgba(239,68,68,0.9)]'
-                  : 'text-white/15 group-hover:text-red-400/60'
-              }`}
-            >
-              »
-            </span>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {showBadge && (
+                <span className="min-w-[16px] h-4 px-1 rounded-full bg-amber-400 text-slate-950 font-mono font-black text-[9px] flex items-center justify-center shadow-[0_0_10px_rgba(251,191,36,0.7)]">
+                  {contractsBadgeCount}
+                </span>
+              )}
+              <span
+                className={`font-display font-black text-xs lg:text-sm leading-none shrink-0 ${
+                  isActive
+                    ? 'text-red-400 drop-shadow-[0_0_8px_rgba(239,68,68,0.9)]'
+                    : 'text-white/15 group-hover:text-red-400/60'
+                }`}
+              >
+                »
+              </span>
+            </div>
           </button>
         );
       })}

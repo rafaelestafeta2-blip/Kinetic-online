@@ -28,6 +28,7 @@ export interface HudRadarCacheEntry {
 export interface HudEmitContext {
   state: HudState;
   primaryWeapon: HudState['activeWeapon'];
+  secondaryWeapon: HudState['activeWeapon'];
   playerPos: { x: number; y: number; z: number };
   yaw: number;
   targets: RadarTargetSource[];
@@ -90,6 +91,8 @@ export function buildHudFingerprint(state: HudState, yaw: number): string {
   return [
     state.screen,
     state.activeWeapon,
+    state.primaryWeapon,
+    state.secondaryWeapon,
     state.currentMagRounds,
     state.magCapacity,
     state.chambered,
@@ -154,6 +157,12 @@ export function buildHudFingerprint(state: HudState, yaw: number): string {
     bomb?.isTdmMode ? 1 : 0,
     bomb?.roundState || '-',
     bomb?.plantProgress != null ? Math.round(bomb.plantProgress * 10) : 0,
+    state.killStreak,
+    state.readyStreak,
+    Math.ceil(state.activeUavSec || 0),
+    Math.ceil(state.activeEmpSec || 0),
+    Math.ceil(state.empJammedSec || 0),
+    state.streakBannerText || '-',
     radarSig,
   ].join('|');
 }
@@ -177,7 +186,7 @@ export function emitHudIfChanged(
   ctx.state.playerPos.z = ctx.playerPos.z;
   ctx.state.playerYaw = ctx.yaw;
   ctx.state.primaryWeapon = ctx.primaryWeapon;
-  ctx.state.secondaryWeapon = 'P50_PISTOL';
+  ctx.state.secondaryWeapon = ctx.secondaryWeapon;
   ctx.state.radarTargets = ctx.cachedRadarTargets;
 
   const fingerprint = buildHudFingerprint(ctx.state, ctx.yaw);
@@ -193,7 +202,7 @@ export function emitHudIfChanged(
   onHudUpdate({
     ...ctx.state,
     primaryWeapon: ctx.primaryWeapon,
-    secondaryWeapon: 'P50_PISTOL',
+    secondaryWeapon: ctx.secondaryWeapon,
     playerPos: {
       x: ctx.state.playerPos.x,
       y: ctx.state.playerPos.y,

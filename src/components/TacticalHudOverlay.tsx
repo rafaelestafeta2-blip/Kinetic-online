@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   GrenadeType,
   HudState,
@@ -9,7 +9,9 @@ import { HudBottomWeaponDock } from './HudBottomWeaponDock';
 import { HudTopRightControls } from './HudTopRightControls';
 import { bindTap, WeaponSilhouette } from './hudTapUtils';
 import { AllyNeedIndicators } from './AllyNeedIndicators';
+import { LiveMatchScoreboardModal } from './LiveMatchScoreboardModal';
 import { MedicReviveIndicators } from './MedicReviveIndicators';
+import { TeamVoiceCommsHud } from './TeamVoiceCommsHud';
 import { WarfaceKillfeed } from './WarfaceKillfeed';
 import { YardBombHudBar } from './YardBombHudBar';
 
@@ -32,6 +34,7 @@ interface TacticalHudOverlayProps {
   onToggleFullscreen: () => void;
   onPause: () => void;
   onPlantBomb?: () => void;
+  onActivateStreak?: () => void;
   onReturnToMenu?: () => void;
   onCycleSpectator?: (dir: -1 | 1) => void;
 }
@@ -55,19 +58,69 @@ export const TacticalHudOverlay: React.FC<TacticalHudOverlayProps> = ({
   onToggleFullscreen,
   onPause,
   onPlantBomb,
+  onActivateStreak,
   onReturnToMenu,
   onCycleSpectator,
 }) => {
   const isSpectating = Boolean(hud.yardBomb?.isSpectating);
   const isMatchOver = hud.yardBomb?.roundState === 'MATCH_OVER';
+  const hasTeamScoreboard = Boolean(
+    hud.yardBomb &&
+      (hud.drillMode === 'YARD_BOMB_5V5' ||
+        hud.drillMode === 'DUST2_BOMB_5V5' ||
+        hud.drillMode === 'ASSAULT_BOMB_5V5' ||
+        hud.drillMode === 'INDUSTRIA_BOMB_5V5' ||
+        hud.drillMode === 'HANGAR_BOMB_5V5' ||
+        hud.drillMode === 'EASTERN_CITY_BOMB_5V5' ||
+        hud.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
+        hud.drillMode === 'STATION_CAPTURE_5V5' ||
+        hud.drillMode === 'STATION_TDM_5V5')
+  );
+  const [scoreboardOpen, setScoreboardOpen] = useState(false);
+
+  useEffect(() => {
+    if (!hasTeamScoreboard || isMatchOver) {
+      setScoreboardOpen(false);
+      return;
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Tab') {
+        const tag = (e.target as HTMLElement | null)?.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+        e.preventDefault();
+        setScoreboardOpen(true);
+      } else if (e.code === 'Escape') {
+        setScoreboardOpen(false);
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Tab') {
+        e.preventDefault();
+        setScoreboardOpen(false);
+      }
+    };
+    const onBlur = () => setScoreboardOpen(false);
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, [hasTeamScoreboard, isMatchOver]);
+  const hasOpticalSniperScope =
+    hud.activeWeapon === 'SNIPER_AWP' ||
+    hud.activeWeapon === 'SNIPER_HEAVY' ||
+    ((hud.activeWeapon === 'SNIPER_BOLT' ||
+      hud.activeWeapon === 'SNIPER_TACTICAL') &&
+      hud.optic === 'lpvo');
   const isSniperScopeActive =
     !isSpectating &&
     !isMatchOver &&
-    (hud.activeWeapon === 'SNIPER_BOLT' ||
-      hud.activeWeapon === 'SNIPER_TACTICAL') &&
-    hud.optic === 'iron' &&
+    hasOpticalSniperScope &&
     !hud.cantedActive &&
-    hud.adsAlpha > 0.35;
+    hud.adsAlpha > 0.78;
 
   const hipCrosshairOpacity =
     isSniperScopeActive || isSpectating || isMatchOver
@@ -291,8 +344,21 @@ export const TacticalHudOverlay: React.FC<TacticalHudOverlayProps> = ({
           onToggleDock={onToggleDock}
           onToggleFullscreen={onToggleFullscreen}
           onPause={onPause}
+          showScoreboardButton={hasTeamScoreboard}
+          scoreboardOpen={scoreboardOpen}
+          onToggleScoreboard={() => setScoreboardOpen((prev) => !prev)}
         />
       )}
+
+      {/* TOP-LEFT SQUAD VOICE RADIO & PUSH-TO-TALK [V] + QUICK CALLOUTS [B] */}
+      {!isMatchOver && <TeamVoiceCommsHud variant="IN_MATCH" />}
+
+      {/* LIVE TACTICAL SCOREBOARD (TAB ON PC / TOP-LEFT BUTTON ON MOBILE) */}
+      <LiveMatchScoreboardModal
+        hud={hud}
+        open={scoreboardOpen && hasTeamScoreboard && !isMatchOver}
+        onClose={() => setScoreboardOpen(false)}
+      />
 
       {/* WALL WEAPON PICKUP ICON BUTTON */}
       {!isSpectating && hud.focusedWallWeapon && (
@@ -328,6 +394,63 @@ export const TacticalHudOverlay: React.FC<TacticalHudOverlayProps> = ({
           </button>
         </div>
       )}
+
+      {/* TACTICAL SCORESTREAK BANNER (UAV / PACOTE TÁTICO / UAV AVANÇADO + EMP) */}
+      {!isSpectating && !isMatchOver && hud.streakBannerText && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 pointer-events-none z-35 select-none">
+          <div className="bg-slate-950/90 border border-cyan-400/70 rounded-lg px-3.5 py-1.5 text-[10px] sm:text-xs font-display font-black tracking-widest text-cyan-200 uppercase shadow-[0_0_20px_rgba(34,211,238,0.35)] whitespace-nowrap">
+            {hud.streakBannerText}
+          </div>
+        </div>
+      )}
+
+      {/* TACTICAL SCORESTREAK ACTIVATOR & ACTIVE TIMERS (VISIBLE ONLY WHEN READY OR ACTIVE) */}
+      {!isSpectating &&
+        !isMatchOver &&
+        (hud.readyStreak !== 'NONE' ||
+          hud.activeUavSec > 0 ||
+          hud.activeEmpSec > 0) && (
+          <div
+            onPointerDown={(e) => e.stopPropagation()}
+            className="fixed left-3 top-1/2 -translate-y-1/2 z-35 flex flex-col gap-1.5 select-none pointer-events-auto"
+          >
+            {hud.readyStreak !== 'NONE' && (
+              <button
+                type="button"
+                {...bindTap(() => onActivateStreak?.())}
+                className="px-3 py-2 rounded-xl bg-slate-950/90 border-2 border-cyan-400 text-cyan-200 shadow-[0_0_18px_rgba(34,211,238,0.45)] flex items-center gap-2 active:scale-95 transition-transform cursor-pointer"
+              >
+                <span className="w-5 h-5 rounded bg-cyan-400 text-slate-950 font-mono font-black text-[11px] flex items-center justify-center shrink-0">
+                  4
+                </span>
+                <div className="text-left leading-tight">
+                  <div className="text-[10px] font-display font-black tracking-wider text-white uppercase">
+                    {hud.readyStreak === 'UAV'
+                      ? 'UAV TÁTICO'
+                      : hud.readyStreak === 'ARMOR_PACK'
+                        ? 'PACOTE TÁTICO'
+                        : 'UAV AVANÇADO + EMP'}
+                  </div>
+                  <div className="text-[8px] font-mono text-cyan-300 uppercase">
+                    ATIVAR SUPORTE
+                  </div>
+                </div>
+              </button>
+            )}
+
+            {hud.activeUavSec > 0 && (
+              <div className="px-2.5 py-1 rounded-lg bg-slate-950/80 border border-emerald-400/50 text-[10px] font-mono font-bold text-emerald-300 uppercase pointer-events-none">
+                UAV ONLINE · {Math.ceil(hud.activeUavSec)}s
+              </div>
+            )}
+
+            {hud.activeEmpSec > 0 && (
+              <div className="px-2.5 py-1 rounded-lg bg-slate-950/80 border border-cyan-400/50 text-[10px] font-mono font-bold text-cyan-300 uppercase pointer-events-none">
+                PULSO EMP · {Math.ceil(hud.activeEmpSec)}s
+              </div>
+            )}
+          </div>
+        )}
 
       {/* TACTICAL ACTION / RELOAD / ATTACHMENT STATUS FEEDBACK BANNER */}
       {!isSpectating && hud.reloadTypeLabel && (

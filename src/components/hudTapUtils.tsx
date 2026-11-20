@@ -43,7 +43,7 @@ export const WeaponSilhouette: React.FC<{
       </svg>
     );
   }
-  if (weaponId === 'P50_PISTOL') {
+  if (weaponId === 'P50_PISTOL' || weaponId === 'M1911_PISTOL') {
     return (
       <svg viewBox="0 0 64 28" fill="none" className={className}>
         <path
@@ -61,7 +61,24 @@ export const WeaponSilhouette: React.FC<{
       </svg>
     );
   }
-  if (weaponId === 'SNIPER_BOLT' || weaponId === 'SNIPER_TACTICAL') {
+  if (weaponId === 'RPG7_LAUNCHER') {
+    return (
+      <svg viewBox="0 0 88 28" fill="none" className={className}>
+        <path
+          d="M4 10.5L14 12.5H60L70 8.5L84 14L70 19.5L60 15.5H14L4 17.5V10.5Z"
+          fill="currentColor"
+        />
+        <rect x="28" y="15.5" width="4.5" height="7" rx="1" fill="currentColor" />
+        <rect x="44" y="15.5" width="4" height="6" rx="1" fill="currentColor" />
+      </svg>
+    );
+  }
+  if (
+    weaponId === 'SNIPER_BOLT' ||
+    weaponId === 'SNIPER_TACTICAL' ||
+    weaponId === 'SNIPER_AWP' ||
+    weaponId === 'SNIPER_HEAVY'
+  ) {
     return (
       <svg viewBox="0 0 88 28" fill="none" className={className}>
         <path

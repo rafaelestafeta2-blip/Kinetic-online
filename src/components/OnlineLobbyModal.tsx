@@ -10,6 +10,7 @@ import {
   subscribeOnlineRoom,
   switchLocalPlayerTeam,
 } from '../multiplayer/onlineRoomService';
+import { TeamVoiceCommsHud } from './TeamVoiceCommsHud';
 import { thumbForDrillMode } from './mapSelectThumbs';
 
 interface OnlineLobbyModalProps {
@@ -369,6 +370,9 @@ export const OnlineLobbyModal: React.FC<OnlineLobbyModalProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* RÁDIO DE VOZ DA EQUIPE NO LOBBY (WebRTC P2P + PTT [V] / VOZ ABERTA) */}
+              <TeamVoiceCommsHud variant="LOBBY" />
 
               <div className="flex items-center justify-between pt-1">
                 <span className="text-[11px] text-slate-400">

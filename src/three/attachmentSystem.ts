@@ -37,68 +37,88 @@ export interface WeaponCharmTransform {
  */
 export const WEAPON_MUZZLE_OFFSETS: Record<WeaponId, WeaponMuzzleTransform> = {
   P50_PISTOL: {
-    position: new THREE.Vector3(0, 0.021, -0.225),
-    scale: 0.95,
+    position: new THREE.Vector3(0, 0.003, -0.203),
+    scale: 0.92,
+    rotation: new THREE.Euler(0, -Math.PI / 2, 0),
+  },
+  M1911_PISTOL: {
+    position: new THREE.Vector3(0, -0.004, -0.132),
+    scale: 0.86,
     rotation: new THREE.Euler(0, -Math.PI / 2, 0),
   },
   SMG_45: {
-    position: new THREE.Vector3(0, 0.01, -0.355),
-    scale: 1.0,
+    position: new THREE.Vector3(0, 0.015, -0.33),
+    scale: 0.96,
     rotation: new THREE.Euler(0, -Math.PI / 2, 0),
   },
   SMG_MP5: {
-    position: new THREE.Vector3(0, 0.014, -0.385),
+    position: new THREE.Vector3(0, 0.0, -0.341),
     scale: 0.96,
     rotation: new THREE.Euler(0, -Math.PI / 2, 0),
   },
   SHOTGUN_12: {
-    position: new THREE.Vector3(0, 0.012, -0.56),
-    scale: 1.15,
+    position: new THREE.Vector3(0, 0.01, -0.716),
+    scale: 1.12,
     rotation: new THREE.Euler(0, -Math.PI / 2, 0),
   },
   SHOTGUN_SPAS: {
-    position: new THREE.Vector3(0, -0.062, -0.635),
-    scale: 1.15,
+    position: new THREE.Vector3(0, 0.01, -0.52),
+    scale: 1.12,
     rotation: new THREE.Euler(0, -Math.PI / 2, 0),
   },
   M4_CARBINE: {
-    position: new THREE.Vector3(-0.015, -0.044, -0.704),
-    scale: 1.08,
+    position: new THREE.Vector3(0, -0.011, -0.596),
+    scale: 1.04,
     rotation: new THREE.Euler(0, -Math.PI / 2, 0),
   },
   CARBINE_AR: {
-    position: new THREE.Vector3(0, -0.002, -0.525),
-    scale: 1.05,
+    position: new THREE.Vector3(0, 0.0, -0.57),
+    scale: 1.04,
     rotation: new THREE.Euler(0, -Math.PI / 2, 0),
   },
   AK47_RIFLE: {
-    position: new THREE.Vector3(-0.012, 0.038, -0.365),
-    scale: 1.08,
+    position: new THREE.Vector3(0, 0.0, -0.52),
+    scale: 1.06,
     rotation: new THREE.Euler(0, -Math.PI / 2, 0),
   },
   AK12_RIFLE: {
-    position: new THREE.Vector3(0, 0.01, -0.464),
+    position: new THREE.Vector3(0, 0.0, -0.534),
     scale: 1.06,
     rotation: new THREE.Euler(0, -Math.PI / 2, 0),
   },
   S_MILITARY: {
-    position: new THREE.Vector3(-0.011, -0.068, -0.786),
-    scale: 1.08,
+    position: new THREE.Vector3(-0.004, -0.01, -0.615),
+    scale: 1.04,
     rotation: new THREE.Euler(0, -Math.PI / 2, 0),
   },
   L49_LMG: {
-    position: new THREE.Vector3(0, 0.009, -0.625),
-    scale: 1.15,
+    position: new THREE.Vector3(0, 0.015, -0.74),
+    scale: 1.12,
     rotation: new THREE.Euler(0, -Math.PI / 2, 0),
   },
   SNIPER_BOLT: {
-    position: new THREE.Vector3(0, 0.01, -0.745),
-    scale: 1.12,
+    position: new THREE.Vector3(0, -0.002, -0.713),
+    scale: 1.08,
     rotation: new THREE.Euler(0, -Math.PI / 2, 0),
   },
   SNIPER_TACTICAL: {
-    position: new THREE.Vector3(0, 0.01, -0.745),
+    position: new THREE.Vector3(0, 0.001, -0.612),
+    scale: 1.08,
+    rotation: new THREE.Euler(0, -Math.PI / 2, 0),
+  },
+  SNIPER_AWP: {
+    position: new THREE.Vector3(0, 0.01, -0.88),
     scale: 1.12,
+    rotation: new THREE.Euler(0, -Math.PI / 2, 0),
+  },
+  SNIPER_HEAVY: {
+    position: new THREE.Vector3(0, 0.015, -0.75),
+    scale: 1.14,
+    rotation: new THREE.Euler(0, -Math.PI / 2, 0),
+  },
+  RPG7_LAUNCHER: {
+    position: new THREE.Vector3(0, 0.01, -0.849),
+    scale: 1.0,
     rotation: new THREE.Euler(0, -Math.PI / 2, 0),
   },
   KNIFE_TACTICAL: {
@@ -115,6 +135,11 @@ export const WEAPON_CHARM_OFFSETS: Record<WeaponId, WeaponCharmTransform> = {
   P50_PISTOL: {
     position: new THREE.Vector3(-0.026, -0.032, 0.02),
     scale: 1.4,
+    rotation: new THREE.Euler(0, 0, 0),
+  },
+  M1911_PISTOL: {
+    position: new THREE.Vector3(-0.022, -0.026, 0.01),
+    scale: 1.32,
     rotation: new THREE.Euler(0, 0, 0),
   },
   SMG_45: {
@@ -158,7 +183,7 @@ export const WEAPON_CHARM_OFFSETS: Record<WeaponId, WeaponCharmTransform> = {
     rotation: new THREE.Euler(0, 0, 0),
   },
   S_MILITARY: {
-    position: new THREE.Vector3(-0.036, -0.048, -0.14),
+    position: new THREE.Vector3(-0.034, -0.018, -0.12),
     scale: 1.8,
     rotation: new THREE.Euler(0, 0, 0),
   },
@@ -175,6 +200,21 @@ export const WEAPON_CHARM_OFFSETS: Record<WeaponId, WeaponCharmTransform> = {
   SNIPER_TACTICAL: {
     position: new THREE.Vector3(-0.032, 0.018, -0.1),
     scale: 1.8,
+    rotation: new THREE.Euler(0, 0, 0),
+  },
+  SNIPER_AWP: {
+    position: new THREE.Vector3(-0.034, 0.012, -0.1),
+    scale: 1.8,
+    rotation: new THREE.Euler(0, 0, 0),
+  },
+  SNIPER_HEAVY: {
+    position: new THREE.Vector3(-0.036, 0.014, -0.12),
+    scale: 1.8,
+    rotation: new THREE.Euler(0, 0, 0),
+  },
+  RPG7_LAUNCHER: {
+    position: new THREE.Vector3(-0.04, 0.015, -0.16),
+    scale: 1.85,
     rotation: new THREE.Euler(0, 0, 0),
   },
   KNIFE_TACTICAL: {
