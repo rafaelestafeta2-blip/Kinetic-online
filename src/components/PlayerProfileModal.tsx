@@ -77,7 +77,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
   return (
     <div
       onClick={(e) => e.stopPropagation()}
-      className="fixed inset-0 z-50 bg-[#06080c]/95 backdrop-blur-xl flex flex-col justify-between overflow-hidden text-white font-sans select-none"
+      className="fixed inset-0 z-[80] bg-[#06080c]/95 backdrop-blur-xl flex flex-col justify-between overflow-hidden text-white font-sans select-none"
     >
       {/* 1. Barra de Topo AAA: ← VOLTAR AO MENU + Título + Nível e Botão Fechar */}
       <header className="relative z-20 w-full px-3 sm:px-8 py-2.5 flex items-center justify-between gap-2 border-b border-white/10 bg-black/70 shrink-0">
@@ -188,7 +188,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
       {isEditModalOpen && (
         <div
           onClick={() => setIsEditModalOpen(false)}
-          className="fixed inset-0 z-60 bg-black/85 backdrop-blur-md flex items-center justify-center p-3"
+          className="fixed inset-0 z-[90] bg-black/85 backdrop-blur-md flex items-center justify-center p-3"
         >
           <div
             onClick={(e) => e.stopPropagation()}

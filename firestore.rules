@@ -53,6 +53,8 @@ service cloud.firestore {
           'matchesPlayed', 'matchesWon', 'bombsPlanted',
           'unlockedAchievements', 'economyVersion', 'mmr',
           'equippedWeaponOptics', 'equippedWeaponSkins', 'equippedWeaponGunsmith',
+          'unlockedWeaponSkins', 'unlockedGearIds', 'selectedClass', 'classLoadouts',
+          'equippedCallingCardId', 'clanId', 'clanTokens', 'purchasedClanOfferIds',
           'dailyContracts', 'diamonds', 'vipBattlePass',
           'activeOperatorId', 'unlockedOperators', 'founderDiamondsClaimed',
           'createdAt', 'updatedAt'
@@ -86,6 +88,14 @@ service cloud.firestore {
         && (!('equippedWeaponOptics' in data) || (data.equippedWeaponOptics is map && data.equippedWeaponOptics.size() <= 25))
         && (!('equippedWeaponSkins' in data) || (data.equippedWeaponSkins is map && data.equippedWeaponSkins.size() <= 25))
         && (!('equippedWeaponGunsmith' in data) || (data.equippedWeaponGunsmith is map && data.equippedWeaponGunsmith.size() <= 25))
+        && (!('unlockedWeaponSkins' in data) || (data.unlockedWeaponSkins is list && data.unlockedWeaponSkins.size() <= 60 && (data.unlockedWeaponSkins.size() == 0 || data.unlockedWeaponSkins[0] is string)))
+        && (!('unlockedGearIds' in data) || (data.unlockedGearIds is list && data.unlockedGearIds.size() <= 40 && (data.unlockedGearIds.size() == 0 || data.unlockedGearIds[0] is string)))
+        && (!('selectedClass' in data) || (data.selectedClass is string && data.selectedClass.size() >= 1 && data.selectedClass.size() <= 24 && data.selectedClass in ['FUZILEIRO', 'MEDICO', 'ENGENHEIRO', 'FRANCO_ATIRADOR']))
+        && (!('classLoadouts' in data) || (data.classLoadouts is map && data.classLoadouts.size() <= 6))
+        && isValidOptionalString(data, 'equippedCallingCardId', 48)
+        && (!('clanId' in data) || (data.clanId is string && data.clanId.size() <= 24 && (data.clanId.size() == 0 || data.clanId.matches('^[a-z0-9_\\-]+$'))))
+        && (!('clanTokens' in data) || (isNonNegativeNumber(data.clanTokens) && data.clanTokens <= 1000000))
+        && (!('purchasedClanOfferIds' in data) || (data.purchasedClanOfferIds is list && data.purchasedClanOfferIds.size() <= 30 && (data.purchasedClanOfferIds.size() == 0 || data.purchasedClanOfferIds[0] is string)))
         && (!('dailyContracts' in data) || (data.dailyContracts is map && data.dailyContracts.size() <= 8))
         && (!('diamonds' in data) || (isNonNegativeNumber(data.diamonds) && data.diamonds <= 1000000))
         && (!('vipBattlePass' in data) || (data.vipBattlePass is map && data.vipBattlePass.size() <= 8))
@@ -122,6 +132,8 @@ service cloud.firestore {
           'matchesPlayed', 'matchesWon', 'bombsPlanted',
           'unlockedAchievements', 'unlockedWeapons', 'economyVersion', 'mmr',
           'equippedWeaponOptics', 'equippedWeaponSkins', 'equippedWeaponGunsmith',
+          'unlockedWeaponSkins', 'unlockedGearIds', 'selectedClass', 'classLoadouts',
+          'equippedCallingCardId', 'clanId', 'clanTokens', 'purchasedClanOfferIds',
           'dailyContracts', 'activeOperatorId', 'unlockedOperators', 'founderDiamondsClaimed',
           'updatedAt'
         ]);
@@ -147,6 +159,8 @@ service cloud.firestore {
           'matchesPlayed', 'matchesWon', 'bombsPlanted',
           'unlockedAchievements', 'economyVersion', 'mmr',
           'equippedWeaponOptics', 'equippedWeaponSkins', 'equippedWeaponGunsmith',
+          'unlockedWeaponSkins', 'unlockedGearIds', 'selectedClass', 'classLoadouts',
+          'equippedCallingCardId', 'clanId', 'clanTokens', 'purchasedClanOfferIds',
           'dailyContracts', 'diamonds', 'vipBattlePass',
           'activeOperatorId', 'unlockedOperators', 'founderDiamondsClaimed',
           'updatedAt'
@@ -170,6 +184,8 @@ service cloud.firestore {
           'matchesPlayed', 'matchesWon', 'bombsPlanted',
           'unlockedAchievements', 'economyVersion', 'mmr',
           'equippedWeaponOptics', 'equippedWeaponSkins', 'equippedWeaponGunsmith',
+          'unlockedWeaponSkins', 'unlockedGearIds', 'selectedClass', 'classLoadouts',
+          'equippedCallingCardId', 'clanId', 'clanTokens', 'purchasedClanOfferIds',
           'dailyContracts', 'diamonds', 'vipBattlePass',
           'activeOperatorId', 'unlockedOperators', 'founderDiamondsClaimed',
           'updatedAt'
@@ -193,6 +209,8 @@ service cloud.firestore {
           'matchesPlayed', 'matchesWon', 'bombsPlanted',
           'unlockedAchievements', 'economyVersion', 'mmr',
           'equippedWeaponOptics', 'equippedWeaponSkins', 'equippedWeaponGunsmith',
+          'unlockedWeaponSkins', 'unlockedGearIds', 'selectedClass', 'classLoadouts',
+          'equippedCallingCardId', 'clanId', 'clanTokens', 'purchasedClanOfferIds',
           'dailyContracts', 'diamonds', 'vipBattlePass',
           'activeOperatorId', 'unlockedOperators', 'founderDiamondsClaimed',
           'updatedAt'
@@ -204,6 +222,11 @@ service cloud.firestore {
         && incoming().playerXp <= existing().playerXp + 50000
         && incoming().playerCash >= existing().playerCash - 50000
         && incoming().playerCash <= existing().playerCash + 50000
+        && (
+          !('clanTokens' in incoming())
+          || (!('clanTokens' in existing()) && incoming().clanTokens <= 5000)
+          || (('clanTokens' in existing()) && incoming().clanTokens <= existing().clanTokens + 5000)
+        )
         && (
           !('diamonds' in incoming())
           || (!('diamonds' in existing()) && incoming().diamonds == 0)
@@ -253,6 +276,8 @@ service cloud.firestore {
           'matchesPlayed', 'matchesWon', 'bombsPlanted',
           'unlockedAchievements', 'economyVersion', 'mmr',
           'equippedWeaponOptics', 'equippedWeaponSkins', 'equippedWeaponGunsmith',
+          'unlockedWeaponSkins', 'unlockedGearIds', 'selectedClass', 'classLoadouts',
+          'equippedCallingCardId', 'clanId', 'clanTokens', 'purchasedClanOfferIds',
           'dailyContracts', 'diamonds', 'vipBattlePass',
           'activeOperatorId', 'unlockedOperators', 'founderDiamondsClaimed',
           'updatedAt'
@@ -499,7 +524,7 @@ service cloud.firestore {
 
     match /clans/{clanId} {
       allow get: if isAuthenticated() && isValidId(clanId);
-      allow list: if isAuthenticated() && existing().clanLevel >= 1;
+      allow list: if isAuthenticated() && (request.auth.uid in existing().memberUids || existing().clanLevel >= 1);
       allow create: if isAuthenticated()
         && isValidId(clanId)
         && isValidClan(incoming(), clanId)

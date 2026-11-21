@@ -1113,6 +1113,10 @@ function loadInventoryState(): PlayerInventoryState {
 export interface CloudLoadoutSnapshot {
   activeWeapon: WeaponId;
   purchasedWeaponIds?: WeaponId[];
+  purchasedSkinIds?: string[];
+  purchasedGearIds?: string[];
+  selectedClass?: WarfaceClassId;
+  classLoadouts?: Partial<Record<WarfaceClassId, ClassLoadoutConfig>>;
   equippedWeaponOptics: Partial<Record<WeaponId, OpticType>>;
   equippedWeaponSkins: Partial<Record<WeaponId, string>>;
   equippedWeaponGunsmith: Partial<Record<WeaponId, WeaponGunsmithLoadout>>;
@@ -1137,10 +1141,38 @@ export function getCloudLoadoutSnapshot(): CloudLoadoutSnapshot {
   const purchasedWeaponIds: WeaponId[] = currentInventory.purchasedWeaponIds.filter(
     (w) => w in WEAPON_INVENTORY_CATALOG
   );
+  const purchasedSkinSet = new Set<string>(
+    (currentInventory.purchasedSkinIds || []).filter(
+      (id) => typeof id === 'string' && id.length > 0 && id.length <= 48
+    )
+  );
+  for (const equippedSkin of Object.values(currentInventory.equippedWeaponSkins || {})) {
+    if (typeof equippedSkin === 'string' && equippedSkin.length > 0 && equippedSkin.length <= 48) {
+      purchasedSkinSet.add(equippedSkin);
+    }
+  }
+  const purchasedSkinIds = Array.from(purchasedSkinSet).slice(0, 60);
+
+  const validGearIds = new Set(GEAR_INVENTORY_CATALOG.map((g) => g.id));
+  const purchasedGearIds = Array.from(
+    new Set(
+      (currentInventory.purchasedGearIds || []).filter(
+        (id) => typeof id === 'string' && validGearIds.has(id)
+      )
+    )
+  ).slice(0, 40);
+
   const activeClassLoadout =
     currentInventory.classLoadouts[currentInventory.selectedClass] ||
     currentInventory.classLoadouts.FUZILEIRO;
   const activeWeapon: WeaponId = activeClassLoadout.primaryWeapon || 'M4_CARBINE';
+
+  const classLoadouts: Partial<Record<WarfaceClassId, ClassLoadoutConfig>> = {
+    FUZILEIRO: { ...currentInventory.classLoadouts.FUZILEIRO },
+    MEDICO: { ...currentInventory.classLoadouts.MEDICO },
+    ENGENHEIRO: { ...currentInventory.classLoadouts.ENGENHEIRO },
+    FRANCO_ATIRADOR: { ...currentInventory.classLoadouts.FRANCO_ATIRADOR },
+  };
 
   let optCount = 0;
   for (const [k, v] of Object.entries(currentInventory.equippedWeaponOptics || {})) {
@@ -1178,6 +1210,10 @@ export function getCloudLoadoutSnapshot(): CloudLoadoutSnapshot {
   return {
     activeWeapon,
     purchasedWeaponIds,
+    purchasedSkinIds,
+    purchasedGearIds,
+    selectedClass: currentInventory.selectedClass,
+    classLoadouts,
     equippedWeaponOptics: optics,
     equippedWeaponSkins: skins,
     equippedWeaponGunsmith: gunsmith,
@@ -1185,7 +1221,13 @@ export function getCloudLoadoutSnapshot(): CloudLoadoutSnapshot {
 }
 
 export function applyCloudLoadoutSnapshot(
-  snapshot?: (Partial<CloudLoadoutSnapshot> & { unlockedWeapons?: WeaponId[] }) | null
+  snapshot?:
+    | (Partial<CloudLoadoutSnapshot> & {
+        unlockedWeapons?: WeaponId[];
+        unlockedWeaponSkins?: string[];
+        unlockedGearIds?: string[];
+      })
+    | null
 ): void {
   if (!snapshot) return;
   let changed = false;
@@ -1202,8 +1244,125 @@ export function applyCloudLoadoutSnapshot(
         changed = true;
       }
     }
-    if (changed) {
+    if (mergedSet.size !== currentInventory.purchasedWeaponIds.length) {
       currentInventory.purchasedWeaponIds = Array.from(mergedSet);
+    }
+  }
+
+  const remoteSkins = [
+    ...(Array.isArray(snapshot.purchasedSkinIds) ? snapshot.purchasedSkinIds : []),
+    ...(Array.isArray(snapshot.unlockedWeaponSkins) ? snapshot.unlockedWeaponSkins : []),
+    ...(snapshot.equippedWeaponSkins && typeof snapshot.equippedWeaponSkins === 'object'
+      ? Object.values(snapshot.equippedWeaponSkins).filter(
+          (v): v is string => typeof v === 'string' && v.length > 0
+        )
+      : []),
+  ];
+  if (remoteSkins.length > 0) {
+    const mergedSkinsSet = new Set<string>(currentInventory.purchasedSkinIds);
+    for (const s of remoteSkins) {
+      if (typeof s === 'string' && s.length > 0 && s.length <= 48 && !mergedSkinsSet.has(s)) {
+        mergedSkinsSet.add(s);
+        changed = true;
+      }
+    }
+    if (mergedSkinsSet.size !== currentInventory.purchasedSkinIds.length) {
+      currentInventory.purchasedSkinIds = Array.from(mergedSkinsSet);
+    }
+  }
+
+  const validGearIds = new Set(GEAR_INVENTORY_CATALOG.map((g) => g.id));
+  const remoteGear = [
+    ...(Array.isArray(snapshot.purchasedGearIds) ? snapshot.purchasedGearIds : []),
+    ...(Array.isArray(snapshot.unlockedGearIds) ? snapshot.unlockedGearIds : []),
+  ];
+  if (remoteGear.length > 0) {
+    const mergedGearSet = new Set<string>(currentInventory.purchasedGearIds);
+    for (const g of remoteGear) {
+      if (typeof g === 'string' && validGearIds.has(g) && !mergedGearSet.has(g)) {
+        mergedGearSet.add(g);
+        changed = true;
+      }
+    }
+    if (mergedGearSet.size !== currentInventory.purchasedGearIds.length) {
+      currentInventory.purchasedGearIds = Array.from(mergedGearSet);
+    }
+  }
+
+  if (
+    snapshot.selectedClass &&
+    snapshot.selectedClass in WARFACE_CLASS_LOADOUT_META &&
+    currentInventory.selectedClass !== snapshot.selectedClass
+  ) {
+    currentInventory.selectedClass = snapshot.selectedClass;
+    changed = true;
+  }
+
+  if (snapshot.classLoadouts && typeof snapshot.classLoadouts === 'object') {
+    const nextClassLoadouts = { ...currentInventory.classLoadouts };
+    (['FUZILEIRO', 'MEDICO', 'ENGENHEIRO', 'FRANCO_ATIRADOR'] as WarfaceClassId[]).forEach(
+      (cId) => {
+        const remoteCfg = snapshot.classLoadouts?.[cId];
+        if (!remoteCfg || typeof remoteCfg !== 'object') return;
+        const prev = nextClassLoadouts[cId];
+        const merged: ClassLoadoutConfig = { ...prev };
+        if (
+          remoteCfg.primaryWeapon &&
+          WARFACE_CLASS_LOADOUT_META[cId].allowedPrimaries.includes(remoteCfg.primaryWeapon)
+        ) {
+          merged.primaryWeapon = remoteCfg.primaryWeapon;
+        }
+        if (remoteCfg.secondaryWeapon && remoteCfg.secondaryWeapon in WEAPON_INVENTORY_CATALOG) {
+          merged.secondaryWeapon = remoteCfg.secondaryWeapon;
+        }
+        if (remoteCfg.meleeWeapon && remoteCfg.meleeWeapon in WEAPON_INVENTORY_CATALOG) {
+          merged.meleeWeapon = remoteCfg.meleeWeapon;
+        }
+        if (remoteCfg.grenadePack && validGearIds.has(remoteCfg.grenadePack)) {
+          merged.grenadePack = remoteCfg.grenadePack;
+        }
+        if (remoteCfg.helmet && validGearIds.has(remoteCfg.helmet)) {
+          merged.helmet = remoteCfg.helmet;
+        }
+        if (remoteCfg.vest && validGearIds.has(remoteCfg.vest)) {
+          merged.vest = remoteCfg.vest;
+        }
+        if (remoteCfg.gloves && validGearIds.has(remoteCfg.gloves)) {
+          merged.gloves = remoteCfg.gloves;
+        }
+        if (remoteCfg.boots && validGearIds.has(remoteCfg.boots)) {
+          merged.boots = remoteCfg.boots;
+        }
+        if (
+          prev.primaryWeapon !== merged.primaryWeapon ||
+          prev.secondaryWeapon !== merged.secondaryWeapon ||
+          prev.meleeWeapon !== merged.meleeWeapon ||
+          prev.grenadePack !== merged.grenadePack ||
+          prev.helmet !== merged.helmet ||
+          prev.vest !== merged.vest ||
+          prev.gloves !== merged.gloves ||
+          prev.boots !== merged.boots
+        ) {
+          nextClassLoadouts[cId] = merged;
+          changed = true;
+        }
+      }
+    );
+    currentInventory.classLoadouts = nextClassLoadouts;
+  } else if (
+    snapshot.activeWeapon &&
+    snapshot.activeWeapon in WEAPON_INVENTORY_CATALOG &&
+    snapshot.activeWeapon !== 'P50_PISTOL' &&
+    snapshot.activeWeapon !== 'M1911_PISTOL' &&
+    snapshot.activeWeapon !== 'KNIFE_TACTICAL'
+  ) {
+    const inferredClass = inferWarfaceClassForWeapon(snapshot.activeWeapon);
+    if (currentInventory.classLoadouts[inferredClass].primaryWeapon !== snapshot.activeWeapon) {
+      currentInventory.classLoadouts[inferredClass] = {
+        ...currentInventory.classLoadouts[inferredClass],
+        primaryWeapon: snapshot.activeWeapon,
+      };
+      changed = true;
     }
   }
 

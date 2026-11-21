@@ -11,7 +11,12 @@ import {
   VipBattlePassCloudState,
 } from '../progression/vipBattlePassSystem';
 import { WeaponGunsmithLoadout } from '../progression/gunsmithSystem';
-import { getCloudLoadoutSnapshot } from '../progression/loadoutSystem';
+import { WarfaceClassId } from '../components/WarfaceClassIcons';
+import { getEquippedCallingCardId } from '../progression/callingCardsSystem';
+import {
+  ClassLoadoutConfig,
+  getCloudLoadoutSnapshot,
+} from '../progression/loadoutSystem';
 import {
   getRankForXp,
   loadSavedPlayerCash,
@@ -46,6 +51,14 @@ export interface PlayerCloudProfile {
   equippedWeaponOptics?: Partial<Record<WeaponId, OpticType>>;
   equippedWeaponSkins?: Partial<Record<WeaponId, string>>;
   equippedWeaponGunsmith?: Partial<Record<WeaponId, WeaponGunsmithLoadout>>;
+  unlockedWeaponSkins?: string[];
+  unlockedGearIds?: string[];
+  selectedClass?: WarfaceClassId;
+  classLoadouts?: Partial<Record<WarfaceClassId, ClassLoadoutConfig>>;
+  equippedCallingCardId?: string;
+  clanId?: string;
+  clanTokens?: number;
+  purchasedClanOfferIds?: string[];
   dailyContracts?: DailyContractsCloudState;
   diamonds?: number;
   vipBattlePass?: VipBattlePassCloudState;
@@ -192,6 +205,27 @@ export function loadLocalProfileFallback(): PlayerCloudProfile {
         equippedWeaponOptics: parsed.equippedWeaponOptics || localLoadout.equippedWeaponOptics,
         equippedWeaponSkins: parsed.equippedWeaponSkins || localLoadout.equippedWeaponSkins,
         equippedWeaponGunsmith: parsed.equippedWeaponGunsmith || localLoadout.equippedWeaponGunsmith,
+        unlockedWeaponSkins: Array.from(
+          new Set([
+            ...(localLoadout.purchasedSkinIds || []),
+            ...(parsed.unlockedWeaponSkins || []),
+          ])
+        ).slice(0, 60),
+        unlockedGearIds: Array.from(
+          new Set([
+            ...(localLoadout.purchasedGearIds || []),
+            ...(parsed.unlockedGearIds || []),
+          ])
+        ).slice(0, 40),
+        selectedClass: parsed.selectedClass || localLoadout.selectedClass || 'FUZILEIRO',
+        classLoadouts: parsed.classLoadouts || localLoadout.classLoadouts,
+        equippedCallingCardId:
+          parsed.equippedCallingCardId || getEquippedCallingCardId() || 'obsidian_vanguard',
+        clanId: typeof parsed.clanId === 'string' ? parsed.clanId.slice(0, 24) : '',
+        clanTokens: Math.max(0, Math.floor(Number(parsed.clanTokens) || 0)),
+        purchasedClanOfferIds: Array.isArray(parsed.purchasedClanOfferIds)
+          ? Array.from(new Set(parsed.purchasedClanOfferIds)).slice(0, 30)
+          : [],
         dailyContracts: mergeDailyContractsStates(localContracts, parsed.dailyContracts),
         diamonds: Math.max(0, Math.floor(Number(parsed.diamonds) || 0)),
         vipBattlePass: mergeVipBattlePassStates(getVipBattlePassState(), parsed.vipBattlePass),
@@ -235,6 +269,14 @@ export function loadLocalProfileFallback(): PlayerCloudProfile {
     equippedWeaponOptics: localLoadout.equippedWeaponOptics,
     equippedWeaponSkins: localLoadout.equippedWeaponSkins,
     equippedWeaponGunsmith: localLoadout.equippedWeaponGunsmith,
+    unlockedWeaponSkins: (localLoadout.purchasedSkinIds || []).slice(0, 60),
+    unlockedGearIds: (localLoadout.purchasedGearIds || []).slice(0, 40),
+    selectedClass: localLoadout.selectedClass || 'FUZILEIRO',
+    classLoadouts: localLoadout.classLoadouts,
+    equippedCallingCardId: getEquippedCallingCardId() || 'obsidian_vanguard',
+    clanId: '',
+    clanTokens: 0,
+    purchasedClanOfferIds: [],
     dailyContracts: getDailyContractsSnapshot().state,
     diamonds: 0,
     vipBattlePass: getVipBattlePassState(),
@@ -263,12 +305,23 @@ export function mergeLocalAndCloudProfiles(
 ): PlayerCloudProfile {
   const nowIso = new Date().toISOString();
   const isCloudOutdated = cloud && cloud.economyVersion !== CURRENT_ECONOMY_VERSION;
+  const isFreshGuestHydration = Boolean(
+    cloud &&
+      !isCloudOutdated &&
+      local.uid === 'local-guest' &&
+      local.playerXp === 0 &&
+      local.matchesPlayed === 0
+  );
 
   const mergedXp = isCloudOutdated
     ? 0
+    : isFreshGuestHydration
+    ? Math.max(0, Number(cloud?.playerXp) || 0)
     : Math.max(local.playerXp, loadSavedPlayerXp(), Number(cloud?.playerXp) || 0);
   const mergedCash = isCloudOutdated
     ? INITIAL_PLAYER_CASH
+    : isFreshGuestHydration
+    ? Math.max(0, Number(cloud?.playerCash ?? INITIAL_PLAYER_CASH))
     : Math.max(local.playerCash, loadSavedPlayerCash(), Number(cloud?.playerCash) || INITIAL_PLAYER_CASH);
   const rank = getRankForXp(mergedXp);
 
@@ -359,6 +412,63 @@ export function mergeLocalAndCloudProfiles(
     ...(cloud?.equippedWeaponGunsmith || {}),
   };
 
+  const mergedUnlockedWeaponSkins = Array.from(
+    new Set([
+      ...(localSnap.purchasedSkinIds || []),
+      ...(local.unlockedWeaponSkins || []),
+      ...(cloud?.unlockedWeaponSkins || []),
+      ...Object.values(mergedSkins).filter(
+        (v): v is string => typeof v === 'string' && v.length > 0
+      ),
+    ])
+  ).slice(0, 60);
+
+  const mergedUnlockedGearIds = Array.from(
+    new Set([
+      ...(localSnap.purchasedGearIds || []),
+      ...(local.unlockedGearIds || []),
+      ...(cloud?.unlockedGearIds || []),
+    ])
+  ).slice(0, 40);
+
+  const mergedSelectedClass: WarfaceClassId =
+    cloud?.selectedClass || local.selectedClass || localSnap.selectedClass || 'FUZILEIRO';
+
+  const mergedClassLoadouts: Partial<Record<WarfaceClassId, ClassLoadoutConfig>> = {
+    ...(localSnap.classLoadouts || {}),
+    ...(local.classLoadouts || {}),
+    ...(cloud?.classLoadouts || {}),
+  };
+
+  const mergedCallingCardId = (
+    cloud?.equippedCallingCardId ||
+    local.equippedCallingCardId ||
+    getEquippedCallingCardId() ||
+    'obsidian_vanguard'
+  ).slice(0, 48);
+
+  const mergedClanId = (
+    typeof cloud?.clanId === 'string'
+      ? cloud.clanId
+      : typeof local.clanId === 'string'
+        ? local.clanId
+        : ''
+  ).slice(0, 24);
+
+  const mergedClanTokens = isFreshGuestHydration
+    ? Math.max(0, Math.floor(Number(cloud?.clanTokens) || 0))
+    : Math.max(
+        Math.max(0, Math.floor(Number(local.clanTokens) || 0)),
+        Math.max(0, Math.floor(Number(cloud?.clanTokens) || 0))
+      );
+
+  const mergedPurchasedClanOffers = Array.from(
+    new Set([
+      ...(local.purchasedClanOfferIds || []),
+      ...(cloud?.purchasedClanOfferIds || []),
+    ])
+  ).slice(0, 30);
+
   const cloudHasFounderClaim = Boolean(cloud?.founderDiamondsClaimed);
   const localHasFounderClaim = Boolean(local.founderDiamondsClaimed);
   const mergedFounderClaimed = cloud
@@ -403,6 +513,14 @@ export function mergeLocalAndCloudProfiles(
     equippedWeaponOptics: mergedOptics,
     equippedWeaponSkins: mergedSkins,
     equippedWeaponGunsmith: mergedGunsmith,
+    unlockedWeaponSkins: mergedUnlockedWeaponSkins,
+    unlockedGearIds: mergedUnlockedGearIds,
+    selectedClass: mergedSelectedClass,
+    classLoadouts: mergedClassLoadouts,
+    equippedCallingCardId: mergedCallingCardId,
+    clanId: mergedClanId,
+    clanTokens: mergedClanTokens,
+    purchasedClanOfferIds: mergedPurchasedClanOffers,
     dailyContracts: mergeDailyContractsStates(
       mergeDailyContractsStates(getDailyContractsSnapshot().state, local.dailyContracts),
       cloud?.dailyContracts

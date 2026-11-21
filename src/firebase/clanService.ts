@@ -8,6 +8,7 @@ import {
   limit,
   onSnapshot,
   query,
+  runTransaction,
   setDoc,
   Unsubscribe,
   where,
@@ -35,6 +36,7 @@ import {
 import {
   getCloudSyncState,
   subscribePlayerProfile,
+  updatePlayerClanCloudMeta,
 } from './playerCloudSync';
 
 export const MAX_CLAN_MEMBERS = 7;
@@ -401,12 +403,22 @@ function attachClanListener(clanId: string): void {
   );
 }
 
-async function hydrateRealClanForUser(uid: string): Promise<void> {
+async function hydrateRealClanForUser(uid: string, preferredClanId?: string): Promise<void> {
   if (!uid) return;
   try {
-    // 1. If we have a locally cached clan, verify it truly exists in Firestore and includes this user
-    if (currentState.myClan?.clanId) {
-      const ref = doc(db, 'clans', currentState.myClan.clanId);
+    // 1. Direct O(1) lookup via cloud profile clanId or local cache
+    const candidateIds = Array.from(
+      new Set(
+        [
+          preferredClanId,
+          getCloudSyncState().profile.clanId,
+          currentState.myClan?.clanId,
+        ].filter((id): id is string => typeof id === 'string' && id.length >= 3)
+      )
+    );
+
+    for (const candidateId of candidateIds) {
+      const ref = doc(db, 'clans', candidateId);
       const snap = await getDoc(ref);
       if (snap.exists()) {
         const data = snap.data() as ClanDocument;
@@ -415,16 +427,15 @@ async function hydrateRealClanForUser(uid: string): Promise<void> {
           saveCachedClan(data);
           attachClanListener(data.clanId);
           emitClanState();
+          if (getCloudSyncState().profile.clanId !== data.clanId) {
+            void updatePlayerClanCloudMeta({ clanId: data.clanId });
+          }
           return;
         }
       }
-      // Cached clan does not exist or user is not a member -> clear immediately
-      currentState.myClan = null;
-      saveCachedClan(null);
-      emitClanState();
     }
 
-    // 2. Otherwise look up whether this user belongs to any real clan in Firestore
+    // 2. Fallback query across /clans where memberUids contains uid (authorized by firestore.rules)
     const q = query(
       collection(db, 'clans'),
       where('memberUids', 'array-contains', uid),
@@ -438,6 +449,9 @@ async function hydrateRealClanForUser(uid: string): Promise<void> {
         saveCachedClan(data);
         attachClanListener(data.clanId);
         emitClanState();
+        if (getCloudSyncState().profile.clanId !== data.clanId) {
+          void updatePlayerClanCloudMeta({ clanId: data.clanId });
+        }
         return;
       }
     }
@@ -486,7 +500,40 @@ if (typeof window !== 'undefined') {
   });
 }
 
+let lastHydratedProfileClanId = '';
+
 subscribePlayerProfile((sync) => {
+  // Hydrate cloud-saved clanTokens and purchasedClanOfferIds (survives reinstalls)
+  const cloudTokens = Math.max(0, Math.floor(Number(sync.profile.clanTokens) || 0));
+  const cloudOffers = Array.isArray(sync.profile.purchasedClanOfferIds)
+    ? sync.profile.purchasedClanOfferIds
+    : [];
+  const mergedOffers = Array.from(
+    new Set([...currentState.purchasedOfferIds, ...cloudOffers])
+  );
+  if (
+    cloudTokens !== currentState.clanTokens ||
+    mergedOffers.length !== currentState.purchasedOfferIds.length
+  ) {
+    currentState.clanTokens = Math.max(currentState.clanTokens, cloudTokens);
+    currentState.purchasedOfferIds = mergedOffers;
+    saveLocalTokensState(currentState.clanTokens, currentState.purchasedOfferIds);
+    emitClanState();
+  }
+
+  // If cloud profile arrived with a clanId and we don't have it loaded yet, hydrate it immediately
+  const profileClanId = (sync.profile.clanId || '').trim();
+  const authUid = auth.currentUser?.uid;
+  if (
+    authUid &&
+    profileClanId.length >= 3 &&
+    profileClanId !== lastHydratedProfileClanId &&
+    currentState.myClan?.clanId !== profileClanId
+  ) {
+    lastHydratedProfileClanId = profileClanId;
+    void hydrateRealClanForUser(authUid, profileClanId);
+  }
+
   const myClan = currentState.myClan;
   if (!myClan) return;
   const uid = sync.profile.uid;
@@ -556,16 +603,24 @@ export async function createNewClan(params: {
     ? params.emblemId
     : 'alpha_wolf';
 
+  const user = auth.currentUser;
+  if (!user) {
+    return {
+      ok: false,
+      error: 'Faça login com sua conta Google para fundar um clã salvo permanentemente na nuvem.',
+    };
+  }
+
   const sync = getCloudSyncState();
-  const uid = auth.currentUser?.uid || sync.profile.uid || 'local_operator';
-  const callsign = sync.profile.callsign || 'RAFA';
+  const uid = user.uid;
+  const callsign = (sync.profile.callsign || 'OPERADOR').slice(0, 32);
   const nowIso = new Date().toISOString();
 
   const leaderEntry: ClanMemberEntry = {
     uid,
     callsign,
     role: 'LEADER',
-    rankLevel: sync.profile.rankLevel || 4,
+    rankLevel: sync.profile.rankLevel || 1,
     mmr: sync.profile.mmr || 2450,
     avatarDataUrl:
       sync.profile.avatarDataUrl && sync.profile.avatarDataUrl.length <= 45000
@@ -598,32 +653,41 @@ export async function createNewClan(params: {
     createdAt: nowIso,
   };
 
-  if (auth.currentUser) {
-    try {
-      const ref = doc(db, 'clans', clanId);
-      const existingSnap = await getDoc(ref);
+  try {
+    const ref = doc(db, 'clans', clanId);
+    await runTransaction(db, async (tx) => {
+      const existingSnap = await tx.get(ref);
       if (existingSnap.exists()) {
-        return {
-          ok: false,
-          error: `Já existe um clã chamado "${cleanName}". Escolha um nome único!`,
-        };
+        throw new Error('CLAN_NAME_TAKEN');
       }
-      await setDoc(ref, newClan);
-      attachClanListener(clanId);
-    } catch (err) {
-      if (!isFirestoreOfflineError(err)) {
-        handleFirestoreError(err, OperationType.CREATE, `clans/${clanId}`);
-        return {
-          ok: false,
-          error: 'Não foi possível registrar o clã no servidor. Tente outro nome.',
-        };
-      }
+      tx.set(ref, newClan);
+    });
+    attachClanListener(clanId);
+  } catch (err) {
+    if (err instanceof Error && err.message === 'CLAN_NAME_TAKEN') {
+      return {
+        ok: false,
+        error: `Já existe um clã chamado "${cleanName}". Escolha um nome único!`,
+      };
     }
+    if (isFirestoreOfflineError(err)) {
+      return {
+        ok: false,
+        error: 'Sem conexão com o servidor. Conecte-se à internet para registrar seu clã com nome único.',
+      };
+    }
+    handleFirestoreError(err, OperationType.CREATE, `clans/${clanId}`);
+    return {
+      ok: false,
+      error: 'Não foi possível registrar o clã no servidor. Tente outro nome.',
+    };
   }
 
   currentState.myClan = newClan;
+  lastHydratedProfileClanId = clanId;
   saveCachedClan(newClan);
   emitClanState();
+  await updatePlayerClanCloudMeta({ clanId });
   void refreshClanLeaderboard();
   return { ok: true };
 }
@@ -841,14 +905,21 @@ export async function joinExistingClanById(
       updatedAtMs: Date.now(),
     };
 
-    if (auth.currentUser) {
-      await setDoc(ref, updated);
-      attachClanListener(cleanId);
+    if (!auth.currentUser) {
+      return {
+        ok: false,
+        error: 'Faça login com sua conta Google para entrar em um clã.',
+      };
     }
 
+    await setDoc(ref, updated);
+    attachClanListener(cleanId);
+
     currentState.myClan = updated;
+    lastHydratedProfileClanId = cleanId;
     saveCachedClan(updated);
     emitClanState();
+    await updatePlayerClanCloudMeta({ clanId: cleanId });
     return { ok: true };
   } catch (err) {
     if (!isFirestoreOfflineError(err)) {
@@ -897,8 +968,10 @@ export async function leaveOrDisbandClan(): Promise<void> {
   }
 
   currentState.myClan = null;
+  lastHydratedProfileClanId = '';
   saveCachedClan(null);
   emitClanState();
+  await updatePlayerClanCloudMeta({ clanId: '' });
 }
 
 /**
@@ -1025,9 +1098,16 @@ export async function claimClanDailyMissionReward(
   if (auth.currentUser) {
     try {
       await setDoc(doc(db, 'clans', clan.clanId), updated);
-    } catch {
-      // ignore offline
+    } catch (err) {
+      if (!isFirestoreOfflineError(err)) {
+        handleFirestoreError(err, OperationType.UPDATE, `clans/${clan.clanId}`);
+      }
     }
+    await updatePlayerClanCloudMeta({
+      clanId: clan.clanId,
+      clanTokens: currentState.clanTokens,
+      purchasedClanOfferIds: currentState.purchasedOfferIds,
+    });
   }
 
   return { ok: true };
@@ -1079,6 +1159,11 @@ export function redeemClanStoreOffer(
 
   saveLocalTokensState(currentState.clanTokens, currentState.purchasedOfferIds);
   emitClanState();
+  void updatePlayerClanCloudMeta({
+    clanId: clan.clanId,
+    clanTokens: currentState.clanTokens,
+    purchasedClanOfferIds: currentState.purchasedOfferIds,
+  });
   return { ok: true };
 }
 
@@ -1090,7 +1175,12 @@ export async function refreshClanLeaderboard(): Promise<void> {
   }
 
   try {
-    const q = query(collection(db, 'clans'), limit(30));
+    // Explicitly filter by clanLevel >= 1 to satisfy Firestore Security Rules allow list
+    const q = query(
+      collection(db, 'clans'),
+      where('clanLevel', '>=', 1),
+      limit(30)
+    );
     const snap = await getDocs(q);
     const list: ClanDocument[] = [];
     snap.forEach((d) => {

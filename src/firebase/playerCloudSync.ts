@@ -9,6 +9,11 @@ import {
 } from 'firebase/firestore';
 import { evaluateUnlockedAchievements } from '../progression/achievementsData';
 import {
+  applyCloudCallingCardSnapshot,
+  getEquippedCallingCardId,
+  registerCloudCallingCardHook,
+} from '../progression/callingCardsSystem';
+import {
   applyCloudDailyContractsSnapshot,
   getDailyContractsSnapshot,
   recordDailyContractProgress,
@@ -119,16 +124,58 @@ function buildCloudSafeProfilePayload(
     matchesPlayed,
     Math.max(0, Math.floor(Number(restProfile.matchesWon) || 0))
   );
+  const equippedSkins =
+    restProfile.equippedWeaponSkins || loadoutSnap.equippedWeaponSkins;
+  const unlockedWeaponSkins = Array.from(
+    new Set([
+      ...(restProfile.unlockedWeaponSkins || []),
+      ...(loadoutSnap.purchasedSkinIds || []),
+      ...Object.values(equippedSkins || {}).filter(
+        (v): v is string => typeof v === 'string' && v.length > 0
+      ),
+    ])
+  )
+    .map((s) => s.slice(0, 48))
+    .slice(0, 60);
+
+  const unlockedGearIds = Array.from(
+    new Set([
+      ...(restProfile.unlockedGearIds || []),
+      ...(loadoutSnap.purchasedGearIds || []),
+    ])
+  )
+    .map((g) => g.slice(0, 48))
+    .slice(0, 40);
+
+  const cleanClanId =
+    typeof restProfile.clanId === 'string'
+      ? restProfile.clanId.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 24)
+      : '';
+
   return {
     ...restProfile,
     matchesPlayed,
     matchesWon,
     equippedWeaponOptics:
       restProfile.equippedWeaponOptics || loadoutSnap.equippedWeaponOptics,
-    equippedWeaponSkins:
-      restProfile.equippedWeaponSkins || loadoutSnap.equippedWeaponSkins,
+    equippedWeaponSkins: equippedSkins,
     equippedWeaponGunsmith:
       restProfile.equippedWeaponGunsmith || loadoutSnap.equippedWeaponGunsmith,
+    unlockedWeaponSkins,
+    unlockedGearIds,
+    selectedClass:
+      restProfile.selectedClass || loadoutSnap.selectedClass || 'FUZILEIRO',
+    classLoadouts: restProfile.classLoadouts || loadoutSnap.classLoadouts,
+    equippedCallingCardId: (
+      restProfile.equippedCallingCardId ||
+      getEquippedCallingCardId() ||
+      'obsidian_vanguard'
+    ).slice(0, 48),
+    clanId: cleanClanId,
+    clanTokens: Math.max(0, Math.min(1000000, Math.floor(Number(restProfile.clanTokens) || 0))),
+    purchasedClanOfferIds: Array.from(
+      new Set(restProfile.purchasedClanOfferIds || [])
+    ).slice(0, 30),
     dailyContracts:
       restProfile.dailyContracts || getDailyContractsSnapshot().state,
     diamonds: Math.max(0, Math.floor(Number(restProfile.diamonds) || 0)),
@@ -234,6 +281,7 @@ onAuthStateChanged(auth, async (user) => {
       hydratedCloudUid = user.uid;
       persistLocalProfile(merged);
       applyCloudLoadoutSnapshot(merged);
+      applyCloudCallingCardSnapshot(merged.equippedCallingCardId);
       applyCloudDailyContractsSnapshot(merged.dailyContracts);
       applyCloudVipBattlePassSnapshot(merged.vipBattlePass);
       applyCloudOperatorSnapshot(merged);
@@ -277,15 +325,19 @@ onAuthStateChanged(auth, async (user) => {
         saveTimeoutId !== null || Date.now() - lastLocalLoadoutMutationMs < 6000;
       if (hasRecentLocalLoadoutEdit) {
         merged.activeWeapon = state.profile.activeWeapon;
+        merged.selectedClass = state.profile.selectedClass;
+        merged.classLoadouts = state.profile.classLoadouts;
         merged.equippedWeaponOptics = state.profile.equippedWeaponOptics;
         merged.equippedWeaponSkins = state.profile.equippedWeaponSkins;
         merged.equippedWeaponGunsmith = state.profile.equippedWeaponGunsmith;
+        merged.equippedCallingCardId = state.profile.equippedCallingCardId;
       }
       state.profile = merged;
       state.lastSyncedAt = merged.updatedAt;
       persistLocalProfile(merged);
       if (!hasRecentLocalLoadoutEdit) {
         applyCloudLoadoutSnapshot(merged);
+        applyCloudCallingCardSnapshot(merged.equippedCallingCardId);
       }
       applyCloudDailyContractsSnapshot(merged.dailyContracts);
       applyCloudVipBattlePassSnapshot(merged.vipBattlePass);
@@ -409,10 +461,29 @@ registerCloudLoadoutHook((loadoutSnap) => {
       ...(loadoutSnap.purchasedWeaponIds || []),
     ]
   );
+  const unlockedWeaponSkins = Array.from(
+    new Set([
+      ...(state.profile.unlockedWeaponSkins || []),
+      ...(loadoutSnap.purchasedSkinIds || []),
+      ...Object.values(loadoutSnap.equippedWeaponSkins || {}).filter(
+        (v): v is string => typeof v === 'string' && v.length > 0
+      ),
+    ])
+  ).slice(0, 60);
+  const unlockedGearIds = Array.from(
+    new Set([
+      ...(state.profile.unlockedGearIds || []),
+      ...(loadoutSnap.purchasedGearIds || []),
+    ])
+  ).slice(0, 40);
   state.profile = {
     ...state.profile,
     activeWeapon: loadoutSnap.activeWeapon || state.profile.activeWeapon,
     unlockedWeapons,
+    unlockedWeaponSkins,
+    unlockedGearIds,
+    selectedClass: loadoutSnap.selectedClass || state.profile.selectedClass || 'FUZILEIRO',
+    classLoadouts: loadoutSnap.classLoadouts || state.profile.classLoadouts,
     equippedWeaponOptics: loadoutSnap.equippedWeaponOptics,
     equippedWeaponSkins: loadoutSnap.equippedWeaponSkins,
     equippedWeaponGunsmith: loadoutSnap.equippedWeaponGunsmith,
@@ -422,6 +493,46 @@ registerCloudLoadoutHook((loadoutSnap) => {
   emitState();
   scheduleCloudPush();
 });
+
+registerCloudCallingCardHook((cardId) => {
+  lastLocalLoadoutMutationMs = Date.now();
+  state.profile = {
+    ...state.profile,
+    equippedCallingCardId: cardId.slice(0, 48),
+    updatedAt: new Date().toISOString(),
+  };
+  persistLocalProfile(state.profile);
+  emitState();
+  void pushProfileToFirestoreNow();
+});
+
+export async function updatePlayerClanCloudMeta(patch: {
+  clanId?: string;
+  clanTokens?: number;
+  purchasedClanOfferIds?: string[];
+}): Promise<void> {
+  lastLocalLoadoutMutationMs = Date.now();
+  state.profile = {
+    ...state.profile,
+    ...(patch.clanId !== undefined ? { clanId: patch.clanId.slice(0, 24) } : {}),
+    ...(patch.clanTokens !== undefined
+      ? { clanTokens: Math.max(0, Math.floor(patch.clanTokens)) }
+      : {}),
+    ...(patch.purchasedClanOfferIds !== undefined
+      ? {
+          purchasedClanOfferIds: Array.from(
+            new Set(patch.purchasedClanOfferIds)
+          ).slice(0, 30),
+        }
+      : {}),
+    updatedAt: new Date().toISOString(),
+  };
+  persistLocalProfile(state.profile);
+  emitState();
+  if (auth.currentUser) {
+    await pushProfileToFirestoreNow();
+  }
+}
 
 registerCloudDailyContractsHook((dailyContracts) => {
   state.profile = {
@@ -988,18 +1099,22 @@ export async function purchaseMonthlyVipBattlePassWithDiamonds(): Promise<{
     vipBattlePass: nextVip,
     unlockedWeapons: nextUnlockedWeapons,
     equippedWeaponSkins: nextSkins,
+    unlockedWeaponSkins: Array.from(
+      new Set([
+        ...(state.profile.unlockedWeaponSkins || []),
+        ...(getCloudLoadoutSnapshot().purchasedSkinIds || []),
+        nextVip.weaponOfMonthSkinId,
+      ])
+    ).slice(0, 60),
     updatedAt: nowIso,
   };
 
-  const { email: _omitEmail, ...cloudSafePayload } = updatedProfile;
+  const cloudSafePayload = buildCloudSafeProfilePayload(updatedProfile, user.uid);
 
   try {
     state.isSyncing = true;
     emitState();
-    await setDoc(doc(db, 'players', user.uid), {
-      ...cloudSafePayload,
-      uid: user.uid,
-    });
+    await setDoc(doc(db, 'players', user.uid), cloudSafePayload);
     state.profile = updatedProfile;
     state.lastSyncedAt = nowIso;
     state.syncError = null;

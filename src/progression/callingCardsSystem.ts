@@ -386,6 +386,14 @@ export const CALLING_CARD_RARITY_META: Record<
 
 const STORAGE_KEY = 'kinetic_equipped_calling_card_v1';
 const listeners = new Set<(cardId: string) => void>();
+let cloudCallingCardHook: ((cardId: string) => void) | null = null;
+let isApplyingRemoteCallingCard = false;
+
+export function registerCloudCallingCardHook(
+  hook: (cardId: string) => void
+): void {
+  cloudCallingCardHook = hook;
+}
 
 function readStoredCallingCardId(): string {
   try {
@@ -428,6 +436,26 @@ export function getDeterministicFallbackCallingCard(
   return getCallingCardById(pool[hash % pool.length]);
 }
 
+export function applyCloudCallingCardSnapshot(
+  remoteCardId?: string | null
+): void {
+  if (!remoteCardId) return;
+  if (!CALLING_CARD_CATALOG.some((c) => c.id === remoteCardId)) return;
+  if (equippedCallingCardId === remoteCardId) return;
+  isApplyingRemoteCallingCard = true;
+  try {
+    equippedCallingCardId = remoteCardId;
+    try {
+      localStorage.setItem(STORAGE_KEY, remoteCardId);
+    } catch {
+      // ignore storage errors
+    }
+    listeners.forEach((fn) => fn(remoteCardId));
+  } finally {
+    isApplyingRemoteCallingCard = false;
+  }
+}
+
 export function setEquippedCallingCardId(
   cardId: string,
   profile: PlayerCloudProfile
@@ -442,6 +470,9 @@ export function setEquippedCallingCardId(
     // ignore storage errors
   }
   listeners.forEach((fn) => fn(card.id));
+  if (!isApplyingRemoteCallingCard && cloudCallingCardHook) {
+    cloudCallingCardHook(card.id);
+  }
   return true;
 }
 
