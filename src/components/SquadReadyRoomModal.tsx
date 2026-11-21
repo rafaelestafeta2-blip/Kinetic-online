@@ -376,13 +376,6 @@ export const SquadReadyRoomModal: React.FC<SquadReadyRoomModalProps> = ({
     startSquadMatchSearch();
   };
 
-  const handleHostLaunchImmediate = async () => {
-    if (queueType === 'RANKED' && !room.isPrivate) return;
-    soundEngine.playMenuSelect();
-    cancelSquadMatchSearch();
-    await startMatchInActiveRoom(false);
-  };
-
   const handleLeave = async () => {
     soundEngine.playMenuSelect();
     await leaveActiveRoom();
@@ -1111,32 +1104,21 @@ export const SquadReadyRoomModal: React.FC<SquadReadyRoomModalProps> = ({
                 </span>
               </button>
             ) : isSearching ? (
-              <div className="flex flex-col gap-1">
-                {queueType !== 'RANKED' && (
-                  <button
-                    type="button"
-                    onClick={() => void handleHostLaunchImmediate()}
-                    className="w-full py-1 rounded bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-display font-black text-[9px] uppercase tracking-wider cursor-pointer shadow"
-                  >
-                    ENTRAR AGORA »
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEngine.playMenuSelect();
-                    cancelSquadMatchSearch();
-                  }}
-                  className="w-full h-9 sm:h-11 rounded-lg bg-gradient-to-b from-red-600 to-red-800 border border-red-300/80 px-2 flex flex-col items-center justify-center cursor-pointer shadow-lg"
-                >
-                  <span className="font-display font-black text-[10px] sm:text-xs text-white uppercase tracking-wider leading-none">
-                    BUSCANDO {searchMins}:{searchSecs} ✕
-                  </span>
-                  <span className="text-[7px] sm:text-[8px] font-mono text-amber-200 uppercase truncate max-w-full mt-0.5">
-                    {modeDisplayLabel} · {matchSubtitleLabel}
-                  </span>
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  soundEngine.playMenuSelect();
+                  cancelSquadMatchSearch();
+                }}
+                className="w-full h-9 sm:h-11 rounded-lg bg-gradient-to-b from-red-600 to-red-800 border border-red-300/80 px-2 flex flex-col items-center justify-center cursor-pointer shadow-lg"
+              >
+                <span className="font-display font-black text-[10px] sm:text-xs text-white uppercase tracking-wider leading-none">
+                  BUSCANDO {searchMins}:{searchSecs} ✕
+                </span>
+                <span className="text-[7px] sm:text-[8px] font-mono text-amber-200 uppercase truncate max-w-full mt-0.5">
+                  {modeDisplayLabel} · {matchSubtitleLabel}
+                </span>
+              </button>
             ) : (
               <button
                 type="button"

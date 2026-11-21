@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { soundEngine } from '../audio/soundEngine';
+import { pushProfileToFirestoreNow } from '../firebase/playerCloudSync';
 import {
   GEAR_INVENTORY_CATALOG,
   WARFACE_CLASS_LOADOUT_META,
@@ -387,7 +388,11 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
     if (isWeaponSlot) {
       equipClassSlotItem(activeClass, selectedSlot as EquipmentSlotId, wId);
       if (selectedSlot === 'primaryWeapon') {
-        onSyncEquippedWeapon(wId);
+        try {
+          onSyncEquippedWeapon(wId);
+        } catch {
+          // Keep inventory selection intact even if engine preview fails
+        }
       }
     }
   };
@@ -513,6 +518,7 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
     } catch {
       // Never block closing the inventory modal
     }
+    void pushProfileToFirestoreNow();
     onClose();
   };
 
@@ -657,7 +663,7 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
           <button
             type="button"
             onClick={(e) => handleConfirmAndClose(e)}
-            className="relative z-20 min-h-[30px] h-8 sm:h-9 px-3 sm:px-4 rounded bg-gradient-to-r from-[#ea580c] to-[#f97316] hover:from-[#f97316] hover:to-[#fb923c] active:scale-95 border border-amber-300/60 text-[10px] sm:text-[11px] font-display font-black tracking-wider text-slate-950 uppercase whitespace-nowrap shrink-0 cursor-pointer transition-all shadow-[0_0_12px_rgba(249,115,22,0.3)]"
+            className="relative z-20 min-h-[30px] h-8 sm:h-9 px-3 sm:px-4 rounded bg-gradient-to-r from-[#ea580c] to-[#f97316] hover:from-[#f97316] hover:to-[#fb923c] active:scale-95 border border-amber-300/60 text-[10px] sm:text-[11px] font-display font-black tracking-wider text-slate-950 uppercase whitespace-nowrap shrink-0 cursor-pointer transition-all shadow-[0_0_12px_rgba(249,115,22,0.3)] touch-manipulation"
           >
             CONFIRMAR ✕
           </button>
@@ -990,7 +996,7 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
                           setInspectedWeaponId(wId);
                         }
                       }}
-                      className={`w-full text-left rounded-[2px] border px-2 py-1 transition-colors cursor-pointer ${
+                      className={`w-full text-left rounded-[2px] border px-2 py-1 transition-colors cursor-pointer touch-manipulation ${
                         isEquipped
                           ? 'bg-[#191f2a] border-[#f97316]'
                           : isInspected
@@ -1164,9 +1170,10 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
           </div>
 
           {/* --------------------------------------------------------------- */}
-          {/* COLUNA 3: INFORMAÇÕES DA ARMA + 6 BARRAS DE STATUS (COMPACTO)   */}
+          {/* COLUNA 3: INFORMAÇÕES DA ARMA + 6 BARRAS + RODAPÉ FIXO          */}
           {/* --------------------------------------------------------------- */}
-          <div className="col-span-4 min-h-0 flex flex-col justify-between bg-[#0a0d12] p-2 sm:p-2.5 overflow-y-auto">
+          <div className="col-span-4 min-h-0 flex flex-col bg-[#0a0d12] overflow-hidden">
+            <div className="flex-1 min-h-0 overflow-y-auto p-2 sm:p-2.5 touch-pan-y">
             {isWeaponSlot ? (
               <div className="space-y-1.5">
                 {/* Topo compacto: Preview 3D lateral + Nome + Categoria + Botão 360° */}
@@ -1471,15 +1478,17 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
               </div>
             ) : null}
 
-            {/* BARRA DE AÇÃO INFERIOR COMPACTA EM LINHA ÚNICA */}
-            <div className="pt-1.5 mt-1.5 border-t border-white/10 flex items-center gap-1.5 shrink-0">
+            </div>
+
+            {/* BARRA DE AÇÃO INFERIOR FIXA (SEMPRE VISÍVEL E CLICÁVEL) */}
+            <div className="px-2 sm:px-2.5 py-1.5 border-t border-white/15 bg-[#0a0d12] flex items-center gap-1.5 shrink-0">
               {isWeaponSlot && (
                 <div className="flex-1 min-w-0">
                   {isInspectedWeaponEquipped ? (
                     <button
                       type="button"
                       onClick={(e) => handleConfirmAndClose(e)}
-                      className="w-full py-1.5 px-2 rounded-[2px] border border-[#f97316]/75 bg-[#f97316]/20 hover:bg-[#f97316]/35 text-center font-mono font-bold text-[9px] sm:text-[10px] text-[#fb923c] uppercase truncate cursor-pointer transition-colors"
+                      className="w-full py-1.5 px-2 rounded-[2px] border border-[#f97316]/75 bg-[#f97316]/20 hover:bg-[#f97316]/35 text-center font-mono font-bold text-[9px] sm:text-[10px] text-[#fb923c] uppercase truncate cursor-pointer transition-colors touch-manipulation"
                     >
                       ✓ EQUIPADA · CONFIRMAR ({CLASS_TAB_SHORT[activeClass]})
                     </button>
@@ -1490,7 +1499,7 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
                         e.stopPropagation();
                         handleEquipOrBuyWeapon(inspectedWeaponSpec.id);
                       }}
-                      className="w-full py-1.5 px-2 rounded-[2px] bg-[#ea580c] hover:bg-[#f97316] text-white font-display font-black text-[10px] uppercase tracking-wider cursor-pointer transition-colors truncate"
+                      className="w-full py-1.5 px-2 rounded-[2px] bg-[#ea580c] hover:bg-[#f97316] text-white font-display font-black text-[10px] uppercase tracking-wider cursor-pointer transition-colors truncate touch-manipulation"
                     >
                       EQUIPAR {inspectedWeaponSpec.name}
                     </button>
@@ -1502,7 +1511,7 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
                         e.stopPropagation();
                         handleEquipOrBuyWeapon(inspectedWeaponSpec.id);
                       }}
-                      className={`w-full py-1.5 px-2 rounded-[2px] font-display font-black text-[9px] sm:text-[10px] uppercase tracking-wider transition-colors truncate ${
+                      className={`w-full py-1.5 px-2 rounded-[2px] font-display font-black text-[9px] sm:text-[10px] uppercase tracking-wider transition-colors truncate touch-manipulation ${
                         playerCash >= inspectedWeaponSpec.cashPrice
                           ? 'bg-[#ea580c] hover:bg-[#f97316] text-white cursor-pointer'
                           : 'bg-[#1a202c] border border-white/10 text-slate-400 cursor-not-allowed'
@@ -1522,7 +1531,7 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
                     <button
                       type="button"
                       onClick={(e) => handleConfirmAndClose(e)}
-                      className="w-full py-1.5 px-2 rounded-[2px] border border-[#f97316]/75 bg-[#f97316]/20 hover:bg-[#f97316]/35 text-center font-mono font-bold text-[9px] sm:text-[10px] text-[#fb923c] uppercase truncate cursor-pointer transition-colors"
+                      className="w-full py-1.5 px-2 rounded-[2px] border border-[#f97316]/75 bg-[#f97316]/20 hover:bg-[#f97316]/35 text-center font-mono font-bold text-[9px] sm:text-[10px] text-[#fb923c] uppercase truncate cursor-pointer transition-colors touch-manipulation"
                     >
                       ✓ EQUIPADO · CONFIRMAR ({CLASS_TAB_SHORT[activeClass]})
                     </button>
@@ -1533,7 +1542,7 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
                         e.stopPropagation();
                         handleEquipOrBuyGear(inspectedGearItem);
                       }}
-                      className="w-full py-1.5 px-2 rounded-[2px] bg-[#ea580c] hover:bg-[#f97316] text-white font-display font-black text-[10px] uppercase tracking-wider cursor-pointer transition-colors truncate"
+                      className="w-full py-1.5 px-2 rounded-[2px] bg-[#ea580c] hover:bg-[#f97316] text-white font-display font-black text-[10px] uppercase tracking-wider cursor-pointer transition-colors truncate touch-manipulation"
                     >
                       EQUIPAR ITEM
                     </button>
@@ -1545,7 +1554,7 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
                         e.stopPropagation();
                         handleEquipOrBuyGear(inspectedGearItem);
                       }}
-                      className={`w-full py-1.5 px-2 rounded-[2px] font-display font-black text-[9px] sm:text-[10px] uppercase tracking-wider transition-colors truncate ${
+                      className={`w-full py-1.5 px-2 rounded-[2px] font-display font-black text-[9px] sm:text-[10px] uppercase tracking-wider transition-colors truncate touch-manipulation ${
                         playerCash >= inspectedGearItem.cashPrice
                           ? 'bg-[#ea580c] hover:bg-[#f97316] text-white cursor-pointer'
                           : 'bg-[#1a202c] border border-white/10 text-slate-400 cursor-not-allowed'
@@ -1562,7 +1571,7 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
               <button
                 type="button"
                 onClick={(e) => handleConfirmAndClose(e)}
-                className="py-1.5 px-2.5 rounded-[2px] bg-[#161b24] hover:bg-[#1e2532] border border-white/15 text-[9px] sm:text-[10px] font-mono font-bold text-slate-200 uppercase cursor-pointer transition-colors shrink-0"
+                className="py-1.5 px-2.5 rounded-[2px] bg-[#161b24] hover:bg-[#1e2532] border border-white/15 text-[9px] sm:text-[10px] font-mono font-bold text-slate-200 uppercase cursor-pointer transition-colors shrink-0 touch-manipulation"
               >
                 PRONTO ✓
               </button>

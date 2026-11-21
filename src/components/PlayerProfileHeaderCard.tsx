@@ -1,5 +1,10 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { PlayerCloudProfile } from '../firebase/playerProfileModel';
+import {
+  getEquippedCallingCardId,
+  subscribeEquippedCallingCard,
+} from '../progression/callingCardsSystem';
+import { CallingCardArtBackdrop } from './CallingCardArtBackdrop';
 import { WarfaceRankIcon } from './WarfaceRankIcon';
 
 interface PlayerProfileHeaderCardProps {
@@ -15,10 +20,19 @@ export const PlayerProfileHeaderCard: React.FC<PlayerProfileHeaderCardProps> = (
   onTabChange,
   onOpenEditPhotoOrName,
 }) => {
+  const [equippedCardId, setEquippedCardId] = useState<string>(() =>
+    getEquippedCallingCardId()
+  );
+
+  useEffect(() => {
+    return subscribeEquippedCallingCard(setEquippedCardId);
+  }, []);
+
   return (
-    <div className="w-full grid grid-cols-1 md:grid-cols-12 gap-3 items-center bg-[#0b0e14]/90 border border-white/10 rounded-xl p-3 sm:p-4 backdrop-blur-md shrink-0">
+    <div className="relative overflow-hidden w-full grid grid-cols-1 md:grid-cols-12 gap-3 items-center bg-[#0b0e14]/90 border border-white/10 rounded-xl p-3 sm:p-4 backdrop-blur-md shrink-0">
+      <CallingCardArtBackdrop cardId={equippedCardId} className="opacity-55" />
       {/* 1. Esquerda: Cartão de Identificação do Operador */}
-      <div className="md:col-span-5 flex flex-col justify-between space-y-2">
+      <div className="relative z-10 md:col-span-5 flex flex-col justify-between space-y-2">
         <div className="flex items-center gap-3">
           {/* Avatar com moldura militar */}
           <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden border-2 border-amber-500/80 bg-slate-900 shadow-[0_0_15px_rgba(245,158,11,0.3)] shrink-0 flex items-center justify-center">
@@ -73,23 +87,20 @@ export const PlayerProfileHeaderCard: React.FC<PlayerProfileHeaderCardProps> = (
           </button>
           <button
             type="button"
-            onClick={() => {
-              onTabChange('CUSTOMIZE');
-              onOpenEditPhotoOrName();
-            }}
+            onClick={() => onTabChange('CUSTOMIZE')}
             className={`px-3 py-1 rounded-md font-mono text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
               activeTab === 'CUSTOMIZE'
                 ? 'bg-amber-500/20 text-amber-300 border border-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.25)]'
-                : 'bg-white/5 text-slate-400 border border-white/10 hover:text-white'
+                : 'bg-white/5 text-slate-300 border border-white/10 hover:text-white'
             }`}
           >
-            CUSTOMIZADO
+            FAIXAS PERSONALIZADAS
           </button>
         </div>
       </div>
 
       {/* 2. Centro: Grande Brasão Dourado de MVP com 3 Estrelas */}
-      <div className="md:col-span-3 flex flex-col items-center justify-center py-1">
+      <div className="relative z-10 md:col-span-3 flex flex-col items-center justify-center py-1">
         <div className="relative flex flex-col items-center justify-center p-3 rounded-xl bg-gradient-to-b from-amber-500/15 via-yellow-600/10 to-transparent border border-amber-500/40 shadow-[0_0_25px_rgba(245,158,11,0.2)]">
           {/* Estrelas Douradas */}
           <div className="flex items-center gap-1 text-amber-300 text-xs mb-0.5 drop-shadow-[0_0_6px_#f59e0b]">
@@ -108,7 +119,7 @@ export const PlayerProfileHeaderCard: React.FC<PlayerProfileHeaderCardProps> = (
       </div>
 
       {/* 3. Direita: Operador Tático Militar com Botão de Customização */}
-      <div className="md:col-span-4 flex items-center justify-end gap-3">
+      <div className="relative z-10 md:col-span-4 flex items-center justify-end gap-3">
         <div className="hidden sm:flex flex-col text-right">
           <span className="font-display font-bold text-xs text-white uppercase tracking-wider">
             OPERADOR KINETIC

@@ -168,10 +168,9 @@ export default function App() {
   );
 
   const handleSelectWeapon = (weaponId: WeaponId) => {
-    if (!engineRef.current) return;
     syncEquippedWeaponToInventory(weaponId);
-    engineRef.current.selectWeapon(weaponId);
-    applyGraphicsToEngine(engineRef.current, gameSettingsRef.current);
+    if (!engineRef.current) return;
+    engineRef.current.selectWeapon(weaponId, true);
   };
 
   useEffect(() => {

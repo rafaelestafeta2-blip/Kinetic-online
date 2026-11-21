@@ -11,7 +11,7 @@ import { bindTap } from './hudTapUtils';
 import { WarfaceClassIcon } from './WarfaceClassIcons';
 
 interface TeamVoiceCommsHudProps {
-  variant?: 'IN_MATCH' | 'LOBBY';
+  variant?: 'IN_MATCH' | 'LOBBY' | 'LOADING_COMPACT';
 }
 
 const EqualizerBars: React.FC<{ level: number; active: boolean }> = ({
@@ -103,6 +103,89 @@ export const TeamVoiceCommsHud: React.FC<TeamVoiceCommsHudProps> = ({
           : 'MUTED';
     void voiceChatManager.setMicMode(nextMode);
   };
+
+  if (variant === 'LOADING_COMPACT') {
+    return (
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="rounded-lg border border-emerald-500/35 bg-[#09131c]/90 px-2 py-1 text-white font-mono flex items-center justify-between gap-2 overflow-x-auto no-scrollbar"
+      >
+        <div className="flex items-center gap-1.5 min-w-0 shrink-0">
+          <span
+            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+              voiceState.isTransmitting
+                ? 'bg-emerald-400 animate-pulse'
+                : voiceState.micMode === 'MUTED'
+                  ? 'bg-red-400'
+                  : 'bg-sky-400'
+            }`}
+          />
+          <span className="text-[9px] font-bold tracking-wider text-emerald-300 uppercase whitespace-nowrap">
+            RÁDIO · {voiceState.frequencyMhz}
+          </span>
+          <EqualizerBars
+            level={voiceState.localAudioLevel}
+            active={voiceState.isTransmitting}
+          />
+        </div>
+
+        <div className="flex items-center gap-1 shrink-0">
+          {(
+            [
+              { id: 'MUTED', label: 'MUDO' },
+              { id: 'PTT', label: 'PTT' },
+              { id: 'OPEN', label: 'ABERTO' },
+            ] as const
+          ).map((m) => {
+            const active = voiceState.micMode === m.id;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => void voiceChatManager.setMicMode(m.id)}
+                className={`px-2 py-0.5 rounded border text-[9px] font-bold uppercase cursor-pointer transition-all touch-manipulation ${
+                  active
+                    ? m.id === 'MUTED'
+                      ? 'bg-red-500/25 border-red-400 text-red-200'
+                      : 'bg-emerald-500/25 border-emerald-400 text-emerald-200'
+                    : 'bg-black/50 border-white/15 text-slate-400 hover:text-white'
+                }`}
+              >
+                {m.label}
+              </button>
+            );
+          })}
+
+          <button
+            type="button"
+            onPointerDown={() => void voiceChatManager.setPttHeld(true)}
+            onPointerUp={() => void voiceChatManager.setPttHeld(false)}
+            onPointerLeave={() => void voiceChatManager.setPttHeld(false)}
+            onPointerCancel={() => void voiceChatManager.setPttHeld(false)}
+            className={`px-2 py-0.5 rounded border text-[9px] font-black uppercase cursor-pointer select-none transition-all touch-manipulation ${
+              voiceState.pttHeld
+                ? 'bg-emerald-500 text-slate-950 border-emerald-200'
+                : 'bg-amber-500/20 border-amber-400/60 text-amber-200'
+            }`}
+          >
+            FALAR
+          </button>
+
+          <button
+            type="button"
+            onClick={() => voiceChatManager.toggleTeamChannelMute()}
+            className={`px-2 py-0.5 rounded border text-[9px] font-bold uppercase cursor-pointer touch-manipulation ${
+              voiceState.teamChannelMuted
+                ? 'bg-red-950/70 border-red-500/50 text-red-300'
+                : 'bg-black/50 border-white/15 text-slate-300 hover:text-white'
+            }`}
+          >
+            {voiceState.teamChannelMuted ? 'EQUIPE OFF' : 'EQUIPE ON'}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (variant === 'LOBBY') {
     return (

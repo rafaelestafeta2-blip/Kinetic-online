@@ -17,6 +17,7 @@ export interface OnlinePlayerState {
   clanTag?: string;
   clanEmblemId?: string;
   clanLevel?: number;
+  callingCardId?: string;
   x: number;
   y: number;
   z: number;

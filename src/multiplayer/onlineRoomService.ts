@@ -3,6 +3,7 @@ import { getActivePlayerClanSummary } from '../firebase/clanService';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase/firebaseClient';
 import { getCloudSyncState } from '../firebase/playerCloudSync';
 import { registerMatchProgressionGate } from '../progression/matchProgressionGate';
+import { getEquippedCallingCardId } from '../progression/callingCardsSystem';
 import { getEquippedWeaponSkinId, getPlayerInventoryState } from '../progression/loadoutSystem';
 import { runtimeTelemetry } from '../telemetry/runtimeTelemetry';
 import { DrillMode, WarfaceClassId, WeaponId } from '../types/game';
@@ -218,6 +219,7 @@ function createInitialLocalPlayerState(arenaMode: DrillMode, team: OnlineTeam, s
     ...(clan.clanTag ? { clanTag: clan.clanTag } : {}),
     ...(clan.clanEmblemId ? { clanEmblemId: clan.clanEmblemId } : {}),
     ...(clan.clanLevel ? { clanLevel: clan.clanLevel } : {}),
+    callingCardId: getEquippedCallingCardId(),
     x: spawn.x, y: spawn.y, z: spawn.z, yaw: spawn.yaw, pitch: 0,
     health: 100, armor: 100, isDown: false, isCrouching: false, isFiring: false,
     kills: 0, deaths: 0, assists: 0, headshots: 0, loadProgress: 0, isLoaded: false,
@@ -250,6 +252,7 @@ function mergePreservingFresherPlayers(
         clanTag: existing.clanTag || remote.clanTag,
         clanEmblemId: existing.clanEmblemId || remote.clanEmblemId,
         clanLevel: existing.clanLevel || remote.clanLevel,
+        callingCardId: existing.callingCardId || remote.callingCardId,
         isReady: typeof existing.isReady === 'boolean' ? existing.isReady : Boolean(remote.isReady),
         loadProgress: Math.max(existing.loadProgress || 0, remote.loadProgress || 0),
         isLoaded: Boolean(existing.isLoaded || remote.isLoaded),
@@ -263,6 +266,7 @@ function mergePreservingFresherPlayers(
         clanTag: remote.clanTag || existing.clanTag,
         clanEmblemId: remote.clanEmblemId || existing.clanEmblemId,
         clanLevel: remote.clanLevel || existing.clanLevel,
+        callingCardId: remote.callingCardId || existing.callingCardId,
         isReady: typeof remote.isReady === 'boolean' ? remote.isReady : Boolean(existing.isReady),
       };
     }

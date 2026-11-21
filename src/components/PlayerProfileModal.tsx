@@ -8,6 +8,7 @@ import {
   updatePlayerCallsignAndAvatar,
 } from '../firebase/playerCloudSync';
 import { PlayerProfileAchievementsRow } from './PlayerProfileAchievementsRow';
+import { PlayerProfileCallingCardsPanel } from './PlayerProfileCallingCardsPanel';
 import { PlayerProfileClassificationCard } from './PlayerProfileClassificationCard';
 import { PlayerProfileCombatStatsCard } from './PlayerProfileCombatStatsCard';
 import { PlayerProfileHeaderCard } from './PlayerProfileHeaderCard';
@@ -131,21 +132,27 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
           onOpenEditPhotoOrName={() => setIsEditModalOpen(true)}
         />
 
-        {/* Grade Central de 3 Colunas: CLASSIFICAÇÃO / ESTATÍSTICAS / ARMAS DESBLOQUEADAS */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-stretch">
-          <div className="md:col-span-4 min-h-[320px]">
-            <PlayerProfileClassificationCard profile={profile} />
-          </div>
-          <div className="md:col-span-4 min-h-[320px]">
-            <PlayerProfileCombatStatsCard profile={profile} />
-          </div>
-          <div className="md:col-span-4 min-h-[320px]">
-            <PlayerProfileUnlockedWeaponsGrid profile={profile} />
-          </div>
-        </div>
+        {activeTab === 'CUSTOMIZE' ? (
+          <PlayerProfileCallingCardsPanel profile={profile} />
+        ) : (
+          <>
+            {/* Grade Central de 3 Colunas: CLASSIFICAÇÃO / ESTATÍSTICAS / ARMAS DESBLOQUEADAS */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-stretch">
+              <div className="md:col-span-4 min-h-[320px]">
+                <PlayerProfileClassificationCard profile={profile} />
+              </div>
+              <div className="md:col-span-4 min-h-[320px]">
+                <PlayerProfileCombatStatsCard profile={profile} />
+              </div>
+              <div className="md:col-span-4 min-h-[320px]">
+                <PlayerProfileUnlockedWeaponsGrid profile={profile} />
+              </div>
+            </div>
 
-        {/* Seção Inferior: CONQUISTAS */}
-        <PlayerProfileAchievementsRow unlockedIds={profile.unlockedAchievements} />
+            {/* Seção Inferior: CONQUISTAS */}
+            <PlayerProfileAchievementsRow unlockedIds={profile.unlockedAchievements} />
+          </>
+        )}
       </main>
 
       {/* 3. Rodapé Tático */}

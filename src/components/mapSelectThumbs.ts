@@ -4,6 +4,7 @@
  */
 
 import { DrillMode } from '../types/game';
+import { resolveAssetUrl } from '../utils/assetUrl';
 import { MainMenuPlayModeId } from './MainMenuRightWidgets';
 
 export const MAP_SELECT_THUMBS = {
@@ -13,7 +14,7 @@ export const MAP_SELECT_THUMBS = {
   hangar: '/assets/maps/thumbs/hangar.jpg',
   easternCity: '/assets/maps/thumbs/eastern_city.jpg',
   mirageAnubis: '/assets/maps/thumbs/mirage_anubis.jpg',
-  stationArena: '/maps/station_arena/Preview1.png',
+  stationArena: resolveAssetUrl('/maps/station_arena/Preview1.png'),
   yard: '/assets/maps/thumbs/yard.jpg',
   range: '/assets/maps/thumbs/range.jpg',
   killhouse: '/assets/maps/thumbs/killhouse.jpg',

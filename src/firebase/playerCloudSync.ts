@@ -88,6 +88,7 @@ type SyncListener = (next: CloudSyncState) => void;
 const listeners = new Set<SyncListener>();
 let firestoreUnsub: Unsubscribe | null = null;
 let saveTimeoutId: number | null = null;
+let lastLocalLoadoutMutationMs = 0;
 let cloudHydrationPromise: Promise<void> | null = null;
 let hydratedCloudUid: string | null = null;
 
@@ -270,10 +271,22 @@ onAuthStateChanged(auth, async (user) => {
         remote,
         auth.currentUser
       );
+      // Protect recent local weapon/loadout changes from being reverted by
+      // in-flight or latency-compensated Firestore snapshots before the push commits.
+      const hasRecentLocalLoadoutEdit =
+        saveTimeoutId !== null || Date.now() - lastLocalLoadoutMutationMs < 6000;
+      if (hasRecentLocalLoadoutEdit) {
+        merged.activeWeapon = state.profile.activeWeapon;
+        merged.equippedWeaponOptics = state.profile.equippedWeaponOptics;
+        merged.equippedWeaponSkins = state.profile.equippedWeaponSkins;
+        merged.equippedWeaponGunsmith = state.profile.equippedWeaponGunsmith;
+      }
       state.profile = merged;
       state.lastSyncedAt = merged.updatedAt;
       persistLocalProfile(merged);
-      applyCloudLoadoutSnapshot(merged);
+      if (!hasRecentLocalLoadoutEdit) {
+        applyCloudLoadoutSnapshot(merged);
+      }
       applyCloudDailyContractsSnapshot(merged.dailyContracts);
       applyCloudVipBattlePassSnapshot(merged.vipBattlePass);
       applyCloudOperatorSnapshot(merged);
@@ -353,6 +366,9 @@ export function syncProgressionFromLocal(
     isGoogleLinked: state.isGoogleLinked,
   }, state.profile.unlockedAchievements);
 
+  if (activeWeapon) {
+    lastLocalLoadoutMutationMs = Date.now();
+  }
   state.profile = {
     ...state.profile,
     playerXp: nextXp, rankLevel: rank.level, rankTitle: rank.title, playerCash: nextCash,
@@ -385,6 +401,7 @@ registerCloudCashSpendHook((newCash) => {
 });
 
 registerCloudLoadoutHook((loadoutSnap) => {
+  lastLocalLoadoutMutationMs = Date.now();
   const unlockedWeapons = computeUnlockedWeaponsForXp(
     state.profile.playerXp,
     [

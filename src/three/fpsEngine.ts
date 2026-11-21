@@ -1796,7 +1796,7 @@ export class TacticalFPSEngine {
       this.state.screen !== 'PLAYING' &&
       this.state.screen !== 'PAUSED'
     ) {
-      this.selectWeapon(activeWeapon);
+      this.selectWeapon(activeWeapon, true);
     }
     this.emitHud();
   }
@@ -1955,14 +1955,17 @@ export class TacticalFPSEngine {
     }
   }
 
-  public selectWeapon(weaponId: WeaponId): void {
+  public selectWeapon(weaponId: WeaponId, skipInventorySync = false): void {
     this.grenadeSystem?.unequipFromHand();
     this.state.equippedGrenade = null;
     if (weaponId === 'P50_PISTOL' || weaponId === 'M1911_PISTOL') {
       this.secondaryWeapon = weaponId;
     } else if (weaponId !== 'KNIFE_TACTICAL') {
       this.primaryWeapon = weaponId;
-      if (this.state.screen === 'PLAYING' || this.state.screen === 'MAIN_MENU') {
+      if (
+        !skipInventorySync &&
+        (this.state.screen === 'PLAYING' || this.state.screen === 'MAIN_MENU')
+      ) {
         syncEquippedWeaponToInventory(weaponId);
       }
     }

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { soundEngine } from '../audio/soundEngine';
 import { BLACKTHORN_ROSTER, VANGUARD_ROSTER } from '../data/matchRoster';
 import {
@@ -11,15 +11,21 @@ import {
   subscribePlayerProfile,
 } from '../firebase/playerCloudSync';
 import {
+  getActiveOnlineRoom,
   isOnlineMatchActive,
   publishLocalLoadProgress,
   subscribeOnlineRoom,
 } from '../multiplayer/onlineRoomService';
 import { OnlineRoomState } from '../multiplayer/onlineTypes';
-import { TACTICAL_ACHIEVEMENTS } from '../progression/achievementsData';
+import {
+  getCallingCardById,
+  getDeterministicFallbackCallingCard,
+  getEquippedCallingCardId,
+} from '../progression/callingCardsSystem';
 import { getPlayerInventoryState } from '../progression/loadoutSystem';
 import { DrillMode } from '../types/game';
 import { isMapSpawnHarness } from '../three/mapModeUtils';
+import { CallingCardArtBackdrop } from './CallingCardArtBackdrop';
 import {
   ClanEmblemIcon,
   ClanEmblemId,
@@ -34,7 +40,7 @@ import {
 } from './WarfaceClassIcons';
 import { WarfaceRankIcon } from './WarfaceRankIcon';
 import { TeamVoiceCommsHud } from './TeamVoiceCommsHud';
-import { thumbForDrillMode } from './mapSelectThumbs';
+import { MAP_SELECT_THUMBS, thumbForDrillMode } from './mapSelectThumbs';
 
 type LoadingRow = {
   callsign: string;
@@ -46,129 +52,146 @@ type LoadingRow = {
   rankLevel: number;
   clanName?: string;
   clanEmblemId?: ClanEmblemId;
-  bannerTitle?: string;
-  bannerIcon?: string;
-  bannerTier?: 'BRONZE' | 'SILVER' | 'GOLD' | 'PLATINUM';
+  callingCardId?: string;
 };
 
-function pickShowcaseAchievement(unlockedIds: string[]): {
-  title: string;
-  icon: string;
-  tier: 'BRONZE' | 'SILVER' | 'GOLD' | 'PLATINUM';
-} | null {
-  const tierScore = { BRONZE: 1, SILVER: 2, GOLD: 3, PLATINUM: 4 };
-  let best: (typeof TACTICAL_ACHIEVEMENTS)[number] | null = null;
-  for (const ach of TACTICAL_ACHIEVEMENTS) {
-    if (!unlockedIds.includes(ach.id)) continue;
-    if (!best || tierScore[ach.tier] >= tierScore[best.tier]) best = ach;
-  }
-  return best
-    ? { title: best.title, icon: best.icon, tier: best.tier }
-    : null;
-}
-
-const BANNER_TIER_CLASS: Record<string, string> = {
-  BRONZE: 'from-amber-800/80 via-amber-600/40 to-transparent border-amber-600/50',
-  SILVER: 'from-slate-400/70 via-slate-300/30 to-transparent border-slate-300/40',
-  GOLD: 'from-amber-400/80 via-yellow-500/35 to-transparent border-amber-300/55',
-  PLATINUM: 'from-cyan-300/80 via-sky-400/35 to-transparent border-cyan-200/55',
+const ModeHeaderEmblem: React.FC<{ mode: DrillMode }> = ({ mode }) => {
+  const isTdm = mode === 'STATION_TDM_5V5';
+  const isCapture = mode === 'STATION_CAPTURE_5V5';
+  return (
+    <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-md bg-gradient-to-b from-slate-700/80 via-slate-900/95 to-black border border-slate-400/50 flex items-center justify-center shrink-0 shadow-[0_0_16px_rgba(255,255,255,0.12)]">
+      <svg viewBox="0 0 32 32" className="w-5 h-5 sm:w-6 sm:h-6 text-slate-100" fill="none">
+        {isTdm ? (
+          <>
+            <path d="M16 3L27 7.5V16.5C27 22.8 22.2 27.2 16 29C9.8 27.2 5 22.8 5 16.5V7.5L16 3Z" fill="rgba(255,255,255,0.08)" stroke="currentColor" strokeWidth="1.6" />
+            <path d="M10 10L22 22M22 10L10 22" stroke="#f8fafc" strokeWidth="2.1" strokeLinecap="round" />
+            <circle cx="16" cy="16" r="2.2" fill="#f59e0b" />
+          </>
+        ) : isCapture ? (
+          <>
+            <path d="M9 5V27" stroke="#f8fafc" strokeWidth="2.2" strokeLinecap="round" />
+            <path d="M10 6H24L20.5 11.5L24 17H10V6Z" fill="#f59e0b" fillOpacity="0.85" stroke="#fde68a" strokeWidth="1.3" />
+          </>
+        ) : (
+          <>
+            <rect x="7" y="10" width="18" height="13" rx="2.5" fill="rgba(255,255,255,0.08)" stroke="currentColor" strokeWidth="1.7" />
+            <rect x="11" y="13.5" width="10" height="4" rx="1" fill="#f59e0b" />
+            <path d="M12 10V7.5C12 6.4 12.9 5.5 14 5.5H18C19.1 5.5 20 6.4 20 7.5V10" stroke="#e2e8f0" strokeWidth="1.6" />
+            <circle cx="16" cy="20" r="1.2" fill="#ef4444" />
+          </>
+        )}
+      </svg>
+    </div>
+  );
 };
 
 const LoadingOperatorRow: React.FC<{
   op: LoadingRow;
   team: 'VANGUARD' | 'BLACKTHORN';
-  flip?: boolean;
-}> = ({ op, team, flip }) => {
-  const bannerCls =
-    BANNER_TIER_CLASS[op.bannerTier || ''] ||
-    (team === 'VANGUARD'
-      ? 'from-sky-700/50 via-sky-500/20 to-transparent border-sky-400/30'
-      : 'from-red-800/50 via-red-500/20 to-transparent border-red-400/30');
+}> = ({ op, team }) => {
+  const cardDef = op.callingCardId
+    ? getCallingCardById(op.callingCardId)
+    : getDeterministicFallbackCallingCard(op.callsign, team);
+  const isVanguard = team === 'VANGUARD';
 
   return (
     <div
-      className={`relative h-11 sm:h-12 rounded border overflow-hidden flex items-center justify-between bg-[#081523]/90 ${
+      className={`relative h-10 sm:h-12 rounded-[3px] overflow-hidden flex items-center justify-between border transition-all ${
         op.isReady
-          ? 'border-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.3)]'
-          : team === 'VANGUARD'
-            ? 'border-sky-400/55'
-            : 'border-red-500/55'
-      } ${flip ? 'flex-row-reverse' : ''}`}
+          ? 'border-emerald-400/80 shadow-[0_0_12px_rgba(52,211,153,0.28)]'
+          : isVanguard
+            ? 'border-sky-400/35'
+            : 'border-red-500/35'
+      }`}
     >
-      {/* Decorative achievement / prestige banner strip */}
-      <div
-        className={`absolute inset-x-0 bottom-0 h-3 bg-gradient-to-r ${bannerCls} border-t pointer-events-none`}
-      />
-      {op.bannerTitle && (
-        <div
-          className={`absolute bottom-0 ${flip ? 'right-16 sm:right-22' : 'left-16 sm:left-22'} text-[7px] sm:text-[8px] font-mono font-bold tracking-wider text-white/90 truncate max-w-[42%] pb-px`}
-        >
-          {op.bannerIcon} {op.bannerTitle}
-        </div>
-      )}
+      {/* Premium customizable calling card artwork */}
+      <CallingCardArtBackdrop card={cardDef} />
 
-      <div className="w-16 sm:w-22 h-full shrink-0 relative z-10">
+      {/* Left: Square Profile Avatar + Rank Corner Badge */}
+      <div className="relative z-10 w-10 h-10 sm:w-12 sm:h-12 shrink-0 border-r border-white/15 bg-[#090d14] overflow-hidden">
         <OperatorTacticalAvatar
           team={team}
           classId={op.classId}
           photoUrl={op.avatarDataUrl}
         />
         <div
-          className={`absolute inset-y-0 ${flip ? 'left-0' : 'right-0'} w-6 ${
-            flip
-              ? 'bg-gradient-to-r from-[#081523] to-transparent'
-              : 'bg-gradient-to-l from-[#081523] to-transparent'
-          }`}
-        />
+          className="absolute bottom-0.5 left-0.5 w-4 h-4 rounded-sm bg-black/80 border border-amber-400/50 flex items-center justify-center shadow"
+          title={`Patente Nível ${op.rankLevel}`}
+        >
+          <WarfaceRankIcon level={op.rankLevel} className="w-3 h-3" />
+        </div>
       </div>
-      <div
-        className={`flex-1 px-2 flex items-center justify-between min-w-0 relative z-10 ${
-          flip ? 'flex-row-reverse text-right' : ''
-        }`}
-      >
-        <div className="min-w-0">
-          <div
-            className={`flex items-center gap-1.5 min-w-0 ${
-              flip ? 'flex-row-reverse' : ''
+
+      {/* Center: Callsign + Discreet Class Icon + Clan Tag / Status */}
+      <div className="relative z-10 flex-1 min-w-0 px-2 py-0.5 flex flex-col justify-center">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span
+            className={`text-[10px] sm:text-xs font-display font-black tracking-wide truncate leading-tight drop-shadow-[0_1px_3px_rgba(0,0,0,0.95)] ${
+              op.isPlayer ? 'text-amber-300' : 'text-white'
             }`}
           >
-            <WarfaceRankIcon level={op.rankLevel} className="w-3.5 h-3.5 shrink-0" />
-            <div
-              className={`text-[10px] sm:text-xs font-display font-black tracking-wide truncate ${
-                team === 'VANGUARD' ? 'text-amber-300' : 'text-white'
+            {op.callsign}
+          </span>
+          {/* Discreet class icon only (Fuzileiro / Médico / Engenheiro / Sniper) */}
+          <span
+            title={WARFACE_CLASS_META[op.classId]?.label}
+            className="inline-flex items-center justify-center w-4 h-4 rounded-[2px] bg-black/55 border border-white/15 shrink-0 opacity-90"
+          >
+            <WarfaceClassIcon
+              classId={op.classId}
+              className="w-2.5 h-2.5 sm:w-3 sm:h-3"
+              color={isVanguard ? '#bae6fd' : '#fecaca'}
+            />
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1.5 min-w-0 mt-0.5">
+          {op.clanName ? (
+            <span className="text-[8px] sm:text-[9px] font-mono font-bold tracking-wider text-slate-300/95 truncate leading-none drop-shadow">
+              [{op.clanName}]
+            </span>
+          ) : (
+            <span
+              className={`text-[8px] sm:text-[9px] font-mono uppercase tracking-wider truncate leading-none ${
+                op.isReady ? 'text-emerald-300 font-bold' : 'text-slate-300/80'
               }`}
             >
-              {op.callsign}
-            </div>
-            {op.clanName && (
-              <span
-                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-950/80 border border-red-500/45 shrink-0 ${
-                  flip ? 'flex-row-reverse' : ''
-                }`}
-              >
-                <ClanEmblemIcon
-                  emblemId={op.clanEmblemId || 'alpha_wolf'}
-                  className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0"
-                />
-                <span className="font-display font-black text-[8px] sm:text-[9px] text-[#ff4d4d] tracking-wide truncate max-w-[68px] sm:max-w-[90px]">
-                  {op.clanName}
-                </span>
-              </span>
+              {op.title}
+            </span>
+          )}
+          {op.clanName && (
+            <span
+              className={`text-[7px] sm:text-[8px] font-mono font-bold uppercase shrink-0 ${
+                op.isReady ? 'text-emerald-300' : 'text-slate-400'
+              }`}
+            >
+              · {op.isReady ? 'PRONTO' : op.title.replace('CARREGANDO ', '')}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Right: Highlighted Clan Emblem (or subtle team crest when without clan) */}
+      <div className="relative z-10 pr-2 pl-1 shrink-0 flex items-center justify-center">
+        {op.clanName ? (
+          <div
+            title={`Clã ${op.clanName}`}
+            className="w-7 h-7 sm:w-9 sm:h-9 flex items-center justify-center drop-shadow-[0_2px_10px_rgba(0,0,0,0.95)]"
+          >
+            <ClanEmblemIcon
+              emblemId={op.clanEmblemId || 'alpha_wolf'}
+              className="w-7 h-7 sm:w-8 sm:h-8"
+            />
+          </div>
+        ) : (
+          <div className="w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center opacity-55">
+            {isVanguard ? (
+              <VanguardTeamEmblem className="w-5 h-5 sm:w-6 sm:h-6" />
+            ) : (
+              <BlackthornTeamEmblem className="w-5 h-5 sm:w-6 sm:h-6" />
             )}
           </div>
-          <div
-            className={`text-[8px] sm:text-[9px] font-mono uppercase tracking-wider truncate ${
-              op.isReady
-                ? 'text-emerald-300 font-bold'
-                : team === 'VANGUARD'
-                  ? 'text-sky-300/90'
-                  : 'text-red-300/90'
-            }`}
-          >
-            Lv.{op.rankLevel} · {op.title}
-          </div>
-        </div>
-        <WarfaceClassIcon classId={op.classId} className="w-5 h-5 sm:w-6 sm:h-6 shrink-0 mx-1" />
+        )}
       </div>
     </div>
   );
@@ -184,8 +207,6 @@ interface YardMatchLoadingModalProps {
   /** Escape hatch when prepare hangs — return to menu. */
   onCancel?: () => void;
 }
-
-const YARD_RADAR_IMAGE = '/assets/aistudio/Yard_Map_Radar_7754e5f9.webp';
 
 const TUTORIAL_STORAGE_KEY = 'kinetic_plant_bomb_tutorial_played';
 const BRIEFING_DURATION_MS = 40000;
@@ -294,10 +315,15 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
   }, []);
 
   // Barreira de sincronização online: libera a partida assim que TODOS os jogadores da sala chegarem a 100%
+  // Se houver apenas o jogador local (ex: sala privada solo) ou a sala já tiver sido encerrada, libera imediatamente.
   useEffect(() => {
-    if (!isOnline || !localMapReadyRef.current || !onlineRoom) return;
-    const players = Object.values(onlineRoom.players || {});
-    if (players.length === 0) return;
+    if (!isOnline || !localMapReadyRef.current) return;
+    const players = onlineRoom ? Object.values(onlineRoom.players || {}) : [];
+    if (players.length <= 1) {
+      setStatusText('ARENA 3D COMPILADA (100%) — INICIANDO!');
+      const t = window.setTimeout(() => finishLoading(), 350);
+      return () => window.clearTimeout(t);
+    }
     const allReady = players.every((p) => p.isLoaded === true || (p.loadProgress ?? 0) >= 100);
     if (allReady) {
       setStatusText('TODOS OS OPERADORES CONECTADOS E COMPILADOS (100%) — INICIANDO!');
@@ -439,7 +465,18 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
 
         if (isOnline) {
           publishLocalLoadProgress(100, true, true);
-          setStatusText('AGUARDANDO TODOS OS JOGADORES DA SALA CARREGAREM OS RECURSOS 3D...');
+          const currentRoom = getActiveOnlineRoom();
+          const currentPlayerCount = currentRoom
+            ? Object.keys(currentRoom.players || {}).length
+            : 0;
+          if (currentPlayerCount <= 1) {
+            setStatusText('ARENA 3D COMPILADA (100%) — INICIANDO!');
+            window.setTimeout(() => {
+              if (!cancelled) finishLoading();
+            }, 350);
+          } else {
+            setStatusText('AGUARDANDO TODOS OS JOGADORES DA SALA CARREGAREM OS RECURSOS 3D...');
+          }
         } else if (!firstTime) {
           window.setTimeout(() => {
             if (!cancelled) finishLoading();
@@ -510,18 +547,34 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
     };
   }, [mode, isOnline]);
 
-  const totalBlocks = 18;
-  const filledBlocks = Math.round((progress / 100) * totalBlocks);
-
   const onlinePlayers = onlineRoom ? Object.values(onlineRoom.players || {}) : [];
   const onlineReadyCount = onlinePlayers.filter((p) => p.isLoaded || (p.loadProgress ?? 0) >= 100).length;
 
   const playerSelectedClass = getPlayerInventoryState().selectedClass;
+  const localCallingCardId = getEquippedCallingCardId();
   const localCallsign = profile.callsign || getPlayerCallsign();
-  const showcase = useMemo(
-    () => pickShowcaseAchievement(profile.unlockedAchievements || []),
-    [profile.unlockedAchievements]
-  );
+
+  const modeHeaderTitle =
+    mode === 'STATION_TDM_5V5'
+      ? 'MATA-MATA EM EQUIPE'
+      : mode === 'STATION_CAPTURE_5V5'
+        ? 'CAPTURA DE BANDEIRA'
+        : mode === 'FREE_RANGE'
+          ? 'ESTANDE DE TIRO'
+          : mode === 'KILLHOUSE_BLITZ'
+            ? 'KILLHOUSE CQB'
+            : mode === 'TACTICAL_WAVE'
+              ? 'COMBATE CONTRA IA'
+              : 'PLANTAR A BOMBA';
+
+  const modeObjectiveSubtitle =
+    mode === 'STATION_TDM_5V5'
+      ? 'Elimine inimigos. Alcance a pontuação limite.'
+      : mode === 'STATION_CAPTURE_5V5'
+        ? 'Capture a bandeira inimiga e leve até a sua base.'
+        : mode === 'FREE_RANGE'
+          ? 'Calibre sua mira e teste armamentos no estande.'
+          : 'Plante ou desarme a C4 nos alvos táticos A ou B.';
 
   const vanguardDisplay: LoadingRow[] = isOnline
     ? onlinePlayers
@@ -534,7 +587,7 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
             p.clanEmblemId) as ClanEmblemId | undefined;
           return {
             callsign: p.callsign,
-            title: ready ? '✓ 100% PRONTO' : `CARREGANDO ${p.loadProgress ?? 0}%`,
+            title: ready ? '✓ PRONTO' : `${p.loadProgress ?? 0}%`,
             classId: isLocal ? playerSelectedClass : (p.classId || 'FUZILEIRO'),
             isPlayer: isLocal,
             isReady: ready,
@@ -542,16 +595,12 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
             rankLevel: p.rankLevel || (isLocal ? profile.rankLevel : 1),
             clanName: realClanName || undefined,
             clanEmblemId: realClanName ? realClanEmblem || 'alpha_wolf' : undefined,
-            bannerTitle: isLocal ? showcase?.title : undefined,
-            bannerIcon: isLocal ? showcase?.icon : undefined,
-            bannerTier: isLocal ? showcase?.tier : undefined,
+            callingCardId: isLocal ? localCallingCardId : p.callingCardId,
           };
         })
     : VANGUARD_ROSTER.map((op, idx) => ({
         callsign: op.isPlayer ? `${localCallsign}` : op.callsign,
-        title: op.isPlayer
-          ? `${WARFACE_CLASS_META[playerSelectedClass].label} · PRONTO`
-          : op.title,
+        title: op.isPlayer ? 'PRONTO' : op.title,
         classId: op.isPlayer ? playerSelectedClass : op.classId,
         isPlayer: op.isPlayer,
         isReady: isArenaReady,
@@ -560,9 +609,7 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
         clanName: op.isPlayer ? localClan?.clanName : undefined,
         clanEmblemId:
           op.isPlayer && localClan?.clanName ? localClan.clanEmblemId : undefined,
-        bannerTitle: op.isPlayer ? showcase?.title : undefined,
-        bannerIcon: op.isPlayer ? showcase?.icon : undefined,
-        bannerTier: op.isPlayer ? showcase?.tier : undefined,
+        callingCardId: op.isPlayer ? localCallingCardId : undefined,
       }));
 
   const blackthornDisplay: LoadingRow[] = isOnline
@@ -576,7 +623,7 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
             p.clanEmblemId) as ClanEmblemId | undefined;
           return {
             callsign: p.callsign,
-            title: ready ? '✓ 100% PRONTO' : `CARREGANDO ${p.loadProgress ?? 0}%`,
+            title: ready ? '✓ PRONTO' : `${p.loadProgress ?? 0}%`,
             classId: isLocal ? playerSelectedClass : (p.classId || 'ENGENHEIRO'),
             isPlayer: isLocal,
             isReady: ready,
@@ -584,6 +631,7 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
             rankLevel: p.rankLevel || (isLocal ? profile.rankLevel : 1),
             clanName: realClanName || undefined,
             clanEmblemId: realClanName ? realClanEmblem || 'alpha_wolf' : undefined,
+            callingCardId: isLocal ? localCallingCardId : p.callingCardId,
           };
         })
     : BLACKTHORN_ROSTER.map((op, idx) => ({
@@ -592,195 +640,180 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
         rankLevel: 48 + idx * 11,
       }));
 
+  const clampedPct = Math.max(0, Math.min(100, Math.round(progress)));
+
   return (
-    <div className="fixed inset-0 z-50 bg-[#05080f] text-white select-none overflow-hidden flex flex-col justify-between font-sans">
-      <div className="absolute inset-0">
-        <img src={bgScreenshot} alt={`Mapa ${mapCodeLabel}`} referrerPolicy="no-referrer" className={`w-full h-full object-cover object-center transition-all duration-700 ${showRoster ? 'scale-105 brightness-[0.38]' : 'scale-100 brightness-95'}`} />
-        <div className={`absolute inset-0 flex items-center justify-center pointer-events-none transition-opacity duration-700 ${showRoster ? 'opacity-22' : 'opacity-0'}`}>
-          <img src={YARD_RADAR_IMAGE} alt="" referrerPolicy="no-referrer" className="w-[62vw] max-w-[540px] max-h-[75vh] object-contain" />
-        </div>
-        <div className={`absolute inset-0 bg-gradient-to-b from-[#04070e]/90 via-[#050912]/65 to-[#04070e]/95 transition-opacity duration-700 ${showRoster ? 'opacity-100' : 'opacity-35'}`} />
+    <div className="fixed inset-0 z-50 h-[100dvh] max-h-[100dvh] bg-[#04060a] text-white select-none overflow-hidden flex flex-col justify-between font-sans">
+      {/* Dark atmospheric blurred map backdrop */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_#111927_0%,_#06090f_68%,_#020306_100%)]">
+        <img
+          src={bgScreenshot}
+          alt=""
+          referrerPolicy="no-referrer"
+          onError={(e) => {
+            const img = e.currentTarget;
+            if (!img.dataset.fallbackApplied) {
+              img.dataset.fallbackApplied = '1';
+              img.src = MAP_SELECT_THUMBS.hangar;
+            } else {
+              img.style.display = 'none';
+            }
+          }}
+          className="w-full h-full object-cover object-center scale-105 brightness-[0.22] blur-[2px]"
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#030509]/92 via-[#04070d]/72 to-[#030509]/96" />
       </div>
 
-      {!showRoster && (
-        <div className="relative z-20 m-auto text-center px-6 py-4 rounded-2xl bg-black/70 border border-amber-400/50 shadow-2xl">
-          <div className="text-xs font-mono font-bold text-amber-400 tracking-[0.25em] uppercase">
-            OPERAÇÃO TÁTICA · {mapCodeLabel}
-          </div>
-          <h1 className="text-2xl sm:text-4xl font-display font-black tracking-wider text-white uppercase mt-1">
-            MAPA: {mapCodeLabel} ({mode === 'STATION_TDM_5V5' ? 'MATA-MATA 5V5' : mode === 'STATION_CAPTURE_5V5' ? 'CAPTURE 5V5' : 'BOMB 5V5'})
-          </h1>
-          <p className="text-xs font-mono text-slate-300 mt-1">
-            Sincronizando recursos 3D e aguardando jogadores da sala...
-          </p>
-        </div>
-      )}
-
-      <header
-        className={`relative z-10 px-4 sm:px-8 pt-2.5 sm:pt-3.5 flex items-center justify-between transition-all duration-500 ${
-          showRoster ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none'
-        }`}
-      >
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs sm:text-sm font-display font-black tracking-[0.16em] text-slate-100 uppercase">
-              KINETIC: MOBILE
-            </span>
-            {isOnline && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 text-[9px] font-mono font-bold">
-                🌐 SINCRONIZAÇÃO ONLINE ({onlineReadyCount}/{onlinePlayers.length} PRONTOS)
-              </span>
-            )}
-          </div>
-          <div className="text-[9px] sm:text-[10px] font-mono tracking-[0.28em] text-sky-300/80 uppercase">
-            STRIKE FRONT · MAPA {mapCodeLabel}
-          </div>
-        </div>
-
-        <div className="hidden md:flex items-center gap-3 bg-[#070d17]/85 border border-white/15 rounded-lg px-3 py-1">
-          {(['FUZILEIRO', 'MEDICO', 'ENGENHEIRO', 'FRANCO_ATIRADOR'] as WarfaceClassId[]).map((cId) => (
-            <div key={cId} className="flex items-center gap-1.5">
-              <WarfaceClassIcon classId={cId} className="w-4 h-4" />
-              <span className="text-[9px] font-mono font-bold text-slate-200">{WARFACE_CLASS_META[cId].label}</span>
+      {/* 1. TOP HEADER: Mode Emblem + Vertical Accent + Mode Title + Map Name + Subtitle */}
+      <header className="relative z-10 shrink-0 px-3 sm:px-7 pt-2.5 sm:pt-4 pb-1 flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+          <ModeHeaderEmblem mode={mode} />
+          <div className="w-[2px] h-9 sm:h-11 bg-gradient-to-b from-amber-300 via-amber-500 to-amber-700/40 shrink-0" />
+          <div className="min-w-0 leading-tight">
+            <div className="text-[9px] sm:text-[11px] font-mono font-bold tracking-[0.22em] text-slate-300 uppercase truncate">
+              {modeHeaderTitle}
             </div>
-          ))}
-        </div>
-
-        <div className="text-right font-mono text-[10px] sm:text-xs">
-          <span className="text-amber-400 font-bold">MAPA: {mapCodeLabel}</span>
-          <span className="text-slate-400 mx-1.5">·</span>
-          <span className="text-sky-300">
-            {mode === 'STATION_TDM_5V5'
-              ? 'TEAM DEATHMATCH'
-              : mode === 'STATION_CAPTURE_5V5'
-                ? 'CAPTURE THE FLAG'
-                : 'PLANT THE BOMB'}
-          </span>
-        </div>
-      </header>
-
-      <div
-        className={`relative z-10 flex-1 grid grid-cols-12 gap-2 sm:gap-4 px-3 sm:px-8 py-1 items-center max-w-6xl w-full mx-auto transition-all duration-500 ${
-          showRoster ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 translate-y-6 pointer-events-none'
-        }`}
-      >
-        <div className="col-span-5 flex flex-col gap-1 sm:gap-1.5">
-          <div className="flex items-center gap-2 pb-0.5">
-            <h2 className="text-lg sm:text-2xl font-display font-black tracking-wider text-sky-200 drop-shadow-[0_0_12px_rgba(56,189,248,0.6)] uppercase">
-              VANGUARD
-            </h2>
-            <VanguardTeamEmblem className="w-6 h-6 sm:w-8 sm:h-8 shrink-0" />
-          </div>
-
-          {vanguardDisplay.map((op) => (
-            <LoadingOperatorRow
-              key={`vg-${op.callsign}`}
-              op={op}
-              team="VANGUARD"
-            />
-          ))}
-        </div>
-
-        <div className="col-span-2 flex flex-col items-center justify-center text-center relative gap-2">
-          <div className="relative w-14 h-14 sm:w-20 sm:h-20 rounded-full flex items-center justify-center border border-white/20 bg-[#070c14]/90 shadow-[0_0_30px_rgba(56,189,248,0.35)]">
-            <div
-              className={`absolute inset-0 rounded-full border-2 border-l-sky-400 border-t-sky-300 border-r-red-500 border-b-amber-400 opacity-85 ${
-                !isArenaReady ? 'animate-spin' : ''
-              }`}
-              style={!isArenaReady ? { animationDuration: '2.4s' } : undefined}
-            />
-            <span className="font-display font-black text-base sm:text-2xl tracking-wider text-white">VS</span>
-          </div>
-          <div className="px-2 py-0.5 rounded bg-black/70 border border-sky-400/40 font-mono text-[10px] sm:text-xs font-bold text-sky-200 tabular-nums">
-            {Math.round(progress)}%
+            <h1 className="text-base sm:text-2xl font-display font-black tracking-[0.1em] text-white uppercase truncate leading-none mt-0.5">
+              {mapCodeLabel}
+            </h1>
+            <p className="text-[8px] sm:text-[10px] font-sans text-slate-400 truncate mt-0.5">
+              {modeObjectiveSubtitle}
+            </p>
           </div>
         </div>
 
-        <div className="col-span-5 flex flex-col gap-1 sm:gap-1.5">
-          <div className="flex items-center justify-end gap-2 pb-0.5">
-            <BlackthornTeamEmblem className="w-6 h-6 sm:w-8 sm:h-8 shrink-0" />
-            <h2 className="text-lg sm:text-2xl font-display font-black tracking-wider text-red-400 drop-shadow-[0_0_12px_rgba(239,68,68,0.6)] uppercase">
-              BLACKTHORN
-            </h2>
-          </div>
-
-          {blackthornDisplay.map((op) => (
-            <LoadingOperatorRow
-              key={`bt-${op.callsign}`}
-              op={op}
-              team="BLACKTHORN"
-              flip
-            />
-          ))}
-        </div>
-      </div>
-
-      <footer className="relative z-10 px-4 sm:px-8 pb-2.5 sm:pb-4 pt-1.5 bg-[#050811]/85 border-t border-white/10">
-        {isOnline && (
-          <div className="max-w-3xl mx-auto mb-2">
-            <TeamVoiceCommsHud variant="LOBBY" />
-          </div>
-        )}
-        <div className="max-w-xl mx-auto flex flex-col items-center">
-          <div className="flex items-center gap-2 text-[10px] sm:text-xs font-display font-bold tracking-[0.2em] text-sky-200 uppercase mb-1">
-            <span>LOADING MATCH ({Math.round(progress)}%)</span>
-            {isOnline && (
-              <>
-                <span className="text-slate-400">·</span>
-                <span className="text-emerald-400 font-mono">
-                  SALA: {onlineReadyCount}/{onlinePlayers.length} CARREGADOS
-                </span>
-              </>
-            )}
-            {isFirstTimeTutorial && (
-              <>
-                <span className="text-slate-400">·</span>
-                <span className="text-amber-400 font-mono">BRIEFING EM {secondsLeft}S</span>
-              </>
-            )}
-          </div>
-
-          <div className="w-full max-w-md border border-sky-400/60 bg-[#06101e] p-1 rounded-xs shadow-[0_0_16px_rgba(56,189,248,0.25)] grid grid-cols-18 gap-1">
-            {Array.from({ length: totalBlocks }).map((_, idx) => {
-              const active = idx < filledBlocks;
-              return (
-                <div
-                  key={idx}
-                  className={`h-2.5 sm:h-3 rounded-[1px] transition-colors duration-100 ${
-                    active ? 'bg-sky-300 shadow-[0_0_8px_rgba(125,211,252,0.95)]' : 'bg-sky-950/50'
-                  }`}
-                />
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between gap-2 text-[10px] sm:text-xs font-mono text-slate-300 mt-1.5">
-          <div className="shrink-0">
-            <span className="text-slate-400 block text-[9px]">Modo de Jogo:</span>
-            <span className="font-bold text-white">
-              {mode === 'STATION_TDM_5V5'
-                ? 'Mata-Mata em Equipe (5 vs 5 · Alvo 40 Abates)'
-                : mode === 'STATION_CAPTURE_5V5'
-                  ? 'Capture the Flag (5 vs 5 · 6 Rodadas)'
-                  : 'Plant the Bomb (5 vs 5)'}
+        <div className="flex items-center gap-2 shrink-0">
+          {isOnline && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-400/40 text-emerald-300 text-[8px] sm:text-[9px] font-mono font-bold whitespace-nowrap">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              ONLINE {onlineReadyCount}/{onlinePlayers.length}
             </span>
-          </div>
-          <div className="flex-1 text-center px-2 text-[10px] sm:text-[11px] text-amber-200 font-bold leading-snug">
-            {statusText}
-          </div>
+          )}
           {onCancel && (
             <button
               type="button"
               onClick={() => {
                 completedRef.current = true;
+                soundEngine.stopPlantBombTutorial();
+                soundEngine.stopMatchLoadingAmbient();
                 onCancel();
               }}
-              className="shrink-0 px-3 py-1.5 rounded border border-red-400/70 bg-red-950/80 text-red-200 font-display font-black text-[10px] tracking-wider uppercase active:scale-95"
+              className="px-2.5 py-1 rounded bg-red-950/75 hover:bg-red-900 border border-red-400/50 text-red-200 font-mono text-[9px] sm:text-[10px] font-bold uppercase tracking-wider cursor-pointer touch-manipulation"
             >
               CANCELAR
             </button>
           )}
+        </div>
+      </header>
+
+      {/* 2. CENTER 3-COLUMN ROSTER & MAP POSTER (Blue Left | Center Map Poster | Red Right) */}
+      <div
+        className={`relative z-10 flex-1 min-h-0 px-3 sm:px-7 py-1.5 flex items-center justify-center transition-all duration-500 ${
+          showRoster ? 'opacity-100 scale-100' : 'opacity-90 scale-[0.99]'
+        }`}
+      >
+        <div className="w-full max-w-6xl h-full max-h-[340px] grid grid-cols-12 gap-2 sm:gap-4 items-center">
+          {/* LEFT TEAM: VANGUARD (Blue Glow Frame) */}
+          <div className="col-span-4 h-full flex flex-col justify-center min-h-0">
+            <div className="rounded-[4px] border border-sky-400/40 bg-[#050a12]/80 p-1.5 sm:p-2 shadow-[0_0_26px_rgba(14,165,233,0.18)] flex flex-col gap-1 sm:gap-1.5 max-h-full overflow-y-auto">
+              {vanguardDisplay.length > 0 ? (
+                vanguardDisplay.map((op) => (
+                  <LoadingOperatorRow
+                    key={`vg-${op.callsign}`}
+                    op={op}
+                    team="VANGUARD"
+                  />
+                ))
+              ) : (
+                <div className="h-10 flex items-center justify-center font-mono text-[9px] text-sky-300/60 uppercase">
+                  Aguardando Vanguard...
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* CENTER: MAP POSTER CARD (Photo + Map Name) */}
+          <div className="col-span-4 h-full flex items-center justify-center min-h-0 px-1 sm:px-3">
+            <div className="relative w-full max-w-[230px] h-full max-h-[310px] rounded-[4px] overflow-hidden border border-white/20 bg-[#0a0f18] shadow-[0_14px_40px_rgba(0,0,0,0.85)] flex flex-col">
+              <div className="relative flex-1 min-h-0 w-full overflow-hidden">
+                <img
+                  src={bgScreenshot}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    const img = e.currentTarget;
+                    if (!img.dataset.fallbackApplied) {
+                      img.dataset.fallbackApplied = '1';
+                      img.src = MAP_SELECT_THUMBS.hangar;
+                    } else {
+                      img.style.display = 'none';
+                    }
+                  }}
+                  className="w-full h-full object-cover object-center"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#080c14] via-transparent to-black/30" />
+              </div>
+
+              <div className="shrink-0 py-1.5 sm:py-2 px-2 bg-[#0a0d14]/95 border-t border-white/15 text-center">
+                <div className="font-display font-black text-[11px] sm:text-sm tracking-[0.22em] text-slate-100 uppercase truncate">
+                  {mapCodeLabel}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* RIGHT TEAM: BLACKTHORN (Red Glow Frame) */}
+          <div className="col-span-4 h-full flex flex-col justify-center min-h-0">
+            <div className="rounded-[4px] border border-red-500/40 bg-[#120608]/80 p-1.5 sm:p-2 shadow-[0_0_26px_rgba(239,68,68,0.18)] flex flex-col gap-1 sm:gap-1.5 max-h-full overflow-y-auto">
+              {blackthornDisplay.length > 0 ? (
+                blackthornDisplay.map((op) => (
+                  <LoadingOperatorRow
+                    key={`bt-${op.callsign}`}
+                    op={op}
+                    team="BLACKTHORN"
+                  />
+                ))
+              ) : (
+                <div className="h-10 flex items-center justify-center font-mono text-[9px] text-red-300/60 uppercase">
+                  Aguardando Blackthorn...
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. BOTTOM LOADING BAR: Slim Golden Progress Bar + Percentage */}
+      <footer className="relative z-10 shrink-0 px-4 sm:px-8 pb-2.5 sm:pb-4 pt-1 flex flex-col items-center gap-1.5">
+        {isOnline && (
+          <div className="w-full max-w-2xl">
+            <TeamVoiceCommsHud variant="LOADING_COMPACT" />
+          </div>
+        )}
+
+        <div className="w-full max-w-2xl flex flex-col items-center">
+          <div className="flex items-center gap-2 text-[9px] sm:text-[10px] font-mono font-bold tracking-[0.26em] text-slate-200 uppercase mb-1">
+            <span>CARREGANDO MAPA...</span>
+            {isFirstTimeTutorial && (
+              <span className="text-amber-400">· BRIEFING {secondsLeft}S</span>
+            )}
+          </div>
+
+          <div className="w-full flex items-center gap-2.5">
+            <div className="flex-1 h-1.5 rounded-full bg-white/10 overflow-hidden shadow-inner">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-amber-600 via-amber-400 to-yellow-200 shadow-[0_0_12px_rgba(251,191,36,0.75)] transition-all duration-150"
+                style={{ width: `${clampedPct}%` }}
+              />
+            </div>
+            <span className="font-mono text-[10px] sm:text-xs font-bold text-slate-200 tabular-nums shrink-0 w-9 text-right">
+              {clampedPct}%
+            </span>
+          </div>
+
+          <div className="w-full text-center font-mono text-[8px] sm:text-[9px] text-slate-400/90 truncate mt-0.5">
+            {statusText}
+          </div>
         </div>
       </footer>
     </div>
