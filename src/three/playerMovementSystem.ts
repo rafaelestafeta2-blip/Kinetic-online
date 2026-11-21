@@ -342,16 +342,16 @@ export function updatePlayerMovementAndCollision(engine: any, dt: number): void 
         .addScaledVector(_right, rightInput);
       if (_moveVec.lengthSq() > 1) _moveVec.normalize();
 
-      // Slight top-speed trim (~6%) kept from sprint tune.
-      let maxSpeed = 4.55;
+      // Tactical grounded pacing: calibrated walk & sprint speeds.
+      let maxSpeed = 4.25;
       if (engine.state.stance === 'SPRINT') {
         const classSprint =
           typeof engine.cachedClassSprintMult === 'number'
             ? engine.cachedClassSprintMult
             : 1;
-        maxSpeed = 6.7 * classSprint;
+        maxSpeed = 5.55 * classSprint;
       } else if (engine.state.stance === 'CROUCH') {
-        maxSpeed = 2.55;
+        maxSpeed = 2.45;
       } else if (engine.state.stance === 'PRONE') {
         maxSpeed = 1.2;
       }

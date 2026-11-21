@@ -54,8 +54,17 @@ import {
   S_MILITARY_LOCAL_URL,
   KNIFE_GITHUB_RAW_URL,
   KNIFE_LOCAL_URL,
+  WEAPON_RAIL_MOUNTS,
 } from '../three/weaponBuilder';
-import { calibrateKinemationMaterialScene } from '../three/kinemationArmsRig';
+import {
+  calibrateKinemationMaterialScene,
+  prepareStandaloneWeaponSceneForInspection,
+} from '../three/kinemationArmsRig';
+import {
+  CharmType,
+  MuzzleType,
+  WeaponAttachmentSystem,
+} from '../three/attachmentSystem';
 import { createBotThirdPersonWeaponMesh } from '../three/botWeaponProps';
 import {
   preloadAllScopeThumbnails3D,
@@ -792,6 +801,7 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
   const loadedWeaponIdRef = useRef<WeaponId>(activeWeapon);
   const opticMountGroupRef = useRef<THREE.Group | null>(null);
   const builtInOpticNodesRef = useRef<THREE.Object3D[]>([]);
+  const attachmentSystemRef = useRef<WeaponAttachmentSystem | null>(null);
 
   const isDraggingRef = useRef(false);
   const lastXRef = useRef(0);
@@ -799,8 +809,10 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
   // Start at a side profile angle (Math.PI * 0.5) so the entire weapon profile is framed horizontally
   const targetRotYRef = useRef(Math.PI * 0.42);
   const currentRotYRef = useRef(Math.PI * 0.42);
+  const prevRotYRef = useRef(Math.PI * 0.42);
   const targetRotXRef = useRef(0.06);
   const currentRotXRef = useRef(0.06);
+  const prevRotXRef = useRef(0.06);
   const zoomScaleRef = useRef(1.0);
 
   const currentRank = getRankForXp(playerXp);
@@ -872,12 +884,19 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
       opticMount.remove(opticMount.children[0]);
     }
 
-    const showBuiltIn = equippedOptic === 'iron';
+    const showBuiltIn =
+      equippedOptic === 'iron' ||
+      (selectedId === 'SNIPER_HEAVY' && equippedOptic === 'lpvo');
     for (const node of builtInOpticNodesRef.current) {
       node.visible = showBuiltIn;
     }
 
-    if (equippedOptic === 'iron' || selectedId === 'KNIFE_TACTICAL') {
+    if (
+      equippedOptic === 'iron' ||
+      selectedId === 'KNIFE_TACTICAL' ||
+      selectedId === 'SNIPER_AWP' ||
+      (selectedId === 'SNIPER_HEAVY' && equippedOptic === 'lpvo')
+    ) {
       return;
     }
 
@@ -935,6 +954,20 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
       cancelled = true;
     };
   }, [selectedId, equippedOptic, isLoadingModel]);
+
+  // Synchronize 3D Muzzle attachment on the inspected weapon when Gunsmith barrel changes
+  useEffect(() => {
+    const attSys = attachmentSystemRef.current;
+    if (!attSys || loadedWeaponIdRef.current !== selectedId) return;
+    attSys.updateWeaponAlignment(selectedId);
+    const muzzleFromBarrel: MuzzleType =
+      equippedGunsmith.barrel === 'barrel_heavy'
+        ? 'MB01_BRAKE'
+        : equippedGunsmith.barrel === 'barrel_cqb'
+          ? 'SC01_SHORT'
+          : 'NONE';
+    attSys.setMuzzle(muzzleFromBarrel);
+  }, [selectedId, equippedGunsmith.barrel, isLoadingModel]);
 
   // Filter weapon list by category
   const weaponList = (Object.keys(WEAPON_SPECS) as WeaponId[]).filter((id) => {
@@ -1052,6 +1085,23 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
         turntablePivotRef.current.scale.setScalar(zoomScaleRef.current);
       }
 
+      if (attachmentSystemRef.current && dt > 0.0001) {
+        const velY = (currentRotYRef.current - prevRotYRef.current) / dt;
+        const velX = (currentRotXRef.current - prevRotXRef.current) / dt;
+        attachmentSystemRef.current.updatePhysics(
+          dt,
+          velY * 0.012,
+          velX * 0.012,
+          0,
+          0,
+          0,
+          -currentRotXRef.current * 0.32,
+          0
+        );
+      }
+      prevRotYRef.current = currentRotYRef.current;
+      prevRotXRef.current = currentRotXRef.current;
+
       renderer.render(scene, camera);
     };
 
@@ -1109,163 +1159,64 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
 
       const modelScene = gltf.scene;
 
-      // 1) Strip all hand, arm, glove, shirt, and spare reload magazine meshes
-      const builtInOpticNodes: THREE.Object3D[] = [];
-      modelScene.traverse((child) => {
-        child.frustumCulled = false;
-        if (isArmOrExtraMesh(child)) {
-          child.visible = false;
-          return;
-        }
-        if (
-          ((selectedId === 'M4_CARBINE' || selectedId === 'CARBINE_AR') &&
-            (child.name === 'scope' ||
-              child.name === 'scope_carbine_0' ||
-              child.name === 'lens' ||
-              child.name === 'lens_lens_0')) ||
-          (selectedId === 'AK12_RIFLE' &&
-            (child.name === 'aim' ||
-              child.name === 'aim_0' ||
-              child.name === 'lense' ||
-              child.name === 'lense_0')) ||
-          (selectedId === 'SHOTGUN_SPAS' &&
-            (child.name === 'Automatic_Shotgun_Sight_02' ||
-              child.name === 'Automatic_Shotgun_Sight_Glasses')) ||
-          (selectedId === 'S_MILITARY' &&
-            (child.name === 'Holoshort001' ||
-              child.name === 'Scr010' ||
-              child.name === 'Scr003')) ||
-          (selectedId === 'SNIPER_AWP' &&
-            (child.name === 'scope' ||
-              child.name === 'scope_sniper_0' ||
-              child.name === 'scoperender' ||
-              child.name === 'scoperender_sniper_0' ||
-              child.name === 'reticle_scopereticle_0' ||
-              child.name === 'lens' ||
-              child.name === 'lens_lens_0'))
-        ) {
-          builtInOpticNodes.push(child);
-        }
-        const m = child as THREE.Mesh;
-        if (m.isMesh) {
-          m.castShadow = false;
-          m.receiveShadow = true;
-          const matsArr = Array.isArray(m.material)
-            ? m.material
-            : m.material
-              ? [m.material]
-              : [];
-          if (
-            selectedId === 'SNIPER_BOLT' &&
-            matsArr.some((mt) => (mt?.name || '').toLowerCase() === 'm_kar98k_clip')
-          ) {
-            m.visible = false;
-            return;
-          }
-          const fixMat = (mat: THREE.Material) => {
-            const std = mat as THREE.MeshStandardMaterial;
-            if (std.map) {
-              std.map.colorSpace = THREE.SRGBColorSpace;
-              std.map.needsUpdate = true;
-              if (std.color) {
-                std.color.setHex(0xffffff);
-              }
-            }
-            const matLower = (std.name || '').toLowerCase();
-            if (
-              selectedId === 'M4_CARBINE' &&
-              (matLower === 'lens' || m.name.toLowerCase().includes('lens_lens'))
-            ) {
-              std.transparent = true;
-              std.opacity = 1.0;
-              std.depthWrite = false;
-              m.renderOrder = 12;
-            } else if (
-              selectedId === 'S_MILITARY' &&
-              (matLower.includes('holoshort_opacity') ||
-                matLower.includes('m_transparent'))
-            ) {
-              std.transparent = true;
-              std.opacity = 0.28;
-              std.depthWrite = false;
-              m.renderOrder = 12;
-            }
-            if (m.geometry?.getAttribute('color') && (std.name || '') !== 'Legion_Emissive_MI') {
-              std.vertexColors = true;
-            }
-            std.needsUpdate = true;
-          };
-          matsArr.forEach(fixMat);
-        }
-      });
+      const { gunAnchorGroup, builtInOpticNodes } =
+        prepareStandaloneWeaponSceneForInspection(
+          selectedId,
+          modelScene,
+          gltf.animations || []
+        );
 
-      // Calibra PBR tático em armas Kinemation sem textura embutida (evita armas brancas/lavadas)
-      calibrateKinemationMaterialScene(modelScene, false);
-
-      // 2) Evaluate the ready/assembled animation pose so magazine, bolt, and scope sit in place
-      if (gltf.animations && gltf.animations.length > 0) {
-        const mixer = new THREE.AnimationMixer(modelScene);
-        const targetClip =
-          (wSpec.readyClipName &&
-            gltf.animations.find((c) => c.name === wSpec.readyClipName)) ||
-          gltf.animations[0];
-
-        if (targetClip) {
-          // Shift tracks if clip has leading time offset
-          let minT = Infinity;
-          for (let i = 0; i < targetClip.tracks.length; i++) {
-            const tArr = targetClip.tracks[i].times;
-            if (tArr.length > 0 && tArr[0] < minT) {
-              minT = tArr[0];
-            }
-          }
-          const evalTime =
-            wSpec.readyPoseTime > 0
-              ? wSpec.readyPoseTime
-              : Number.isFinite(minT) && minT > 0.005
-                ? minT + 0.01
-                : 0.01;
-
-          const action = mixer.clipAction(targetClip);
-          action.weight = 1.0;
-          action.play();
-          mixer.setTime(evalTime);
-        }
-      }
-
-      // Ensure all hand/arm meshes remain hidden after animation evaluation
+      // Ensure any residual embedded hand/arm meshes remain hidden
       modelScene.traverse((child) => {
         if (isArmOrExtraMesh(child)) {
           child.visible = false;
         }
       });
 
-      // 3) Compute exact world-space bounding box of ONLY visible weapon parts
       const currentOptic = getEquippedWeaponOptic(selectedId, playerXp);
-      if (
-        currentOptic !== 'iron' &&
-        selectedId !== 'SNIPER_AWP' &&
-        selectedId !== 'SNIPER_HEAVY'
-      ) {
-        for (const node of builtInOpticNodes) {
-          node.visible = false;
-        }
+      const showBuiltIn =
+        currentOptic === 'iron' ||
+        (selectedId === 'SNIPER_HEAVY' && currentOptic === 'lpvo');
+      for (const node of builtInOpticNodes) {
+        node.visible = showBuiltIn;
       }
       builtInOpticNodesRef.current = builtInOpticNodes;
 
-      if (selectedId === 'SNIPER_HEAVY') {
-        modelScene.rotation.y = Math.PI / 2;
-      }
-      const centeringGroup = new THREE.Group();
-      centeringGroup.add(modelScene);
-      modelScene.updateMatrixWorld(true);
-
+      // Mount 3D Scope container at the exact calibrated WEAPON_RAIL_MOUNTS coordinate in gunAnchorGroup
       const opticMount = new THREE.Group();
-      const facesNegZ =
-        selectedId === 'SHOTGUN_SPAS' || selectedId === 'S_MILITARY';
-      opticMount.rotation.y = facesNegZ ? 0 : Math.PI;
+      const railMount = WEAPON_RAIL_MOUNTS[selectedId];
+      if (railMount) {
+        opticMount.position.set(
+          railMount.pos[0],
+          railMount.pos[1],
+          railMount.pos[2]
+        );
+        opticMount.scale.setScalar(railMount.scale);
+      }
+      gunAnchorGroup.add(opticMount);
+      opticMountGroupRef.current = opticMount;
 
-      const box = computeVisibleWeaponBounds(modelScene);
+      // Compute visible weapon bounds BEFORE attaching muzzles/charms so centering frames the firearm consistently
+      gunAnchorGroup.updateMatrixWorld(true);
+      const box = computeVisibleWeaponBounds(gunAnchorGroup);
+
+      // Mount 3D Muzzle & Physics Charm at the exact calibrated WEAPON_MUZZLE_OFFSETS / WEAPON_CHARM_OFFSETS coordinates
+      const attSys = new WeaponAttachmentSystem(gunAnchorGroup);
+      attSys.updateWeaponAlignment(selectedId);
+      const gs = getEquippedWeaponGunsmith(selectedId);
+      const muzzleFromBarrel: MuzzleType =
+        gs.barrel === 'barrel_heavy'
+          ? 'MB01_BRAKE'
+          : gs.barrel === 'barrel_cqb'
+            ? 'SC01_SHORT'
+            : 'NONE';
+      attSys.setMuzzle(muzzleFromBarrel);
+      attSys.setCharm('NONE' as CharmType);
+      attachmentSystemRef.current = attSys;
+
+      const centeringGroup = new THREE.Group();
+      centeringGroup.add(gunAnchorGroup);
+
       if (!box.isEmpty()) {
         const center = new THREE.Vector3();
         const size = new THREE.Vector3();
@@ -1275,27 +1226,22 @@ export const WeaponInspectionModal: React.FC<WeaponInspectionModalProps> = ({
         const maxDim = Math.max(size.x, size.y, size.z, 0.001);
         const normScale = wSpec.targetSpan / maxDim;
 
-        // Translate modelScene so its geometric center sits at (0,0,0) of centeringGroup
-        modelScene.position.set(
+        // Translate and scale gunAnchorGroup as a unit so weapon, scope, muzzle, and charm stay 100% locked
+        gunAnchorGroup.position.set(
           -center.x * normScale,
           -center.y * normScale,
           -center.z * normScale
         );
-        modelScene.scale.setScalar(normScale);
-
-        const topY = (size.y * normScale) * 0.42;
-        opticMount.position.set(0, topY, facesNegZ ? 0.03 : -0.03);
-        opticMount.scale.setScalar(wSpec.targetSpan * 1.05);
+        gunAnchorGroup.scale.setScalar(normScale);
       }
-
-      centeringGroup.add(opticMount);
-      opticMountGroupRef.current = opticMount;
 
       // Set side-profile angle so weapon points cleanly across the viewing stage
       targetRotYRef.current = Math.PI * 0.45;
       currentRotYRef.current = Math.PI * 0.45;
+      prevRotYRef.current = Math.PI * 0.45;
       targetRotXRef.current = 0.05;
       currentRotXRef.current = 0.05;
+      prevRotXRef.current = 0.05;
       zoomScaleRef.current = 1.0;
 
       turntablePivot.add(centeringGroup);

@@ -19,6 +19,7 @@ import {
   subscribeAssetDownloads,
 } from '../utils/assetDownloadTracker';
 import { MenuBackground } from './MenuBackground';
+import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 import { WarfaceRankIcon } from './WarfaceRankIcon';
 
 interface AuthLoginScreenProps {
@@ -35,6 +36,7 @@ export const AuthLoginScreen: React.FC<AuthLoginScreenProps> = ({
   );
   const [signingIn, setSigningIn] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [dlSnap, setDlSnap] = useState<AssetDownloadSnapshot>(() =>
     getAssetDownloadSnapshot()
   );
@@ -367,10 +369,28 @@ export const AuthLoginScreen: React.FC<AuthLoginScreenProps> = ({
       </main>
 
       {/* 4. Rodapé */}
-      <footer className="relative z-20 w-full px-6 py-2 flex items-center justify-between text-[10px] font-mono text-slate-400 uppercase border-t border-white/10 bg-black/40">
+      <footer className="relative z-20 w-full px-4 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono text-slate-400 uppercase border-t border-white/10 bg-black/40">
         <span>KINETIC CLOUD SYNC · FIREBASE AUTHENTICATION</span>
-        <span>MÚSICA TEMA ATIVA · V0.0.9</span>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              soundEngine.playMenuSelect();
+              setShowPrivacyModal(true);
+            }}
+            className="text-amber-300 hover:text-amber-200 underline underline-offset-2 cursor-pointer font-bold"
+          >
+            PRIVACIDADE &amp; TERMOS
+          </button>
+          <span>V2.5</span>
+        </div>
       </footer>
+
+      <PrivacyPolicyModal
+        visible={showPrivacyModal}
+        onClose={() => setShowPrivacyModal(false)}
+      />
     </div>
   );
 };

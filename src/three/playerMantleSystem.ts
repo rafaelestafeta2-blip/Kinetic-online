@@ -41,14 +41,15 @@ function probeLedgeHeight(
   radius: number
 ): number {
   if (glb && glb.ready) {
-    return glb.getGroundHeight(x, y + 1.6, z);
+    // Query at y + 0.55 so step-up range (+0.65) caps at y + 1.20 (waist/chest ledge only, never roofs).
+    return glb.getGroundHeight(x, y + 0.55, z);
   }
   let best = -Infinity;
   if (!colliders) return best;
   for (let i = 0; i < colliders.length; i++) {
     const c = colliders[i];
     if (x + radius > c.minX && x - radius < c.maxX && z + radius > c.minZ && z - radius < c.maxZ) {
-      if (c.maxY > best && c.maxY <= y + 1.35) best = c.maxY;
+      if (c.maxY > best && c.maxY <= y + 1.20) best = c.maxY;
     }
   }
   return best;
@@ -56,7 +57,7 @@ function probeLedgeHeight(
 
 /**
  * Try to start a mantle when the player is jammed into a waist/chest ledge
- * while holding forward (and ideally jumping). Returns true if mantle began.
+ * while holding forward and actively jumping. Returns true if mantle began.
  */
 export function tryStartMantle(engine: any): boolean {
   const mantle = engine.mantle as MantleState | undefined;
@@ -69,18 +70,15 @@ export function tryStartMantle(engine: any): boolean {
     (engine.touchMoveY > 0.2 ? engine.touchMoveY : 0);
   if (forwardInput < 0.35) return false;
 
-  // Want jump intent or already airborne into the wall.
+  // Require explicit jump intent so walking into walls/ramps never auto-teleports the player.
   const jumpIntent =
     engine.jumpBufferTimer > 0 ||
     engine.keysHeld.has('Space') ||
-    (!engine.isGrounded && engine.playerVel.y > -1.5);
-  if (!jumpIntent && engine.isGrounded) {
-    // Allow grounded mantle only when pressed against wall (blocked last frame).
-    if (!engine.mantleWallBlocked) return false;
-  }
+    (!engine.isGrounded && engine.playerVel.y > -1.0);
+  if (!jumpIntent) return false;
 
   _fwd.set(-Math.sin(engine.yaw), 0, -Math.cos(engine.yaw)).normalize();
-  const probeDist = 0.62;
+  const probeDist = 0.56;
   _probe.set(
     engine.playerPos.x + _fwd.x * probeDist,
     engine.playerPos.y,
@@ -131,28 +129,28 @@ export function tryStartMantle(engine: any): boolean {
   if (!Number.isFinite(ledgeY) || ledgeY === -Infinity) return false;
 
   const rise = ledgeY - engine.playerPos.y;
-  // Mantle window: crate / window sill / short wall (not full building).
-  if (rise < 0.42 || rise > 1.22) return false;
+  // Mantle window: crate / window sill / short wall (not full building or tiny step).
+  if (rise < 0.48 || rise > 1.08) return false;
 
-  // Must be blocked at current height in front (otherwise just walk).
+  // Must be blocked at current height in front (otherwise normal jump/step handles it).
   let blocked = false;
   if (glb && glb.ready) {
     const out = { x: 0, z: 0 };
+    const testX = engine.playerPos.x + _fwd.x * 0.38;
+    const testZ = engine.playerPos.z + _fwd.z * 0.38;
     glb.resolveHorizontal(
-      engine.playerPos.x + _fwd.x * 0.4,
-      engine.playerPos.z + _fwd.z * 0.4,
+      testX,
+      testZ,
       engine.playerPos.y,
       1.5,
       radius,
       out
     );
-    const moved =
-      Math.hypot(out.x - (engine.playerPos.x + _fwd.x * 0.4), out.z - (engine.playerPos.z + _fwd.z * 0.4)) <
-      0.08;
-    blocked = moved || engine.mantleWallBlocked;
+    const pushBack = Math.hypot(out.x - testX, out.z - testZ);
+    blocked = pushBack > 0.04 || Boolean(engine.mantleWallBlocked);
   } else {
     blocked =
-      engine.mantleWallBlocked ||
+      Boolean(engine.mantleWallBlocked) ||
       engine.checkHorizontalCollision(
         engine.playerPos.x + _fwd.x * 0.35,
         engine.playerPos.z + _fwd.z * 0.35,
@@ -160,13 +158,31 @@ export function tryStartMantle(engine: any): boolean {
         radius
       );
   }
-  if (!blocked && engine.isGrounded) return false;
+  if (!blocked) return false;
 
-  // Landing pad slightly past the ledge lip.
-  const endX = engine.playerPos.x + _fwd.x * 0.85;
-  const endZ = engine.playerPos.z + _fwd.z * 0.85;
-  const endGround = probeLedgeHeight(endX, ledgeY + 0.4, endZ, glb, colliders, radius);
-  const landY = Number.isFinite(endGround) && endGround > ledgeY - 0.15 ? endGround : ledgeY;
+  // Landing pad slightly past the ledge lip — verify it is open and not inside a wall/building!
+  const endX = engine.playerPos.x + _fwd.x * 0.68;
+  const endZ = engine.playerPos.z + _fwd.z * 0.68;
+  const endGround = probeLedgeHeight(endX, ledgeY - 0.35, endZ, glb, colliders, radius);
+  if (!Number.isFinite(endGround) || Math.abs(endGround - ledgeY) > 0.25) {
+    return false;
+  }
+  const landY = endGround;
+
+  if (glb && glb.ready) {
+    const landCheck = { x: 0, z: 0 };
+    glb.resolveHorizontal(endX, endZ, landY + 0.12, 1.5, radius, landCheck);
+    if (Math.hypot(landCheck.x - endX, landCheck.z - endZ) > 0.04) {
+      return false;
+    }
+    if (glb.hasLowCeiling(endX, landY, endZ, 1.25)) {
+      return false;
+    }
+  } else if (
+    engine.checkHorizontalCollision(endX, endZ, landY + 0.12, radius)
+  ) {
+    return false;
+  }
 
   mantle.active = true;
   mantle.t = 0;

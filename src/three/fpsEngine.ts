@@ -1305,7 +1305,7 @@ export class TacticalFPSEngine {
     });
   }
 
-  /** Snap feet onto walkable floor; returns true when collider applied a snap. */
+  /** Snap feet onto walkable floor once when collider becomes ready; returns true when collider applied a snap. */
   private applyPendingFloorSnap(): boolean {
     if (performance.now() > this.pendingFloorSnapUntilMs) return false;
     const col = this.getActiveGlbCollider();
@@ -1328,6 +1328,7 @@ export class TacticalFPSEngine {
       if (!Number.isFinite(y)) return false;
       this.playerPos.y = y;
     }
+    this.pendingFloorSnapUntilMs = 0;
     this.playerVel.y = 0;
     this.isGrounded = true;
     this.syncYawObjectToPlayerFeet();

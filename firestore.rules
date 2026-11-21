@@ -217,6 +217,29 @@ service cloud.firestore {
         ]);
     }
 
+    function isPlayerDiamondPackTopupAction() {
+      return ('diamonds' in incoming())
+        && incoming().diamonds <= 1000000
+        && (
+          (!('diamonds' in existing()) && incoming().diamonds in [400, 880, 2050, 4800])
+          || (('diamonds' in existing()) && (incoming().diamonds - existing().diamonds) in [400, 880, 2050, 4800])
+        )
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'callsign', 'callsignLocked', 'email', 'avatarDataUrl',
+          'playerXp', 'rankLevel', 'rankTitle', 'playerCash',
+          'activeWeapon', 'unlockedWeapons',
+          'totalKills', 'totalDeaths', 'totalAssists', 'totalHeadshots',
+          'matchesPlayed', 'matchesWon', 'bombsPlanted',
+          'unlockedAchievements', 'economyVersion', 'mmr',
+          'equippedWeaponOptics', 'equippedWeaponSkins', 'equippedWeaponGunsmith',
+          'unlockedWeaponSkins', 'unlockedGearIds', 'selectedClass', 'classLoadouts',
+          'equippedCallingCardId', 'clanId', 'clanTokens', 'purchasedClanOfferIds',
+          'dailyContracts', 'diamonds', 'vipBattlePass',
+          'activeOperatorId', 'unlockedOperators', 'founderDiamondsClaimed',
+          'updatedAt'
+        ]);
+    }
+
     function isPlayerProgressionUpdateAction() {
       return incoming().playerXp >= existing().playerXp
         && incoming().playerXp <= existing().playerXp + 50000
@@ -410,7 +433,7 @@ service cloud.firestore {
         && incoming().uid == existing().uid
         && incoming().createdAt == existing().createdAt
         && (!('callsignLocked' in existing()) || !existing().callsignLocked || (incoming().callsign == existing().callsign && incoming().callsignLocked))
-        && (isPlayerEconomyMigrationAction() || isPlayerAccountResetAction() || isPlayerVipPurchaseAction() || isPlayerFounderGrantAction() || isPlayerDiamondStoreAction() || isPlayerProgressionUpdateAction());
+        && (isPlayerEconomyMigrationAction() || isPlayerAccountResetAction() || isPlayerVipPurchaseAction() || isPlayerFounderGrantAction() || isPlayerDiamondPackTopupAction() || isPlayerDiamondStoreAction() || isPlayerProgressionUpdateAction());
       allow delete: if isOwner(userId) && isValidId(userId);
     }
 

@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import { DrillMode } from '../types/game';
 import { resolveAssetUrl } from '../utils/assetUrl';
+import {
+  cacheFetchedAssetBuffer,
+  readCachedAssetBuffer,
+} from '../utils/resourcePackManager';
 
 /** Map GLB URLs for bomb arenas — keep in sync with *LevelBuilder LOCAL_URL constants. */
 export const MAP_GLB_BY_MODE: Partial<Record<DrillMode, string>> = {
@@ -50,41 +54,59 @@ function loadArrayBuffer(url: string, onProgress?: (ratio0to1: number) => void):
   const existing = inflight.get(url);
   if (existing) return existing;
 
-  const promise = new Promise<void>((resolve, reject) => {
-    let settled = false;
-    const timer = window.setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      inflight.delete(url);
-      reject(new Error(`Prefetch timeout: ${url}`));
-    }, PREFETCH_FILE_TIMEOUT_MS);
+  const isHeavyMapAsset =
+    url.includes('/models/') || url.includes('/maps/') || url.includes('models%2F') || url.includes('maps%2F');
 
-    const loader = new THREE.FileLoader();
-    loader.setResponseType('arraybuffer');
-    loader.load(
-      url,
-      () => {
-        if (settled) return;
-        settled = true;
-        window.clearTimeout(timer);
-        inflight.delete(url);
+  const promise = (async () => {
+    if (isHeavyMapAsset) {
+      const cachedBuf = await readCachedAssetBuffer(url);
+      if (cachedBuf && cachedBuf.byteLength > 0) {
+        THREE.Cache.add(url, cachedBuf);
         onProgress?.(1);
-        resolve();
-      },
-      (evt) => {
-        if (evt.lengthComputable && evt.total > 0) {
-          onProgress?.(Math.min(1, evt.loaded / evt.total));
-        }
-      },
-      (err) => {
+        inflight.delete(url);
+        return;
+      }
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const timer = window.setTimeout(() => {
         if (settled) return;
         settled = true;
-        window.clearTimeout(timer);
         inflight.delete(url);
-        reject(err);
-      }
-    );
-  });
+        reject(new Error(`Prefetch timeout: ${url}`));
+      }, PREFETCH_FILE_TIMEOUT_MS);
+
+      const loader = new THREE.FileLoader();
+      loader.setResponseType('arraybuffer');
+      loader.load(
+        url,
+        (data) => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timer);
+          inflight.delete(url);
+          if (isHeavyMapAsset && data instanceof ArrayBuffer && data.byteLength > 0) {
+            void cacheFetchedAssetBuffer(url, data);
+          }
+          onProgress?.(1);
+          resolve();
+        },
+        (evt) => {
+          if (evt.lengthComputable && evt.total > 0) {
+            onProgress?.(Math.min(1, evt.loaded / evt.total));
+          }
+        },
+        (err) => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timer);
+          inflight.delete(url);
+          reject(err);
+        }
+      );
+    });
+  })();
   inflight.set(url, promise);
   return promise;
 }

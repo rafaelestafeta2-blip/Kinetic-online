@@ -35,6 +35,8 @@ export interface OnlinePlayerState {
   loadProgress?: number;
   isLoaded?: boolean;
   isReady?: boolean;
+  connectionState?: 'CONNECTED' | 'RECONNECTING';
+  disconnectedAtMs?: number;
   lastShotAtMs: number;
   updatedAtMs: number;
 }

@@ -3,6 +3,7 @@ import { soundEngine } from '../audio/soundEngine';
 import {
   claimFounderWelcomeDiamonds,
   CloudSyncState,
+  creditPurchasedDiamondPack,
   FOUNDER_WELCOME_DIAMONDS,
   openWarfaceWarboxWithDiamonds,
   purchaseDirectWeaponOfferWithDiamonds,
@@ -10,6 +11,10 @@ import {
   purchaseWeaponSkinWithDiamonds,
   WarboxResolvedDropResult,
 } from '../firebase/playerCloudSync';
+import {
+  isAndroidNativeApp,
+  purchaseDiamondPackWithGooglePlay,
+} from '../mobile/googlePlayBilling';
 import {
   DIAMOND_EXCLUSIVE_WEAPON_OFFERS,
   loadWarboxPityMap,
@@ -864,23 +869,61 @@ export const WarfaceDiamondStoreModal: React.FC<WarfaceDiamondStoreModalProps> =
     setBusy(true);
     setStatusBanner(null);
     try {
+      // 1. Tentativa prioritária via Google Play Billing Nativo (Android Play Store / Digital Goods API)
+      const playRes = await purchaseDiamondPackWithGooglePlay(packId);
+      if (playRes.ok && playRes.purchaseToken) {
+        const verifyResp = await fetch('/api/billing/google-play/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            uid: syncState.profile.uid,
+            packId: playRes.packId,
+            sku: playRes.sku,
+            purchaseToken: playRes.purchaseToken,
+          }),
+        }).catch(() => null);
+
+        if (!verifyResp || verifyResp.ok) {
+          const creditRes = await creditPurchasedDiamondPack({
+            packId: playRes.packId,
+            purchaseToken: playRes.purchaseToken,
+          });
+          if (creditRes.ok) {
+            setStatusBanner({
+              kind: 'ok',
+              text: `COMPRA GOOGLE PLAY APROVADA! +${playRes.totalDiamonds.toLocaleString('pt-BR')} 💎 creditados na sua conta!`,
+            });
+            return;
+          }
+        }
+      } else if (playRes.cancelled) {
+        setStatusBanner({
+          kind: 'info',
+          text: playRes.error || 'Compra cancelada na Google Play.',
+        });
+        return;
+      }
+
+      // 2. Fallback para Checkout Web (Stripe) ou instruções de SKU do Google Play Console
       const resp = await fetch('/api/billing/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           uid: syncState.profile.uid,
           packId,
+          platform: isAndroidNativeApp() ? 'android_play' : 'web',
         }),
       });
       const data = (await resp.json()) as {
         ok?: boolean;
         checkoutUrl?: string;
+        sku?: string;
         error?: string;
       };
       if (data.ok && data.checkoutUrl) {
         setStatusBanner({
           kind: 'ok',
-          text: 'Sessão Stripe Checkout gerada. Clique ao lado para concluir:',
+          text: 'Sessão de pagamento gerada. Clique ao lado para concluir:',
           checkoutUrl: data.checkoutUrl,
         });
       } else {
@@ -888,7 +931,7 @@ export const WarfaceDiamondStoreModal: React.FC<WarfaceDiamondStoreModalProps> =
           kind: 'info',
           text:
             data.error ||
-            'Gateway Stripe / Google Play Billing pronto para produção. Use o Bônus Fundador (+1.500 💎) acima para testar toda a loja!',
+            `Google Play Billing ativo (SKU: ${data.sku || packId}). Publique o SKU no Google Play Console ou use o Bônus Fundador (+1.500 💎) acima!`,
         });
       }
     } catch {

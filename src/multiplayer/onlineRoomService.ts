@@ -79,6 +79,34 @@ let wsPingTimer: ReturnType<typeof setInterval> | null = null;
 let wsReconnectAttempts = 0;
 let intentionalWsClose = false;
 let wsConnected = false;
+let lastWsPongAtMs = 0;
+let networkWatchersRegistered = false;
+
+function ensureNetworkReconnectWatchers(): void {
+  if (networkWatchersRegistered || typeof window === 'undefined') return;
+  networkWatchersRegistered = true;
+  const checkAndReconnect = () => {
+    if (intentionalWsClose || !activeRoom || activeRoom.status === 'FINISHED') return;
+    if (!wsClient || wsClient.readyState === WebSocket.CLOSED || wsClient.readyState === WebSocket.CLOSING) {
+      wsReconnectAttempts = 0;
+      clearWsReconnectTimer();
+      const localPlayer =
+        getLocalOnlinePlayerState() ||
+        createInitialLocalPlayerState(activeRoom.arenaMode, 'VANGUARD', 0);
+      connectWebSocketForRoom(activeRoom, localPlayer);
+    } else if (wsClient.readyState === WebSocket.OPEN) {
+      try {
+        wsClient.send(JSON.stringify({ type: 'PING', clientTs: Date.now() }));
+      } catch {}
+    }
+  };
+  window.addEventListener('online', checkAndReconnect);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      checkAndReconnect();
+    }
+  });
+}
 
 function rememberRoundEventId(eventId: string): void {
   if (!eventId) return;
@@ -260,6 +288,7 @@ function mergePreservingFresherPlayers(
         isReady: typeof existing.isReady === 'boolean' ? existing.isReady : Boolean(remote.isReady),
         loadProgress: Math.max(existing.loadProgress || 0, remote.loadProgress || 0),
         isLoaded: Boolean(existing.isLoaded || remote.isLoaded),
+        connectionState: remote.connectionState || existing.connectionState || 'CONNECTED',
       };
     } else {
       merged[uid] = {
@@ -272,6 +301,7 @@ function mergePreservingFresherPlayers(
         clanLevel: remote.clanLevel || existing.clanLevel,
         callingCardId: remote.callingCardId || existing.callingCardId,
         isReady: typeof remote.isReady === 'boolean' ? remote.isReady : Boolean(existing.isReady),
+        connectionState: remote.connectionState || existing.connectionState || 'CONNECTED',
       };
     }
   }
@@ -294,22 +324,38 @@ function clearWsPingTimer(): void {
 
 function startWsPingTimer(ws: WebSocket): void {
   clearWsPingTimer();
+  lastWsPongAtMs = Date.now();
   const sendPing = () => {
     if (wsClient !== ws || ws.readyState !== WebSocket.OPEN) return;
+    const nowMs = Date.now();
+    // If no message/PONG arrived from server for > 22s, socket is half-open (dead mobile carrier NAT); force reconnect
+    if (nowMs - lastWsPongAtMs > 22_000) {
+      wsConnected = false;
+      clearWsPingTimer();
+      if (wsClient === ws) {
+        wsClient = null;
+      }
+      try {
+        ws.onclose = null;
+        ws.close();
+      } catch {}
+      scheduleWsReconnect();
+      return;
+    }
     try {
-      ws.send(JSON.stringify({ type: 'PING', clientTs: Date.now() }));
+      ws.send(JSON.stringify({ type: 'PING', clientTs: nowMs }));
     } catch {
       // ignore transient ws write error
     }
   };
   sendPing();
-  wsPingTimer = setInterval(sendPing, 10000);
+  wsPingTimer = setInterval(sendPing, 8000);
 }
 
 function scheduleWsReconnect(): void {
   if (intentionalWsClose || !activeRoom || activeRoom.status === 'FINISHED') return;
   if (wsReconnectTimer) return;
-  const delayMs = wsReconnectAttempts === 0 ? 1200 : wsReconnectAttempts === 1 ? 2500 : 5000;
+  const delayMs = wsReconnectAttempts === 0 ? 800 : wsReconnectAttempts === 1 ? 1800 : 3500;
   wsReconnectAttempts += 1;
   wsReconnectTimer = setTimeout(() => {
     wsReconnectTimer = null;
@@ -323,6 +369,7 @@ function scheduleWsReconnect(): void {
 
 function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerState): void {
   if (typeof window === 'undefined') return;
+  ensureNetworkReconnectWatchers();
   clearWsReconnectTimer();
   intentionalWsClose = false;
   wsConnected = false;
@@ -427,6 +474,7 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
           clientTs?: number;
           ts?: number;
         };
+        lastWsPongAtMs = Date.now();
         if (msg.type === 'PONG' && typeof msg.clientTs === 'number') {
           runtimeTelemetry.recordPingSample(Date.now() - msg.clientTs);
           return;
@@ -555,6 +603,21 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
             );
           }
           emitRoomState();
+        } else if (msg.type === 'PLAYER_CONNECTION_STATE' && msg.uid) {
+          const connMsg = msg as {
+            uid: string;
+            hostUid?: string | null;
+            connectionState?: 'CONNECTED' | 'RECONNECTING';
+          };
+          if (connMsg.hostUid) activeRoom.hostUid = connMsg.hostUid;
+          const target = activeRoom.players[connMsg.uid];
+          if (target) {
+            target.connectionState =
+              connMsg.connectionState === 'RECONNECTING' ? 'RECONNECTING' : 'CONNECTED';
+            target.updatedAtMs = Date.now();
+            emitRoomState();
+          }
+          return;
         } else if (msg.type === 'PLAYER_LEFT' && msg.uid) {
           if (msg.hostUid) activeRoom.hostUid = msg.hostUid;
           if (msg.uid !== localUid && activeRoom.players[msg.uid]) {
@@ -566,6 +629,11 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
             isPrivate?: boolean;
             randomMap?: boolean;
             includeBots?: boolean;
+            currentRound?: number;
+            vanguardScore?: number;
+            blackthornScore?: number;
+            bombStatus?: OnlineRoomState['bombStatus'];
+            plantedSite?: OnlineRoomState['plantedSite'];
           };
           if (msg.hostUid) activeRoom.hostUid = msg.hostUid;
           if (msg.arenaMode) activeRoom.arenaMode = msg.arenaMode;
@@ -579,6 +647,17 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
           if (msg.searchStartedAtMs !== undefined) {
             activeRoom.searchStartedAtMs = msg.searchStartedAtMs;
           }
+          if (typeof metaMsg.currentRound === 'number' && metaMsg.currentRound >= 1) {
+            activeRoom.currentRound = Math.max(activeRoom.currentRound, metaMsg.currentRound);
+          }
+          if (typeof metaMsg.vanguardScore === 'number') {
+            activeRoom.vanguardScore = Math.max(activeRoom.vanguardScore, metaMsg.vanguardScore);
+          }
+          if (typeof metaMsg.blackthornScore === 'number') {
+            activeRoom.blackthornScore = Math.max(activeRoom.blackthornScore, metaMsg.blackthornScore);
+          }
+          if (metaMsg.bombStatus) activeRoom.bombStatus = metaMsg.bombStatus;
+          if (metaMsg.plantedSite) activeRoom.plantedSite = metaMsg.plantedSite;
           activeRoom.players = mergePreservingFresherPlayers(
             activeRoom.players,
             msg.players,
@@ -734,6 +813,7 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
           }
           classSupportSubscribers.forEach((fn) => fn(evt));
         } else if (msg.type === 'SERVER_MATCH_READY' && msg.serverConfirmed) {
+          const prevRoomId = activeRoom.roomId;
           if (msg.roomId) activeRoom.roomId = msg.roomId;
           if (msg.arenaMode) activeRoom.arenaMode = msg.arenaMode;
           if (msg.queueType) activeRoom.queueType = msg.queueType;
@@ -771,6 +851,11 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
           }
           activeRoom.status = 'PLAYING';
           activeRoom.updatedAtMs = Date.now();
+          // Detach old squad room Firestore listener so it cannot overwrite the newly matched MMxxxx room
+          if (prevRoomId !== activeRoom.roomId && roomUnsub) {
+            roomUnsub();
+            roomUnsub = null;
+          }
           resetCombatNetcodeThrottle();
           emitRoomState();
           void startMatchInActiveRoom(true);
@@ -790,14 +875,19 @@ function attachRoomSnapshotListener(roomId: string): void {
   roomUnsub = onSnapshot(
     roomRef,
     (snap) => {
+      // Never let a listener from a different room mutate activeRoom
+      if (activeRoom && activeRoom.roomId !== roomId) return;
       if (!snap.exists()) {
-        activeRoom = null;
-        emitRoomState();
+        if (!activeRoom || activeRoom.status !== 'PLAYING') {
+          activeRoom = null;
+          emitRoomState();
+        }
         return;
       }
       const data = snap.data() as OnlineRoomState;
+      if (activeRoom && activeRoom.roomId !== data.roomId) return;
       let shouldNotifySubscribers = false;
-      if (!activeRoom || activeRoom.roomId !== data.roomId) {
+      if (!activeRoom) {
         activeRoom = data;
         shouldNotifySubscribers = true;
       } else {
@@ -1121,11 +1211,15 @@ export async function startMatchInActiveRoom(serverConfirmed = false): Promise<b
     activeRoom.queueType !== 'RANKED' || Object.keys(resetPlayers).length === 10;
   if (auth.currentUser && canPersistPlayingToFirestore) {
     try {
-      await updateDoc(doc(db, 'rooms', activeRoom.roomId), {
-        status: 'PLAYING',
-        players: resetPlayers,
-        updatedAtMs: Date.now(),
-      });
+      const targetRoomId = activeRoom.roomId;
+      await setDoc(
+        doc(db, 'rooms', targetRoomId),
+        buildFirestoreSafeRoomDoc(activeRoom),
+        { merge: true }
+      );
+      if (!roomUnsub) {
+        attachRoomSnapshotListener(targetRoomId);
+      }
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `rooms/${activeRoom.roomId}`);
     }

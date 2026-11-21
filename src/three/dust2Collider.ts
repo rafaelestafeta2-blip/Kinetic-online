@@ -258,10 +258,11 @@ export class Dust2TriangleCollider {
       ? this.worldBounds.max.y - 1.5
       : this.walkableYCap();
     let bestY = -999;
+    let bestBelowY = -999;
     let bestFlippedY = -999;
+    let bestFlippedBelowY = -999;
     let closestWalkableAboveY = 999;
     let closestFlippedAboveY = 999;
-    let fallbackHighestFloorY = -999;
 
     // Search home cell + 8-neighborhood (spawns near cell borders / thin floors).
     for (let dx = -1; dx <= 1; dx++) {
@@ -293,6 +294,9 @@ export class Dust2TriangleCollider {
             if (yOnTri > yBottom + 0.05 && yOnTri < closestFlippedAboveY) {
               closestFlippedAboveY = yOnTri;
             }
+            if (yOnTri <= yBottom + 0.65 && yOnTri > bestFlippedBelowY) {
+              bestFlippedBelowY = yOnTri;
+            }
             if (
               yOnTri <= yBottom + 0.65 &&
               yOnTri >= yBottom - 0.85 &&
@@ -307,8 +311,8 @@ export class Dust2TriangleCollider {
             closestWalkableAboveY = yOnTri;
           }
 
-          if (yOnTri > fallbackHighestFloorY) {
-            fallbackHighestFloorY = yOnTri;
+          if (yOnTri <= yBottom + 0.65 && yOnTri > bestBelowY) {
+            bestBelowY = yOnTri;
           }
 
           // Support surface near feet (step-up ≤0.65, step-down ≤0.85).
@@ -323,51 +327,30 @@ export class Dust2TriangleCollider {
       }
     }
 
-    // UNDER a walkable floor with no near-feet support → rescue UP (FrontSide white void).
-    // Old order returned deep AABB-min slabs (y≈0.09) before closestWalkableAbove and
-    // glued the player under Industria/Hangar/Eastern/Mirage streets every movement tick.
-    // Cap the jump so a hangar roof ~14m up is not treated as the street.
-    if (
-      closestWalkableAboveY < 900 &&
-      bestY < -900 &&
-      closestWalkableAboveY - yBottom < 12
-    ) {
-      return closestWalkableAboveY;
-    }
-    if (
-      closestWalkableAboveY < 900 &&
-      bestY > -900 &&
-      bestY < yBottom - 0.65 &&
-      closestWalkableAboveY - yBottom < 12
-    ) {
-      return closestWalkableAboveY;
-    }
+    // 1. Direct near-feet support surface always wins.
     if (bestY > -900) return bestY;
-    if (closestWalkableAboveY < 900 && closestWalkableAboveY - yBottom < 12) {
+
+    // 2. Airborne above a valid floor (jumping or dropping from a ledge):
+    // return the highest floor below feet so gravity brings the player back down
+    // instead of rescuing UP onto an overhead roof, awning, or 2nd floor!
+    if (bestBelowY > -900) return bestBelowY;
+
+    // 3. Only if there is NO upward floor anywhere below the player (fell below map slab),
+    // rescue upward if a walkable floor is within 2.4m above feet.
+    if (closestWalkableAboveY < 900 && closestWalkableAboveY - yBottom < 2.4) {
       return closestWalkableAboveY;
     }
+
+    // 4. Fallback for Unity maps with downward-flipped street normals when no upward floor exists.
+    if (bestFlippedY > -900) return bestFlippedY;
+    if (bestFlippedBelowY > -900) return bestFlippedBelowY;
     if (
-      fallbackHighestFloorY > -900 &&
-      fallbackHighestFloorY <= skyCut &&
-      fallbackHighestFloorY - yBottom < 12
+      closestFlippedAboveY < 900 &&
+      closestFlippedAboveY - yBottom < 2.4
     ) {
-      return fallbackHighestFloorY;
+      return closestFlippedAboveY;
     }
-    // A roof in the same column must not hide a flipped Unity street under it.
-    const upwardNear =
-      bestY > -900 ||
-      (closestWalkableAboveY < 900 && closestWalkableAboveY - yBottom < 12) ||
-      (fallbackHighestFloorY > -900 &&
-        Math.abs(fallbackHighestFloorY - yBottom) < 12);
-    if (!upwardNear) {
-      if (bestFlippedY > -900) return bestFlippedY;
-      if (
-        closestFlippedAboveY < 900 &&
-        closestFlippedAboveY - yBottom < 12
-      ) {
-        return closestFlippedAboveY;
-      }
-    }
+
     if (!this.worldBounds.isEmpty() && yBottom < this.worldBounds.min.y - 1) {
       return Math.max(yBottom, this.worldBounds.min.y);
     }

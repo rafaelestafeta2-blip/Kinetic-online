@@ -10,7 +10,7 @@ import {
 import {
   alignWeaponPropToMixamoHands,
   createBotThirdPersonWeaponMesh,
-  preloadRealBotWeaponGlbs,
+  preloadSingleBotWeaponGlb,
 } from '../three/botWeaponProps';
 import {
   createSecondaryWebGLRenderer,
@@ -266,7 +266,7 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
     let isDragging = false;
     let prevPointerX = 0;
 
-    preloadRealBotWeaponGlbs();
+    void preloadSingleBotWeaponGlb(weaponRef.current, skinRef.current);
 
     const mountCharacterForSelection = (
       targetWeapon: WeaponId,
@@ -439,7 +439,7 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
 
     void Promise.all([
       preloadProRifleBotCharacter(),
-      preloadRealBotWeaponGlbs(),
+      preloadSingleBotWeaponGlb(weaponRef.current, skinRef.current),
     ]).then(() => {
       if (disposed) return;
       mountCharacterForSelection(

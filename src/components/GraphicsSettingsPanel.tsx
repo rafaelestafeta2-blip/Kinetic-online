@@ -18,6 +18,7 @@ import {
 } from '../graphics/graphicsSettings';
 import { ControlsSettingsTab } from './ControlsSettingsTab';
 import { HudLayoutEditorModal } from './HudLayoutEditorModal';
+import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 import {
   AUDIO_LABELS,
   DIST_LABELS,
@@ -53,6 +54,7 @@ export const GraphicsSettingsPanel: React.FC<GraphicsSettingsPanelProps> = ({
     () => loadControlSettings()
   );
   const [showHudEditor, setShowHudEditor] = useState(false);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
 
   const activeControls = externalControlSettings ?? localControlSettings;
 
@@ -359,14 +361,23 @@ export const GraphicsSettingsPanel: React.FC<GraphicsSettingsPanelProps> = ({
         </div>
 
         {/* Compact Footer */}
-        <div className="flex items-center justify-between px-3.5 py-2 border-t border-white/10 bg-[#0d111a]/90 shrink-0">
-          <button
-            type="button"
-            onClick={handleResetAll}
-            className="px-2.5 py-1 text-[10px] font-mono font-semibold text-red-300 hover:text-red-200 bg-red-950/40 hover:bg-red-900/50 border border-red-800/40 rounded-md transition-colors cursor-pointer"
-          >
-            RESTAURAR PADRÃO
-          </button>
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 border-t border-white/10 bg-[#0d111a]/90 shrink-0">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleResetAll}
+              className="px-2.5 py-1 text-[10px] font-mono font-semibold text-red-300 hover:text-red-200 bg-red-950/40 hover:bg-red-900/50 border border-red-800/40 rounded-md transition-colors cursor-pointer"
+            >
+              RESTAURAR PADRÃO
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowPrivacyModal(true)}
+              className="px-2.5 py-1 text-[10px] font-mono font-semibold text-slate-300 hover:text-white bg-white/5 hover:bg-white/10 border border-white/15 rounded-md transition-colors cursor-pointer"
+            >
+              PRIVACIDADE &amp; TERMOS
+            </button>
+          </div>
           <button
             type="button"
             onClick={onClose}
@@ -376,6 +387,11 @@ export const GraphicsSettingsPanel: React.FC<GraphicsSettingsPanelProps> = ({
           </button>
         </div>
       </div>
+
+      <PrivacyPolicyModal
+        visible={showPrivacyModal}
+        onClose={() => setShowPrivacyModal(false)}
+      />
     </>
   );
 };

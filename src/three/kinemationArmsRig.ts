@@ -35,6 +35,8 @@ export interface KinemationWeaponAttachSpec {
   hiddenMatSubstrings?: string[];
   /** Nomes exatos de nós de mira embutida que devem sumir ao equipar mira externa 3D. */
   builtInOpticNodeNames?: string[];
+  /** Substrings de materiais de mira embutida que devem sumir ao equipar mira externa 3D. */
+  builtInOpticMatSubstrings?: string[];
   /** Clip específico de pose estática da arma quando diferente de 'Pose'. */
   weaponPoseClipName?: string;
   /** Tempo em segundos para avaliar o clip estático da arma. */
@@ -68,7 +70,7 @@ export const KINEMATION_WEAPON_REGISTRY: Partial<
     muzzlePos: [0, 0.003, -0.203],
     ejectionPos: [0.018, 0.015, -0.04],
     laserPos: [0, -0.014, -0.14],
-    railMountPos: [0, 0.02, -0.01],
+    railMountPos: [0, 0.022, -0.01],
     railMountScale: 0.68,
   },
   M1911_PISTOL: {
@@ -78,19 +80,24 @@ export const KINEMATION_WEAPON_REGISTRY: Partial<
     muzzlePos: [0, -0.004, -0.132],
     ejectionPos: [0.016, 0.01, -0.02],
     laserPos: [0, -0.014, -0.1],
-    railMountPos: [0, 0.015, 0.0],
+    railMountPos: [0, 0.016, 0.0],
     railMountScale: 0.65,
   },
   SMG_45: {
     weaponId: 'SMG_45',
     modelUrl: '/models/weapons/v18_engineer_smg.glb',
     clipPrefix: 'MPS5',
-    modelAlign: { scale: 0.92, pos: [0.0, 0.012, 0.04] },
+    modelAlign: {
+      scale: 0.92,
+      pos: [-0.0285, -0.065, 0.25],
+      rot: [0, Math.PI, 0],
+    },
+    builtInOpticMatSubstrings: ['v18_scope', 'scope_reticle_emi'],
     weaponFreezeIdlePose: true,
-    muzzlePos: [0, 0.015, -0.52],
-    ejectionPos: [0.022, 0.018, -0.05],
-    laserPos: [0.026, 0.01, -0.2],
-    railMountPos: [0, 0.072, -0.02],
+    muzzlePos: [0, 0.015, -0.581],
+    ejectionPos: [0.022, 0.022, -0.06],
+    laserPos: [0.024, 0.012, -0.22],
+    railMountPos: [0, 0.058, -0.04],
     railMountScale: 0.78,
   },
   SMG_MP5: {
@@ -117,16 +124,16 @@ export const KINEMATION_WEAPON_REGISTRY: Partial<
     weaponId: 'CARBINE_AR',
     modelUrl: '/models/fps_animated_carbine.glb',
     clipPrefix: 'MX16A4',
-    modelAlign: { scale: 0.46, pos: [0.006, -0.135, -0.055] },
+    modelAlign: { scale: 0.46, pos: [0.0095, -0.135, -0.055] },
     weaponPoseClipName: 'allanims',
     weaponPoseTime: 0.1,
     weaponFreezeIdlePose: true,
     hiddenNodeSubstrings: ['armmesh'],
     hiddenMatSubstrings: ['arms'],
     builtInOpticNodeNames: ['scope_carbine_0', 'lens_lens_0'],
-    muzzlePos: [0, 0.0, -0.57],
-    ejectionPos: [0.024, 0.004, -0.04],
-    laserPos: [0.028, 0.002, -0.28],
+    muzzlePos: [0, 0.011, -0.568],
+    ejectionPos: [0.024, 0.008, -0.04],
+    laserPos: [0.028, 0.008, -0.28],
     railMountPos: [0, 0.04, -0.01],
     railMountScale: 0.88,
   },
@@ -135,33 +142,33 @@ export const KINEMATION_WEAPON_REGISTRY: Partial<
     modelUrl: '/models/weapons/s_military_ar.glb',
     clipPrefix: 'MX16A4',
     scale: 0.01,
-    attachOffset: [0.113, 0.455, -1.468],
+    attachOffset: [0.105, 0.455, -1.468],
     weaponPoseClipName: 'Idle',
     weaponPoseTime: 0.05,
     weaponFreezeIdlePose: true,
     hiddenNodeSubstrings: ['manny'],
     hiddenMatSubstrings: ['mi_manny_01', 'mi_manny_02'],
     builtInOpticNodeNames: ['Holoshort001', 'Scr010', 'Scr003'],
-    muzzlePos: [-0.004, -0.01, -0.615],
+    muzzlePos: [0, 0.001, -0.613],
     ejectionPos: [0.024, -0.004, -0.05],
-    laserPos: [-0.042, -0.005, -0.32],
-    railMountPos: [-0.002, 0.024, -0.02],
+    laserPos: [-0.036, -0.005, -0.32],
+    railMountPos: [0, 0.024, -0.02],
     railMountScale: 0.9,
   },
   AK47_RIFLE: {
     weaponId: 'AK47_RIFLE',
     modelUrl: '/models/fps_ak47.glb',
     clipPrefix: 'AKX',
-    modelAlign: { scale: 1.03, pos: [0.134, -1.521, -0.35] },
+    modelAlign: { scale: 1.03, pos: [0.123, -1.521, -0.35] },
     weaponPoseClipName: 'RIG_UE5_Comando_AK_Idle',
     weaponPoseTime: 0.05,
     weaponFreezeIdlePose: true,
     hiddenNodeSubstrings: ['comando'],
     hiddenMatSubstrings: ['m_gloves', 'm_shirt'],
-    muzzlePos: [0, 0.0, -0.52],
+    muzzlePos: [0, -0.009, -0.516],
     ejectionPos: [0.024, 0.01, -0.04],
     laserPos: [0.026, 0.008, -0.24],
-    railMountPos: [0, 0.042, -0.02],
+    railMountPos: [0, 0.038, -0.02],
     railMountScale: 0.86,
   },
   AK12_RIFLE: {
@@ -171,7 +178,7 @@ export const KINEMATION_WEAPON_REGISTRY: Partial<
     muzzlePos: [0, 0.0, -0.534],
     ejectionPos: [0.024, 0.01, -0.04],
     laserPos: [0.026, 0.01, -0.24],
-    railMountPos: [-0.0014, 0.047, -0.02],
+    railMountPos: [0, 0.047, -0.02],
     railMountScale: 0.86,
   },
   SHOTGUN_12: {
@@ -181,7 +188,7 @@ export const KINEMATION_WEAPON_REGISTRY: Partial<
     muzzlePos: [0, 0.01, -0.716],
     ejectionPos: [0.018, 0.016, 0.01],
     laserPos: [0.02, -0.012, -0.4],
-    railMountPos: [0, 0.025, 0.0],
+    railMountPos: [0, 0.021, 0.0],
     railMountScale: 0.82,
     reloadUsesFullClipOnce: true,
   },
@@ -189,7 +196,7 @@ export const KINEMATION_WEAPON_REGISTRY: Partial<
     weaponId: 'SHOTGUN_SPAS',
     modelUrl: '/models/weapons/automatic_shotgun.glb',
     clipPrefix: 'Drake12',
-    modelAlign: { scale: 0.0115, pos: [0.108, -1.764, -0.376] },
+    modelAlign: { scale: 0.0115, pos: [0.106, -1.764, -0.376] },
     weaponPoseClipName: 'Idle',
     weaponPoseTime: 0.05,
     weaponFreezeIdlePose: true,
@@ -201,7 +208,7 @@ export const KINEMATION_WEAPON_REGISTRY: Partial<
       'Automatic_Shotgun_Sight_03',
       'Automatic_Shotgun_Sight_Glasses',
     ],
-    muzzlePos: [0, 0.01, -0.52],
+    muzzlePos: [0, -0.002, -0.512],
     ejectionPos: [0.022, 0.015, -0.02],
     laserPos: [0.026, -0.01, -0.3],
     railMountPos: [0, 0.072, -0.04],
@@ -212,13 +219,13 @@ export const KINEMATION_WEAPON_REGISTRY: Partial<
     weaponId: 'L49_LMG',
     modelUrl: '/models/lmg_animated.glb',
     clipPrefix: 'MX16A4',
-    modelAlign: { scale: 0.86, pos: [-0.001, -0.075, -0.026] },
+    modelAlign: { scale: 0.86, pos: [0.002, -0.075, -0.026] },
     weaponPoseClipName: 'allanims',
     weaponPoseTime: 0.1,
     weaponFreezeIdlePose: true,
     hiddenNodeSubstrings: ['armmesh'],
     hiddenMatSubstrings: ['arms'],
-    muzzlePos: [0, 0.015, -0.74],
+    muzzlePos: [0, 0.021, -0.737],
     ejectionPos: [0.028, 0.012, -0.06],
     laserPos: [0.032, 0.006, -0.32],
     railMountPos: [0, 0.068, -0.03],
@@ -242,20 +249,20 @@ export const KINEMATION_WEAPON_REGISTRY: Partial<
     muzzlePos: [0, 0.001, -0.612],
     ejectionPos: [0.024, 0.008, -0.04],
     laserPos: [0.026, -0.002, -0.34],
-    railMountPos: [-0.0016, 0.021, -0.04],
+    railMountPos: [0, 0.021, -0.04],
     railMountScale: 0.88,
   },
   SNIPER_AWP: {
     weaponId: 'SNIPER_AWP',
     modelUrl: '/models/sniper_animated.glb',
     clipPrefix: 'Kar98K',
-    modelAlign: { scale: 0.008, pos: [0.004, -0.077, 0.094] },
+    modelAlign: { scale: 0.008, pos: [0.0, -0.077, 0.094] },
     weaponPoseClipName: 'allanims',
     weaponPoseTime: 0.1,
     weaponFreezeIdlePose: true,
     hiddenNodeSubstrings: ['arms_arms'],
     hiddenMatSubstrings: ['arms'],
-    muzzlePos: [0, 0.01, -0.88],
+    muzzlePos: [0, 0.01, -0.882],
     ejectionPos: [0.024, 0.014, -0.04],
     laserPos: [0.028, -0.006, -0.42],
     railMountPos: [0, 0.06, -0.04],
@@ -267,29 +274,28 @@ export const KINEMATION_WEAPON_REGISTRY: Partial<
     modelUrl: '/models/sniper_fps_animation.glb',
     clipPrefix: 'MK14',
     modelAlign: {
-      scale: 0.487,
-      pos: [0.206, 0.31, 0.004],
-      rot: [0, Math.PI / 2, 0],
+      scale: 1.15,
+      pos: [0.0, -0.025, -0.08],
+      rot: [0, Math.PI, 0],
     },
-    weaponPoseClipName: 'Scene',
-    weaponPoseTime: 0.1,
     weaponFreezeIdlePose: true,
     hiddenNodeSubstrings: ['ch22_body'],
     hiddenMatSubstrings: ['textura'],
-    muzzlePos: [0, 0.015, -0.75],
-    ejectionPos: [0.026, 0.012, -0.04],
-    laserPos: [0.03, -0.004, -0.38],
-    railMountPos: [0, 0.07, -0.04],
+    builtInOpticNodeNames: ['Object_66'],
+    muzzlePos: [0, 0.034, -0.788],
+    ejectionPos: [0.026, 0.024, -0.04],
+    laserPos: [0.026, 0.02, -0.38],
+    railMountPos: [0, 0.052, -0.05],
     railMountScale: 0.9,
   },
   RPG7_LAUNCHER: {
     weaponId: 'RPG7_LAUNCHER',
     modelUrl: '/models/kinemation/weapons/rpg7.glb',
     clipPrefix: 'RPG7',
-    muzzlePos: [0, 0.01, -0.849],
-    ejectionPos: [0, 0.01, 0.794],
+    muzzlePos: [0, -0.015, -0.856],
+    ejectionPos: [0, 0.01, 0.788],
     laserPos: [0.03, 0.04, -0.25],
-    railMountPos: [0.008, 0.095, -0.01],
+    railMountPos: [0, 0.095, -0.01],
     railMountScale: 0.8,
   },
   KNIFE_TACTICAL: {
@@ -299,16 +305,14 @@ export const KINEMATION_WEAPON_REGISTRY: Partial<
     attachToHandR: true,
     isMeleeKnife: true,
     modelAlign: {
-      scale: 0.0092,
-      pos: [-0.095, -0.025, 0.015],
-      rot: [Math.PI * 0.42, 0.12, -Math.PI * 0.48],
+      scale: 0.0078,
+      pos: [-0.1401, -0.0063, 0.0366],
+      rot: [1.134, 0.2829, 1.4476],
     },
-    weaponPoseClipName: 'anims',
-    weaponPoseTime: 0.05,
     weaponFreezeIdlePose: true,
     hiddenNodeSubstrings: ['armmesh'],
     hiddenMatSubstrings: ['arms'],
-    muzzlePos: [0, 0, -0.24],
+    muzzlePos: [0, 0.14, -0.17],
     ejectionPos: [0, 0, -0.1],
     laserPos: [0, 0, -0.15],
     railMountPos: [0, 0, 0],
@@ -330,16 +334,16 @@ export const KINEMATION_EXTRA_WEAPON_TEMPLATES: Record<
     muzzlePos: [0, -0.004, -0.132],
     ejectionPos: [0.016, 0.01, -0.02],
     laserPos: [0, -0.014, -0.1],
-    railMountPos: [0, 0.015, 0.0],
+    railMountPos: [0, 0.016, 0.0],
     railMountScale: 0.65,
   },
   RPG7: {
     modelUrl: '/models/kinemation/weapons/rpg7.glb',
     clipPrefix: 'RPG7',
-    muzzlePos: [0, 0.01, -0.849],
-    ejectionPos: [0, 0.01, 0.794],
+    muzzlePos: [0, -0.015, -0.856],
+    ejectionPos: [0, 0.01, 0.788],
     laserPos: [0.03, 0.04, -0.25],
-    railMountPos: [0.008, 0.095, -0.01],
+    railMountPos: [0, 0.095, -0.01],
     railMountScale: 0.8,
   },
 };
@@ -366,6 +370,13 @@ const _tmpPos = new THREE.Vector3();
 const _tmpQuat = new THREE.Quaternion();
 const _tmpScale = new THREE.Vector3();
 const _restIkPos = new THREE.Vector3();
+const _restIkQuat = new THREE.Quaternion();
+// Rotação ideal de ik_hand_gun em rigRoot para que socketGroup (+PI/2 em X) aponte o cano 100% reto em -Z e o trilho em +Y
+const _idealIkRestQuat = new THREE.Quaternion().setFromEuler(
+  new THREE.Euler(Math.PI / 2, 0, Math.PI, 'XYZ')
+);
+const _slashQuat = new THREE.Quaternion();
+const _slashEuler = new THREE.Euler();
 const _ancestorChain: THREE.Object3D[] = [];
 
 function computeMatrixInAncestorSpace(
@@ -396,8 +407,12 @@ interface LoadedWeaponInstance {
   actions: Record<string, THREE.AnimationAction>;
   restAttachInRigInv: THREE.Matrix4 | null;
   poseArmsCenterOffset: THREE.Vector3;
+  poseArmsCenterQuat: THREE.Quaternion;
   karClipMesh: THREE.Object3D | null;
   karCartridgeBone: THREE.Object3D | null;
+  magNode: THREE.Object3D | null;
+  magRestPos: THREE.Vector3;
+  magPullAxisLocal: THREE.Vector3;
   builtInOpticNodes: THREE.Object3D[];
   loaded: boolean;
   loading: boolean;
@@ -475,6 +490,10 @@ export function calibrateKinemationMaterialScene(
           std.needsUpdate = true;
           return;
         }
+
+        // Armas com sub-malhas espelhadas no DCC (ex.: alça/tambor traseiro da MX16A4)
+        // precisam de DoubleSide para nunca exibir buracos ou meios-anéis flutuantes no ADS.
+        std.side = THREE.DoubleSide;
 
         // SCAR-L built-in holographic reticle & transparent lens
         if (mName.includes('m_holoshort_opacity')) {
@@ -694,7 +713,9 @@ export function createKinemationArmsRig(params: {
 
   const applyBuiltInOpticVisibility = (inst: LoadedWeaponInstance) => {
     if (inst.builtInOpticNodes.length === 0) return;
-    const showBuiltIn = currentOpticType === 'iron';
+    const showBuiltIn =
+      currentOpticType === 'iron' ||
+      (inst.spec.weaponId === 'SNIPER_HEAVY' && currentOpticType === 'lpvo');
     for (let i = 0; i < inst.builtInOpticNodes.length; i++) {
       inst.builtInOpticNodes[i].visible = showBuiltIn;
     }
@@ -736,8 +757,12 @@ export function createKinemationArmsRig(params: {
       actions: {},
       restAttachInRigInv: null,
       poseArmsCenterOffset: new THREE.Vector3(),
+      poseArmsCenterQuat: new THREE.Quaternion(),
       karClipMesh: null,
       karCartridgeBone: null,
+      magNode: null,
+      magRestPos: new THREE.Vector3(),
+      magPullAxisLocal: new THREE.Vector3(0, -0.15, 0),
       builtInOpticNodes: [],
       loaded: false,
       loading: false,
@@ -776,8 +801,9 @@ export function createKinemationArmsRig(params: {
   };
 
   /**
-   * Calibra `armsCenterGroup.position` e `restAttachInRigInv` no frame zero da pose da arma
-   * para alinhar exatamente o receptor em `(0,0,0)` do gunGroup (compatível com todas as miras 3D e ADS).
+   * Calibra `armsCenterGroup.position`, `armsCenterGroup.quaternion` e `restAttachInRigInv`
+   * no frame zero da pose da arma para alinhar exatamente o receptor em `(0,0,0)` do gunGroup
+   * e o cano/trilho 100% reto em `-Z`/`+Y` (compatível com todas as miras 3D, silenciadores, chaveiros e ADS).
    */
   const calibrateActivePose = (weaponId: WeaponId) => {
     const inst = weaponInstances.get(weaponId);
@@ -789,6 +815,7 @@ export function createKinemationArmsRig(params: {
     const poseAct = armsActions[poseName];
     stopAllArmsActions();
     armsCenterGroup.position.set(0, 0, 0);
+    armsCenterGroup.quaternion.identity();
 
     if (poseAct) {
       poseAct.setLoop(THREE.LoopRepeat, Infinity);
@@ -797,6 +824,7 @@ export function createKinemationArmsRig(params: {
       poseAct.reset();
       poseAct.play();
       armsMixer.setTime(0);
+      armsMixer.update(0.0001);
       currentArmsBaseAction = poseAct;
     }
 
@@ -825,14 +853,28 @@ export function createKinemationArmsRig(params: {
     const anchorBone =
       inst.spec.attachToHandR && handRBone ? handRBone : ikHandGunBone;
     computeMatrixInAncestorSpace(anchorBone, rigRoot, _relMat);
+    _relMat.decompose(_restIkPos, _restIkQuat, _tmpScale);
+
+    // Compensa qualquer inclinação residual do osso ik_hand_gun na pose (ex.: AKX, M1911, MK14, RPG7)
+    // para que o trilho superior e o cano fiquem 100% retos com as miras 3D, bocais e chaveiros.
+    if (!inst.spec.attachToHandR) {
+      inst.poseArmsCenterQuat
+        .copy(_idealIkRestQuat)
+        .multiply(_restIkQuat.invert());
+    } else {
+      inst.poseArmsCenterQuat.identity();
+    }
+    armsCenterGroup.quaternion.copy(inst.poseArmsCenterQuat);
+
+    computeMatrixInAncestorSpace(anchorBone, rigRoot, _relMat);
     _restIkPos.setFromMatrixPosition(_relMat);
 
     // Centraliza o receptor/mão da pose inicial em (0, 0, 0) de rigRoot
     inst.poseArmsCenterOffset.copy(_restIkPos).negate();
     if (inst.spec.isMeleeKnife) {
-      inst.poseArmsCenterOffset.x += 0.03;
-      inst.poseArmsCenterOffset.y -= 0.03;
-      inst.poseArmsCenterOffset.z += 0.04;
+      inst.poseArmsCenterOffset.x += 0.085;
+      inst.poseArmsCenterOffset.y -= 0.115;
+      inst.poseArmsCenterOffset.z -= 0.035;
     }
     armsCenterGroup.position.copy(inst.poseArmsCenterOffset);
 
@@ -840,6 +882,24 @@ export function createKinemationArmsRig(params: {
 
     computeMatrixInAncestorSpace(inst.socketGroup, rigRoot, _attachWorldMat);
     inst.restAttachInRigInv = _attachWorldMat.clone().invert();
+
+    // Restaura posição original do carregador e calcula o vetor local de extração (-0.15m em Y de rigRoot)
+    if (inst.magNode && inst.magNode.parent) {
+      inst.magNode.position.copy(inst.magRestPos);
+      computeMatrixInAncestorSpace(inst.magNode.parent, rigRoot, _relMat);
+      const parentRotInv = _tmpQuat.setFromRotationMatrix(_relMat).invert();
+      const parentScale = _tmpScale.setFromMatrixScale(_relMat);
+      inst.magPullAxisLocal
+        .set(-0.015, -0.155, -0.02)
+        .applyQuaternion(parentRotInv)
+        .divide(
+          new THREE.Vector3(
+            Math.max(1e-4, Math.abs(parentScale.x)),
+            Math.max(1e-4, Math.abs(parentScale.y)),
+            Math.max(1e-4, Math.abs(parentScale.z))
+          )
+        );
+    }
 
     // Oculta o pente stripper flutuante da Kar98K fora do reload
     if (inst.karClipMesh) {
@@ -886,6 +946,7 @@ export function createKinemationArmsRig(params: {
     inst.restAttachInRigInv = null;
     inst.karClipMesh = null;
     inst.karCartridgeBone = null;
+    inst.magNode = null;
     inst.builtInOpticNodes = [];
     if (inst.modelScene) {
       inst.socketGroup.remove(inst.modelScene);
@@ -953,6 +1014,40 @@ export function createKinemationArmsRig(params: {
         }
 
         const modelScene = gltf.scene;
+
+        // 1. Limpeza geométrica específica para SNIPER_HEAVY e KNIFE_TACTICAL antes do alinhamento
+        if (weaponId === 'SNIPER_HEAVY') {
+          // Object_64 (corpo/cano) e Object_66 (luneta original) estão modelados em metros exatos
+          // alinhados ao eixo -Z na geometria local, mas deformados pelo esqueleto ch22_body antigo.
+          const unskinnedClones: THREE.Mesh[] = [];
+          modelScene.traverse((child) => {
+            if (
+              (child as THREE.Mesh).isMesh &&
+              (child.name === 'Object_64' || child.name === 'Object_66')
+            ) {
+              const srcMesh = child as THREE.Mesh;
+              const cleanMesh = new THREE.Mesh(
+                srcMesh.geometry,
+                srcMesh.material
+              );
+              cleanMesh.name = srcMesh.name;
+              unskinnedClones.push(cleanMesh);
+              srcMesh.visible = false;
+              srcMesh.name = `${srcMesh.name}_hidden_skinned`;
+            }
+          });
+          unskinnedClones.forEach((m) => modelScene.add(m));
+        } else if (weaponId === 'KNIFE_TACTICAL') {
+          // Zera a cadeia de IK residual dos braços antigos (knife / R_wrist_Goal) para alinhar o cabo direto na mão direita
+          modelScene.traverse((child) => {
+            if (child.name === 'knife' || child.name === 'R_wrist_Goal') {
+              child.position.set(0, 0, 0);
+              child.rotation.set(0, 0, 0);
+              child.scale.set(1, 1, 1);
+            }
+          });
+        }
+
         calibrateKinemationMaterialScene(modelScene, false);
         if (inst.spec.modelAlign) {
           const align = inst.spec.modelAlign;
@@ -968,12 +1063,16 @@ export function createKinemationArmsRig(params: {
         const hiddenNodes = inst.spec.hiddenNodeSubstrings || [];
         const hiddenMats = inst.spec.hiddenMatSubstrings || [];
         const builtInOpticSet = new Set(inst.spec.builtInOpticNodeNames || []);
+        const builtInOpticMatSubs = (
+          inst.spec.builtInOpticMatSubstrings || []
+        ).map((s) => s.toLowerCase());
         inst.builtInOpticNodes = [];
 
         if (
           hiddenNodes.length > 0 ||
           hiddenMats.length > 0 ||
-          builtInOpticSet.size > 0
+          builtInOpticSet.size > 0 ||
+          builtInOpticMatSubs.length > 0
         ) {
           modelScene.traverse((child) => {
             const cNameLow = (child.name || '').toLowerCase();
@@ -984,19 +1083,31 @@ export function createKinemationArmsRig(params: {
               child.visible = false;
               return;
             }
-            if ((child as THREE.Mesh).isMesh && hiddenMats.length > 0) {
+            if ((child as THREE.Mesh).isMesh) {
               const mesh = child as THREE.Mesh;
               const mats = Array.isArray(mesh.material)
                 ? mesh.material
                 : mesh.material
                   ? [mesh.material]
                   : [];
-              const hasHiddenMat = mats.some((m) => {
-                const mLow = (m?.name || '').toLowerCase();
-                return hiddenMats.some((sub) => mLow.includes(sub));
-              });
-              if (hasHiddenMat) {
-                mesh.visible = false;
+              if (hiddenMats.length > 0) {
+                const hasHiddenMat = mats.some((m) => {
+                  const mLow = (m?.name || '').toLowerCase();
+                  return hiddenMats.some((sub) => mLow.includes(sub));
+                });
+                if (hasHiddenMat) {
+                  mesh.visible = false;
+                  return;
+                }
+              }
+              if (builtInOpticMatSubs.length > 0) {
+                const hasOpticMat = mats.some((m) => {
+                  const mLow = (m?.name || '').toLowerCase();
+                  return builtInOpticMatSubs.some((sub) => mLow.includes(sub));
+                });
+                if (hasOpticMat && !inst.builtInOpticNodes.includes(mesh)) {
+                  inst.builtInOpticNodes.push(mesh);
+                }
               }
             }
           });
@@ -1024,6 +1135,162 @@ export function createKinemationArmsRig(params: {
           const act = mixer.clipAction(clip);
           inst.actions[clip.name] = act;
         });
+
+        // 2. M4_CARBINE (mx16a4.glb): separa os triângulos da alça de mira traseira A2 removível
+        // (Y_gun > 0.0168 e Z_gun > -0.05) em sub-malhas dedicadas dentro de inst.builtInOpticNodes.
+        // Quando optic === 'iron', a alça traseira A2 aparece sólida (DoubleSide); quando o jogador equipa
+        // Red Dot / Holo / LPVO, a alça traseira A2 some automaticamente liberando o trilho Picatinny!
+        if (weaponId === 'M4_CARBINE') {
+          const poseAct = inst.actions['Pose'];
+          if (poseAct) {
+            poseAct.reset().play();
+            mixer.setTime(0);
+          }
+          modelScene.updateMatrixWorld(true);
+          const m16Meshes: THREE.Mesh[] = [];
+          modelScene.traverse((c) => {
+            if ((c as THREE.Mesh).isMesh) m16Meshes.push(c as THREE.Mesh);
+          });
+          const vTmp = new THREE.Vector3();
+          const toModelSceneMat = new THREE.Matrix4();
+          for (const mesh of m16Meshes) {
+            const geom = mesh.geometry;
+            const posAttr = geom.attributes.position;
+            if (!posAttr) continue;
+            computeMatrixInAncestorSpace(mesh, modelScene, toModelSceneMat);
+            const idx = geom.index;
+            const triCount = idx ? idx.count / 3 : posAttr.count / 3;
+            const baseIndices: number[] = [];
+            const sightIndices: number[] = [];
+            for (let t = 0; t < triCount; t++) {
+              const i0 = idx ? idx.getX(t * 3) : t * 3;
+              const i1 = idx ? idx.getX(t * 3 + 1) : t * 3 + 1;
+              const i2 = idx ? idx.getX(t * 3 + 2) : t * 3 + 2;
+              let cy = 0;
+              let cz = 0;
+              const triVerts = [i0, i1, i2];
+              for (let k = 0; k < 3; k++) {
+                const ii = triVerts[k];
+                vTmp.fromBufferAttribute(posAttr, ii);
+                if ((mesh as THREE.SkinnedMesh).isSkinnedMesh) {
+                  (mesh as THREE.SkinnedMesh).applyBoneTransform(ii, vTmp);
+                }
+                vTmp.applyMatrix4(toModelSceneMat);
+                // Em modelScene da mx16a4: Y_gun = -vTmp.z, Z_gun = -vTmp.y
+                cy += -vTmp.z / 3;
+                cz += -vTmp.y / 3;
+              }
+              if (cy > 0.0168 && cz > -0.05 && cz < 0.135) {
+                sightIndices.push(i0, i1, i2);
+              } else {
+                baseIndices.push(i0, i1, i2);
+              }
+            }
+            if (sightIndices.length === 0) continue;
+            if (baseIndices.length === 0) {
+              inst.builtInOpticNodes.push(mesh);
+              continue;
+            }
+            const baseGeom = geom.clone();
+            baseGeom.setIndex(baseIndices);
+            mesh.geometry = baseGeom;
+
+            const sightGeom = geom.clone();
+            sightGeom.setIndex(sightIndices);
+            let sightMesh: THREE.Mesh;
+            if ((mesh as THREE.SkinnedMesh).isSkinnedMesh) {
+              const sk = mesh as THREE.SkinnedMesh;
+              const skSight = new THREE.SkinnedMesh(sightGeom, sk.material);
+              skSight.bind(sk.skeleton, sk.bindMatrix);
+              sightMesh = skSight;
+            } else {
+              sightMesh = new THREE.Mesh(sightGeom, mesh.material);
+            }
+            sightMesh.name = `${mesh.name}_A2RearSight`;
+            sightMesh.frustumCulled = false;
+            sightMesh.castShadow = false;
+            sightMesh.receiveShadow = true;
+            mesh.parent?.add(sightMesh);
+            inst.builtInOpticNodes.push(sightMesh);
+          }
+        }
+
+        // 3. SMG_45 (v18_engineer_smg.glb): separa o carregador (Z_local > 0.02) do silenciador
+        // na malha mesh_3 (v18_mag_silence) para animar o carregador na mão esquerda durante o reload.
+        if (weaponId === 'SMG_45') {
+          let magSilenceMesh: THREE.Mesh | null = null;
+          modelScene.traverse((c) => {
+            if ((c as THREE.Mesh).isMesh && c.name === 'mesh_3') {
+              magSilenceMesh = c as THREE.Mesh;
+            }
+          });
+          if (magSilenceMesh) {
+            const mMesh = magSilenceMesh as THREE.Mesh;
+            const geom = mMesh.geometry;
+            const posAttr = geom.attributes.position;
+            const idx = geom.index;
+            if (posAttr) {
+              const triCount = idx ? idx.count / 3 : posAttr.count / 3;
+              const silencerIdx: number[] = [];
+              const magIdx: number[] = [];
+              const vTmp = new THREE.Vector3();
+              for (let t = 0; t < triCount; t++) {
+                const i0 = idx ? idx.getX(t * 3) : t * 3;
+                const i1 = idx ? idx.getX(t * 3 + 1) : t * 3 + 1;
+                const i2 = idx ? idx.getX(t * 3 + 2) : t * 3 + 2;
+                let cz = 0;
+                for (const ii of [i0, i1, i2]) {
+                  vTmp.fromBufferAttribute(posAttr, ii);
+                  cz += vTmp.z / 3;
+                }
+                if (cz > 0.02) {
+                  magIdx.push(i0, i1, i2);
+                } else {
+                  silencerIdx.push(i0, i1, i2);
+                }
+              }
+              if (magIdx.length > 0 && silencerIdx.length > 0) {
+                const silGeom = geom.clone();
+                silGeom.setIndex(silencerIdx);
+                mMesh.geometry = silGeom;
+
+                const magGeom = geom.clone();
+                magGeom.setIndex(magIdx);
+                const magMesh = new THREE.Mesh(magGeom, mMesh.material);
+                magMesh.name = 'SMG45_MagazineMesh';
+                magMesh.position.copy(mMesh.position);
+                magMesh.quaternion.copy(mMesh.quaternion);
+                magMesh.scale.copy(mMesh.scale);
+                magMesh.frustumCulled = false;
+                mMesh.parent?.add(magMesh);
+                inst.magNode = magMesh;
+                inst.magRestPos.copy(magMesh.position);
+              }
+            }
+          }
+        }
+
+        // 4. Localiza o nó do carregador para armas com weaponFreezeIdlePose para animar extração/inserção no reload
+        if (!inst.magNode && inst.spec.weaponFreezeIdlePose) {
+          const candidateNames = [
+            'clip',
+            'clip_carbine_0',
+            'Magazine',
+            'Magazine001',
+            'Magazine_04',
+            'mag',
+            'mag_LMG_0',
+            'mag_sniper_0',
+          ];
+          for (const cName of candidateNames) {
+            const found = modelScene.getObjectByName(cName);
+            if (found) {
+              inst.magNode = found;
+              inst.magRestPos.copy(found.position);
+              break;
+            }
+          }
+        }
 
         inst.loaded = true;
         inst.lastUsedAt = ++lruClock;
@@ -1185,6 +1452,9 @@ export function createKinemationArmsRig(params: {
     if (inst.spec.clipPrefix === 'Kar98K') {
       if (inst.karClipMesh) inst.karClipMesh.visible = false;
       if (inst.karCartridgeBone) inst.karCartridgeBone.scale.setScalar(0);
+    }
+    if (inst.magNode) {
+      inst.magNode.position.copy(inst.magRestPos);
     }
   };
 
@@ -1398,7 +1668,27 @@ export function createKinemationArmsRig(params: {
       inst.mixer?.update(dt);
     }
 
-    // Restaura posição base + elevação suave de equipamento + golpe diagonal da faca
+    // Animação procedural Zero-GC de extração/inserção do carregador sincronizada com a mão esquerda
+    // para armas com weaponFreezeIdlePose (SMG_45, CARBINE_AR, S_MILITARY, AK47_RIFLE, L49_LMG, SNIPER_AWP).
+    if (inst.magNode) {
+      if (reloadLockActive && currentArmsOneShot) {
+        const clipDur = Math.max(0.1, currentArmsOneShot.getClip().duration);
+        const p = THREE.MathUtils.clamp(currentArmsOneShot.time / clipDur, 0, 1);
+        // Janela em que a mão esquerda agarra o carregador (p=0.14), leva ao cinto (p=0.40) e reinsere no poço (p=0.68)
+        let pull = 0;
+        if (p > 0.14 && p < 0.68) {
+          pull = Math.sin(((p - 0.14) / 0.54) * Math.PI);
+          pull = Math.pow(Math.max(0, pull), 0.78);
+        }
+        inst.magNode.position
+          .copy(inst.magRestPos)
+          .addScaledVector(inst.magPullAxisLocal, pull);
+      } else {
+        inst.magNode.position.copy(inst.magRestPos);
+      }
+    }
+
+    // Restaura posição/rotação base + elevação suave de equipamento + golpe diagonal da faca
     if (meleeSlashTimer > 0 && inst.spec.isMeleeKnife) {
       meleeSlashTimer = Math.max(0, meleeSlashTimer - dt);
       const p = 1 - meleeSlashTimer / MELEE_SLASH_DUR;
@@ -1409,11 +1699,11 @@ export function createKinemationArmsRig(params: {
         inst.poseArmsCenterOffset.y + Math.sin(p * Math.PI * 2) * 0.035,
         inst.poseArmsCenterOffset.z - thrust * 0.12
       );
-      armsCenterGroup.rotation.set(
-        -thrust * 0.18,
-        slashSweep * 0.28,
-        slashSweep * 0.42
-      );
+      _slashEuler.set(-thrust * 0.18, slashSweep * 0.28, slashSweep * 0.42);
+      _slashQuat.setFromEuler(_slashEuler);
+      armsCenterGroup.quaternion
+        .copy(inst.poseArmsCenterQuat)
+        .multiply(_slashQuat);
     } else if (equipLiftTimer > 0) {
       equipLiftTimer = Math.max(0, equipLiftTimer - dt);
       const t = equipLiftTimer / EQUIP_LIFT_DUR;
@@ -1423,10 +1713,10 @@ export function createKinemationArmsRig(params: {
         inst.poseArmsCenterOffset.y - ease * 0.085,
         inst.poseArmsCenterOffset.z + ease * 0.05
       );
-      armsCenterGroup.rotation.set(0, 0, 0);
+      armsCenterGroup.quaternion.copy(inst.poseArmsCenterQuat);
     } else {
       armsCenterGroup.position.copy(inst.poseArmsCenterOffset);
-      armsCenterGroup.rotation.set(0, 0, 0);
+      armsCenterGroup.quaternion.copy(inst.poseArmsCenterQuat);
     }
 
     syncWeaponMountToIkBone(Boolean(inst.spec.attachToHandR));
@@ -1485,3 +1775,237 @@ export function createKinemationArmsRig(params: {
     dispose,
   };
 }
+
+/**
+ * Prepara qualquer modelo GLB de arma para o estúdio 3D do Arsenal (`WeaponInspectionModal`)
+ * usando o mesmo sistema de coordenadas canônico de `weaponMotionAnchor` (cano em `-Z`, trilho superior em `+Y`,
+ * parede esquerda em `-X`), garantindo alinhamento 1:1 de todas as miras 3D, bocais e chaveiros com física.
+ */
+export function prepareStandaloneWeaponSceneForInspection(
+  weaponId: WeaponId,
+  modelScene: THREE.Group,
+  animations: THREE.AnimationClip[]
+): {
+  gunAnchorGroup: THREE.Group;
+  builtInOpticNodes: THREE.Object3D[];
+} {
+  const spec = KINEMATION_WEAPON_REGISTRY[weaponId];
+
+  if (weaponId === 'SNIPER_HEAVY') {
+    const unskinnedClones: THREE.Mesh[] = [];
+    modelScene.traverse((child) => {
+      if (
+        (child as THREE.Mesh).isMesh &&
+        (child.name === 'Object_64' || child.name === 'Object_66')
+      ) {
+        const srcMesh = child as THREE.Mesh;
+        const cleanMesh = new THREE.Mesh(srcMesh.geometry, srcMesh.material);
+        cleanMesh.name = srcMesh.name;
+        unskinnedClones.push(cleanMesh);
+        srcMesh.visible = false;
+        srcMesh.name = `${srcMesh.name}_hidden_skinned`;
+      }
+    });
+    unskinnedClones.forEach((m) => modelScene.add(m));
+  } else if (weaponId === 'KNIFE_TACTICAL') {
+    modelScene.traverse((child) => {
+      if (child.name === 'knife' || child.name === 'R_wrist_Goal') {
+        child.position.set(0, 0, 0);
+        child.rotation.set(0, 0, 0);
+        child.scale.set(1, 1, 1);
+      }
+    });
+  }
+
+  calibrateKinemationMaterialScene(modelScene, false);
+
+  const gunAnchorGroup = new THREE.Group();
+  const weaponMount = new THREE.Group();
+  const socketGroup = new THREE.Group();
+
+  if (spec && !spec.attachToHandR) {
+    weaponMount.quaternion.copy(_idealIkRestQuat);
+    socketGroup.rotation.x = Math.PI / 2;
+    if (spec.attachEuler) {
+      socketGroup.rotation.x += spec.attachEuler[0];
+      socketGroup.rotation.y += spec.attachEuler[1];
+      socketGroup.rotation.z += spec.attachEuler[2];
+    }
+    if (spec.attachOffset) {
+      socketGroup.position.set(
+        spec.attachOffset[0],
+        spec.attachOffset[1],
+        spec.attachOffset[2]
+      );
+    }
+    socketGroup.scale.setScalar(spec.scale ?? 1.0);
+    if (spec.modelAlign) {
+      const align = spec.modelAlign;
+      modelScene.scale.setScalar(align.scale);
+      modelScene.position.set(align.pos[0], align.pos[1], align.pos[2]);
+      if (align.rot) {
+        modelScene.rotation.set(align.rot[0], align.rot[1], align.rot[2]);
+      }
+    }
+  } else if (weaponId === 'KNIFE_TACTICAL') {
+    modelScene.scale.setScalar(0.01);
+    modelScene.rotation.set(0, Math.PI / 2, 0);
+  }
+
+  socketGroup.add(modelScene);
+  weaponMount.add(socketGroup);
+  gunAnchorGroup.add(weaponMount);
+
+  const hiddenNodes = spec?.hiddenNodeSubstrings || [];
+  const hiddenMats = spec?.hiddenMatSubstrings || [];
+  const builtInOpticSet = new Set(spec?.builtInOpticNodeNames || []);
+  const builtInOpticMatSubs = (spec?.builtInOpticMatSubstrings || []).map((s) =>
+    s.toLowerCase()
+  );
+  const builtInOpticNodes: THREE.Object3D[] = [];
+
+  modelScene.traverse((child) => {
+    child.frustumCulled = false;
+    const cNameLow = (child.name || '').toLowerCase();
+    if (builtInOpticSet.has(child.name)) {
+      builtInOpticNodes.push(child);
+    }
+    if (hiddenNodes.some((sub) => cNameLow.includes(sub))) {
+      child.visible = false;
+      return;
+    }
+    if ((child as THREE.Mesh).isMesh) {
+      const mesh = child as THREE.Mesh;
+      mesh.castShadow = false;
+      mesh.receiveShadow = true;
+      const mats = Array.isArray(mesh.material)
+        ? mesh.material
+        : mesh.material
+          ? [mesh.material]
+          : [];
+      if (hiddenMats.length > 0) {
+        const hasHiddenMat = mats.some((m) => {
+          const mLow = (m?.name || '').toLowerCase();
+          return hiddenMats.some((sub) => mLow.includes(sub));
+        });
+        if (hasHiddenMat) {
+          mesh.visible = false;
+          return;
+        }
+      }
+      if (
+        spec?.clipPrefix === 'Kar98K' &&
+        mats.some((m) => m?.name === 'M_Kar98K_Clip')
+      ) {
+        mesh.visible = false;
+        return;
+      }
+      if (builtInOpticMatSubs.length > 0) {
+        const hasOpticMat = mats.some((m) => {
+          const mLow = (m?.name || '').toLowerCase();
+          return builtInOpticMatSubs.some((sub) => mLow.includes(sub));
+        });
+        if (hasOpticMat && !builtInOpticNodes.includes(mesh)) {
+          builtInOpticNodes.push(mesh);
+        }
+      }
+    }
+  });
+
+  if (spec?.clipPrefix === 'Kar98K') {
+    const cartBone = modelScene.getObjectByName('Cartridge');
+    if (cartBone) cartBone.scale.setScalar(0);
+  }
+
+  if (animations && animations.length > 0 && weaponId !== 'KNIFE_TACTICAL') {
+    const mixer = new THREE.AnimationMixer(modelScene);
+    const clipName = spec?.weaponPoseClipName
+      ? spec.weaponPoseClipName
+      : spec?.clipPrefix === 'Kar98K'
+        ? 'Fire'
+        : 'Pose';
+    const targetClip =
+      animations.find((c) => c.name === clipName) ||
+      animations.find((c) => c.name === 'Pose') ||
+      animations[0];
+    if (targetClip) {
+      const act = mixer.clipAction(targetClip);
+      act.weight = 1;
+      act.reset().play();
+      mixer.setTime(spec?.weaponPoseTime ?? 0);
+    }
+  }
+
+  // Separa os triângulos da alça de mira traseira A2 removível na M4_CARBINE (mx16a4.glb)
+  if (weaponId === 'M4_CARBINE') {
+    modelScene.updateMatrixWorld(true);
+    const m16Meshes: THREE.Mesh[] = [];
+    modelScene.traverse((c) => {
+      if ((c as THREE.Mesh).isMesh) m16Meshes.push(c as THREE.Mesh);
+    });
+    const vTmp = new THREE.Vector3();
+    const toModelSceneMat = new THREE.Matrix4();
+    for (const mesh of m16Meshes) {
+      const geom = mesh.geometry;
+      const posAttr = geom.attributes.position;
+      if (!posAttr) continue;
+      computeMatrixInAncestorSpace(mesh, modelScene, toModelSceneMat);
+      const idx = geom.index;
+      const triCount = idx ? idx.count / 3 : posAttr.count / 3;
+      const baseIndices: number[] = [];
+      const sightIndices: number[] = [];
+      for (let t = 0; t < triCount; t++) {
+        const i0 = idx ? idx.getX(t * 3) : t * 3;
+        const i1 = idx ? idx.getX(t * 3 + 1) : t * 3 + 1;
+        const i2 = idx ? idx.getX(t * 3 + 2) : t * 3 + 2;
+        let cy = 0;
+        let cz = 0;
+        const triVerts = [i0, i1, i2];
+        for (let k = 0; k < 3; k++) {
+          const ii = triVerts[k];
+          vTmp.fromBufferAttribute(posAttr, ii);
+          if ((mesh as THREE.SkinnedMesh).isSkinnedMesh) {
+            (mesh as THREE.SkinnedMesh).applyBoneTransform(ii, vTmp);
+          }
+          vTmp.applyMatrix4(toModelSceneMat);
+          cy += -vTmp.z / 3;
+          cz += -vTmp.y / 3;
+        }
+        if (cy > 0.0168 && cz > -0.05 && cz < 0.135) {
+          sightIndices.push(i0, i1, i2);
+        } else {
+          baseIndices.push(i0, i1, i2);
+        }
+      }
+      if (sightIndices.length === 0) continue;
+      if (baseIndices.length === 0) {
+        builtInOpticNodes.push(mesh);
+        continue;
+      }
+      const baseGeom = geom.clone();
+      baseGeom.setIndex(baseIndices);
+      mesh.geometry = baseGeom;
+
+      const sightGeom = geom.clone();
+      sightGeom.setIndex(sightIndices);
+      let sightMesh: THREE.Mesh;
+      if ((mesh as THREE.SkinnedMesh).isSkinnedMesh) {
+        const sk = mesh as THREE.SkinnedMesh;
+        const skSight = new THREE.SkinnedMesh(sightGeom, sk.material);
+        skSight.bind(sk.skeleton, sk.bindMatrix);
+        sightMesh = skSight;
+      } else {
+        sightMesh = new THREE.Mesh(sightGeom, mesh.material);
+      }
+      sightMesh.name = `${mesh.name}_A2RearSight`;
+      sightMesh.frustumCulled = false;
+      sightMesh.castShadow = false;
+      sightMesh.receiveShadow = true;
+      mesh.parent?.add(sightMesh);
+      builtInOpticNodes.push(sightMesh);
+    }
+  }
+
+  return { gunAnchorGroup, builtInOpticNodes };
+}
+

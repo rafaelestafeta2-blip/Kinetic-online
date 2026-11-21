@@ -324,7 +324,12 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
       const t = window.setTimeout(() => finishLoading(), 350);
       return () => window.clearTimeout(t);
     }
-    const allReady = players.every((p) => p.isLoaded === true || (p.loadProgress ?? 0) >= 100);
+    const allReady = players.every(
+      (p) =>
+        p.isLoaded === true ||
+        (p.loadProgress ?? 0) >= 100 ||
+        p.connectionState === 'RECONNECTING'
+    );
     if (allReady) {
       setStatusText('TODOS OS OPERADORES CONECTADOS E COMPILADOS (100%) — INICIANDO!');
       const t = window.setTimeout(() => finishLoading(), 450);
@@ -583,12 +588,13 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
     .map((p) => {
       const isLocal = p.uid === profile.uid || p.callsign === localCallsign;
       const ready = Boolean(p.isLoaded || (p.loadProgress ?? 0) >= 100);
+      const isReconnecting = !isLocal && p.connectionState === 'RECONNECTING';
       const realClanName = (isLocal ? localClan?.clanName : undefined) || p.clanName;
       const realClanEmblem = ((isLocal ? localClan?.clanEmblemId : undefined) ||
         p.clanEmblemId) as ClanEmblemId | undefined;
       return {
         callsign: p.callsign,
-        title: ready ? '✓ PRONTO' : `${p.loadProgress ?? 0}%`,
+        title: isReconnecting ? 'RECONECTANDO...' : ready ? '✓ PRONTO' : `${p.loadProgress ?? 0}%`,
         classId: isLocal ? playerSelectedClass : (p.classId || 'FUZILEIRO'),
         isPlayer: isLocal,
         isReady: ready,
@@ -605,12 +611,13 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
     .map((p) => {
       const isLocal = p.uid === profile.uid || p.callsign === localCallsign;
       const ready = Boolean(p.isLoaded || (p.loadProgress ?? 0) >= 100);
+      const isReconnecting = !isLocal && p.connectionState === 'RECONNECTING';
       const realClanName = (isLocal ? localClan?.clanName : undefined) || p.clanName;
       const realClanEmblem = ((isLocal ? localClan?.clanEmblemId : undefined) ||
         p.clanEmblemId) as ClanEmblemId | undefined;
       return {
         callsign: p.callsign,
-        title: ready ? '✓ PRONTO' : `${p.loadProgress ?? 0}%`,
+        title: isReconnecting ? 'RECONECTANDO...' : ready ? '✓ PRONTO' : `${p.loadProgress ?? 0}%`,
         classId: isLocal ? playerSelectedClass : (p.classId || 'ENGENHEIRO'),
         isPlayer: isLocal,
         isReady: ready,

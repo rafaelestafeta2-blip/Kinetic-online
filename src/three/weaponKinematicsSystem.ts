@@ -43,7 +43,8 @@ export function updateWeaponKinematicsAndOptics(engine: any, dt: number): void {
     );
     const hasOpticalSniperScope =
       activeWeapon === 'SNIPER_AWP' ||
-      activeWeapon === 'SNIPER_HEAVY' ||
+      (activeWeapon === 'SNIPER_HEAVY' &&
+        (engine.state.optic === 'iron' || engine.state.optic === 'lpvo')) ||
       ((activeWeapon === 'SNIPER_BOLT' || activeWeapon === 'SNIPER_TACTICAL') &&
         engine.state.optic === 'lpvo');
 
@@ -513,6 +514,17 @@ export function updateWeaponKinematicsAndOptics(engine: any, dt: number): void {
       canAds,
       engine.state.reloadPhase,
       engine.state.reloadProgress
+    );
+
+    engine.weaponRig.attachmentSystem?.updatePhysics(
+      dt,
+      engine.swayVel.x,
+      engine.swayVel.y,
+      horizSpeed,
+      engine.playerVel.y,
+      engine.walkBobPhase,
+      engine.weaponRig.root.rotation.z,
+      engine.weaponRig.root.rotation.x
     );
 
     // Proximity to 3D Wall Weapon Stands

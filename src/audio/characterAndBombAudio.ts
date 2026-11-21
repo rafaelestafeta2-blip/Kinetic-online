@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { soundEngine } from './soundEngine';
 import { triggerShellshockTinnitus } from './tacticalImmersionAudio';
+import { resolveAssetUrl } from '../utils/assetUrl';
 
 type CharacterSoundKey =
   | 'CASING_BOUNCE'
@@ -36,13 +37,25 @@ let lastGruntTime = 0;
 let sprintFatigue = 0;
 let activePantingSource: AudioBufferSourceNode | null = null;
 let activePantingGain: GainNode | null = null;
+let fallbackPantingEl: HTMLAudioElement | null = null;
+let fallbackPantingPlaying = false;
 
 async function fetchSoundArrayBuffer(urls: SoundSourceUrls): Promise<ArrayBuffer | null> {
   try {
-    const res = await fetch(urls.local).catch(() => null);
+    const resolvedLocal = resolveAssetUrl(urls.local);
+    const res = await fetch(resolvedLocal).catch(() => null);
     if (res && res.ok) {
       const buf = await res.arrayBuffer().catch(() => null);
-      if (buf) return buf;
+      if (buf && buf.byteLength > 128) return buf;
+    }
+  } catch {
+    // Fallback silencioso
+  }
+  try {
+    const resRawLocal = await fetch(urls.local).catch(() => null);
+    if (resRawLocal && resRawLocal.ok) {
+      const buf = await resRawLocal.arrayBuffer().catch(() => null);
+      if (buf && buf.byteLength > 128) return buf;
     }
   } catch {
     // Fallback silencioso
@@ -153,7 +166,7 @@ export function playRealBombPlantedVoice(): void {
   const played = playBufferOneShot('BOMB_PLANTED_VOICE', 1.15, 1.0, 0, 0);
   if (!played) {
     try {
-      const audio = new Audio(SOUND_URLS.BOMB_PLANTED_VOICE.local);
+      const audio = new Audio(resolveAssetUrl(SOUND_URLS.BOMB_PLANTED_VOICE.local));
       audio.volume = 0.95;
       void audio.play().catch(() => {});
     } catch {
@@ -193,7 +206,7 @@ export function updatePlayerSprintPantingAudio(
   preloadCharacterAndBombAudio();
   const state = soundEngine.getSpatialAudioState();
 
-  if (!isAlive || state.muted || !state.ctx) {
+  if (!isAlive || state.muted) {
     sprintFatigue = 0;
     if (activePantingSource) {
       try {
@@ -204,29 +217,41 @@ export function updatePlayerSprintPantingAudio(
       activePantingSource = null;
       activePantingGain = null;
     }
+    if (fallbackPantingEl && fallbackPantingPlaying) {
+      fallbackPantingEl.pause();
+      fallbackPantingPlaying = false;
+    }
     return;
   }
 
-  const activelyRunning = isSprinting && horizSpeed > 3.4;
+  const activelyRunning = isSprinting && horizSpeed > 2.95;
   if (activelyRunning) {
-    // Acumula fadiga após ~1.5s de corrida contínua
-    sprintFatigue = Math.min(1.0, sprintFatigue + dt * 0.38);
+    // Acumula fadiga rapidamente (~0.4s de corrida já inicia a respiração audível)
+    sprintFatigue = Math.min(1.0, sprintFatigue + dt * 0.72);
   } else {
     // Recupera o fôlego gradualmente após parar de correr (efeito "panting after run")
-    sprintFatigue = Math.max(0.0, sprintFatigue - dt * 0.24);
+    sprintFatigue = Math.max(0.0, sprintFatigue - dt * 0.22);
   }
 
   const ctx = state.ctx;
-  if (sprintFatigue > 0.22) {
-    const targetGain = THREE.MathUtils.lerp(0.06, 0.44, (sprintFatigue - 0.22) / 0.78);
-    if (!activePantingSource) {
+  if (ctx && ctx.state === 'suspended' && activelyRunning) {
+    void ctx.resume().catch(() => {});
+  }
+
+  if (sprintFatigue > 0.08) {
+    const normalizedFatigue = THREE.MathUtils.clamp((sprintFatigue - 0.08) / 0.92, 0, 1);
+    const targetGain = THREE.MathUtils.lerp(0.36, 0.92, normalizedFatigue);
+    const targetRate = THREE.MathUtils.lerp(0.98, 1.12, normalizedFatigue);
+
+    if (ctx && !activePantingSource) {
       const buf = ensureDecodedBuffer('SPRINT_PANTING');
       if (buf) {
         const src = ctx.createBufferSource();
         src.buffer = buf;
         src.loop = true;
+        src.playbackRate.setValueAtTime(targetRate, ctx.currentTime);
         const gain = ctx.createGain();
-        gain.gain.setValueAtTime(0.01, ctx.currentTime);
+        gain.gain.setValueAtTime(0.08, ctx.currentTime);
         src.connect(gain);
         gain.connect(ctx.destination);
         src.start(ctx.currentTime);
@@ -238,21 +263,55 @@ export function updatePlayerSprintPantingAudio(
         };
         activePantingSource = src;
         activePantingGain = gain;
+        if (fallbackPantingEl && fallbackPantingPlaying) {
+          fallbackPantingEl.pause();
+          fallbackPantingPlaying = false;
+        }
       }
     }
-    if (activePantingGain) {
-      activePantingGain.gain.setTargetAtTime(targetGain, ctx.currentTime, 0.12);
-    }
-  } else if (activePantingSource && activePantingGain) {
-    activePantingGain.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.15);
-    if (sprintFatigue <= 0.02) {
-      try {
-        activePantingSource.stop();
-      } catch {
-        // Ignorar
+
+    if (activePantingSource && activePantingGain && ctx) {
+      activePantingGain.gain.setTargetAtTime(targetGain, ctx.currentTime, 0.08);
+      activePantingSource.playbackRate.setTargetAtTime(targetRate, ctx.currentTime, 0.12);
+    } else if (typeof Audio !== 'undefined') {
+      // Fallback via HTMLAudioElement caso o WebAudio ainda esteja decodificando o buffer
+      if (!fallbackPantingEl) {
+        try {
+          fallbackPantingEl = new Audio(resolveAssetUrl(SOUND_URLS.SPRINT_PANTING.local));
+          fallbackPantingEl.loop = true;
+        } catch {
+          fallbackPantingEl = null;
+        }
       }
-      activePantingSource = null;
-      activePantingGain = null;
+      if (fallbackPantingEl) {
+        fallbackPantingEl.volume = THREE.MathUtils.clamp(targetGain * 0.85, 0.15, 0.85);
+        if (!fallbackPantingPlaying) {
+          fallbackPantingPlaying = true;
+          void fallbackPantingEl.play().catch(() => {
+            fallbackPantingPlaying = false;
+          });
+        }
+      }
+    }
+  } else {
+    if (activePantingSource && activePantingGain && ctx) {
+      activePantingGain.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.14);
+      if (sprintFatigue <= 0.02) {
+        try {
+          activePantingSource.stop();
+        } catch {
+          // Ignorar
+        }
+        activePantingSource = null;
+        activePantingGain = null;
+      }
+    }
+    if (fallbackPantingEl && fallbackPantingPlaying) {
+      fallbackPantingEl.volume = Math.max(0, fallbackPantingEl.volume - dt * 1.8);
+      if (sprintFatigue <= 0.02 || fallbackPantingEl.volume <= 0.02) {
+        fallbackPantingEl.pause();
+        fallbackPantingPlaying = false;
+      }
     }
   }
 }

@@ -129,6 +129,7 @@ export const RESOURCE_PACK_DEFINITIONS: ResourcePackDefinition[] = [
     mapMode: 'DUST2_BOMB_5V5',
     files: [
       { path: '/models/maps/cs_assault.glb', sizeBytes: 2_092_836 },
+      { path: '/maps/station_arena/Station_Arena.FBX', sizeBytes: 1_284_320 },
       { path: '/models/maps/de_dust2.glb', sizeBytes: 485_108 },
       { path: '/maps/station_arena/Arena_tex01.webp', sizeBytes: 121_610 },
     ],
@@ -267,6 +268,24 @@ export async function readCachedAssetBuffer(
   } catch {
     return null;
   }
+}
+
+export async function isAssetCachedInResourcePacks(
+  urlOrPath: string
+): Promise<boolean> {
+  if (!isHydrated) {
+    await hydrateResourcePacksFromCache();
+  }
+  const normalized = normalizeAssetKey(urlOrPath);
+  if (cachedPathSet.has(normalized)) {
+    return true;
+  }
+  const buffer = await readCachedAssetBuffer(urlOrPath);
+  if (buffer && buffer.byteLength > 0) {
+    cachedPathSet.add(normalized);
+    return true;
+  }
+  return false;
 }
 
 export async function cacheFetchedAssetBuffer(

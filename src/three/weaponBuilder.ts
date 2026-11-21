@@ -226,23 +226,23 @@ export const WEAPON_RAIL_MOUNTS: Record<
   WeaponId,
   { pos: [number, number, number]; scale: number }
 > = {
-  P50_PISTOL: { pos: [0, 0.02, -0.01], scale: 0.68 },
-  M1911_PISTOL: { pos: [0, 0.015, 0.0], scale: 0.65 },
-  SMG_45: { pos: [0, 0.072, -0.02], scale: 0.78 },
+  P50_PISTOL: { pos: [0, 0.022, -0.01], scale: 0.68 },
+  M1911_PISTOL: { pos: [0, 0.016, 0.0], scale: 0.65 },
+  SMG_45: { pos: [0, 0.058, -0.04], scale: 0.78 },
   SMG_MP5: { pos: [0, 0.038, -0.03], scale: 0.78 },
-  SHOTGUN_12: { pos: [0, 0.025, 0.0], scale: 0.82 },
+  SHOTGUN_12: { pos: [0, 0.021, 0.0], scale: 0.82 },
   SHOTGUN_SPAS: { pos: [0, 0.072, -0.04], scale: 0.84 },
   M4_CARBINE: { pos: [0, 0.016, 0.01], scale: 0.88 },
   CARBINE_AR: { pos: [0, 0.04, -0.01], scale: 0.88 },
-  S_MILITARY: { pos: [-0.002, 0.024, -0.02], scale: 0.9 },
-  AK47_RIFLE: { pos: [0, 0.042, -0.02], scale: 0.86 },
-  AK12_RIFLE: { pos: [-0.0014, 0.047, -0.02], scale: 0.86 },
+  S_MILITARY: { pos: [0, 0.024, -0.02], scale: 0.9 },
+  AK47_RIFLE: { pos: [0, 0.038, -0.02], scale: 0.86 },
+  AK12_RIFLE: { pos: [0, 0.047, -0.02], scale: 0.86 },
   L49_LMG: { pos: [0, 0.068, -0.03], scale: 0.88 },
   SNIPER_BOLT: { pos: [0, 0.02, -0.02], scale: 0.88 },
-  SNIPER_TACTICAL: { pos: [-0.0016, 0.021, -0.04], scale: 0.88 },
+  SNIPER_TACTICAL: { pos: [0, 0.021, -0.04], scale: 0.88 },
   SNIPER_AWP: { pos: [0, 0.06, -0.04], scale: 0.9 },
-  SNIPER_HEAVY: { pos: [0, 0.07, -0.04], scale: 0.9 },
-  RPG7_LAUNCHER: { pos: [0.008, 0.095, -0.01], scale: 0.8 },
+  SNIPER_HEAVY: { pos: [0, 0.052, -0.05], scale: 0.9 },
+  RPG7_LAUNCHER: { pos: [0, 0.095, -0.01], scale: 0.8 },
   KNIFE_TACTICAL: { pos: [0, 0, 0], scale: 1.0 },
 };
 
@@ -1176,6 +1176,11 @@ export function buildTacticalWeaponRig(
     kolimatorScopeGroup.visible = optic === 'kolimator';
     holoSightGroup.visible = optic === 'holo';
     lpvoScopeGroup.visible = optic === 'lpvo';
+    opticsContainer.visible =
+      activeWeapon !== 'KNIFE_TACTICAL' &&
+      activeWeapon !== 'SNIPER_AWP' &&
+      (activeWeapon !== 'SNIPER_HEAVY' ||
+        (currentOpticType !== 'iron' && currentOpticType !== 'lpvo'));
   };
 
   const cantedSightGroup = new THREE.Group();
@@ -2414,7 +2419,8 @@ export function buildTacticalWeaponRig(
     opticsContainer.visible =
       weaponId !== 'KNIFE_TACTICAL' &&
       weaponId !== 'SNIPER_AWP' &&
-      weaponId !== 'SNIPER_HEAVY';
+      (weaponId !== 'SNIPER_HEAVY' ||
+        (currentOpticType !== 'iron' && currentOpticType !== 'lpvo'));
     leftHandGroup.position.copy(leftBasePos);
     leftHandGroup.rotation.copy(leftBaseEuler);
     rightHandGroup.position.copy(rightBasePos);
@@ -2662,6 +2668,7 @@ export function buildTacticalWeaponRig(
   };
 
   const triggerFireAnimation = (isAds = false) => {
+    attachmentSystem.notifyFireImpulse(isAds ? 0.78 : 1.0);
     if (isKinemationWeapon(activeWeapon)) {
       kinemationArmsRig.triggerFire();
       return;
@@ -3115,8 +3122,7 @@ export function getOpticAdsTransform(
   if (
     optic !== 'iron' &&
     activeWeapon !== 'KNIFE_TACTICAL' &&
-    activeWeapon !== 'SNIPER_AWP' &&
-    activeWeapon !== 'SNIPER_HEAVY'
+    activeWeapon !== 'SNIPER_AWP'
   ) {
     const rail = WEAPON_RAIL_MOUNTS[activeWeapon];
     const spec = SCOPE_OPTICAL_CENTERS[optic];
@@ -3130,35 +3136,35 @@ export function getOpticAdsTransform(
     }
   }
   if (activeWeapon === 'AK12_RIFLE') {
-    out.pos.set(0.0014, -0.0528, -0.22);
+    out.pos.set(0, -0.0528, -0.22);
     return out;
   }
   if (activeWeapon === 'P50_PISTOL') {
-    out.pos.set(0, -0.023, -0.23);
+    out.pos.set(0, -0.0235, -0.23);
     return out;
   }
   if (activeWeapon === 'M1911_PISTOL') {
-    out.pos.set(0, -0.0185, -0.22);
+    out.pos.set(0, -0.0175, -0.22);
     return out;
   }
   if (activeWeapon === 'SMG_45') {
-    out.pos.set(0, -0.072, -0.22);
+    out.pos.set(0, -0.1066, -0.21);
     return out;
   }
   if (activeWeapon === 'SMG_MP5') {
-    out.pos.set(0, -0.054, -0.22);
+    out.pos.set(0, -0.0545, -0.22);
     return out;
   }
   if (activeWeapon === 'SHOTGUN_12') {
-    out.pos.set(0, -0.031, -0.22);
+    out.pos.set(0, -0.0275, -0.22);
     return out;
   }
   if (activeWeapon === 'SHOTGUN_SPAS') {
-    out.pos.set(0, -0.088, -0.21);
+    out.pos.set(0, -0.096, -0.21);
     return out;
   }
   if (activeWeapon === 'S_MILITARY') {
-    out.pos.set(0.002, -0.052, -0.18);
+    out.pos.set(0, -0.052, -0.18);
     return out;
   }
   if (activeWeapon === 'CARBINE_AR') {
@@ -3166,15 +3172,15 @@ export function getOpticAdsTransform(
     return out;
   }
   if (activeWeapon === 'AK47_RIFLE') {
-    out.pos.set(0, -0.052, -0.22);
+    out.pos.set(0, -0.0435, -0.22);
     return out;
   }
   if (activeWeapon === 'M4_CARBINE') {
-    out.pos.set(0, -0.05, -0.24);
+    out.pos.set(0, -0.0505, -0.25);
     return out;
   }
   if (activeWeapon === 'L49_LMG') {
-    out.pos.set(0, -0.072, -0.22);
+    out.pos.set(0, -0.076, -0.22);
     return out;
   }
   if (activeWeapon === 'SNIPER_BOLT') {
@@ -3182,7 +3188,7 @@ export function getOpticAdsTransform(
     return out;
   }
   if (activeWeapon === 'SNIPER_TACTICAL') {
-    out.pos.set(0.0016, -0.035, -0.22);
+    out.pos.set(0, -0.0355, -0.22);
     return out;
   }
   if (activeWeapon === 'SNIPER_AWP') {
@@ -3190,11 +3196,11 @@ export function getOpticAdsTransform(
     return out;
   }
   if (activeWeapon === 'SNIPER_HEAVY') {
-    out.pos.set(0, -0.072, -0.18);
+    out.pos.set(0, -0.0848, -0.21);
     return out;
   }
   if (activeWeapon === 'RPG7_LAUNCHER') {
-    out.pos.set(-0.008, -0.092, -0.22);
+    out.pos.set(0, -0.098, -0.24);
     return out;
   }
   if (activeWeapon === 'KNIFE_TACTICAL') {
@@ -3206,7 +3212,7 @@ export function getOpticAdsTransform(
     return out;
   }
   if (optic === 'iron') {
-    out.pos.set(0, -0.052, -0.24);
+    out.pos.set(0, -0.0505, -0.25);
     return out;
   }
   out.pos.set(0, -0.06, -0.22);

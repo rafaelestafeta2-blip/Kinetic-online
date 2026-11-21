@@ -8,6 +8,7 @@ import { LoadingScreen } from './components/LoadingScreen';
 import { MainMenu } from './components/MainMenu';
 import { MobileTouchControls } from './components/MobileTouchControls';
 import { OrientationLockOverlay } from './components/OrientationLockOverlay';
+import { PrivacyPolicyModal } from './components/PrivacyPolicyModal';
 import { TacticalHudOverlay } from './components/TacticalHudOverlay';
 import { VideoIntroScreen } from './components/VideoIntroScreen';
 import { WarfaceMatchmakingWidget } from './components/WarfaceMatchmakingWidget';
@@ -46,6 +47,12 @@ export default function App() {
   const [matchmakingTargetMode, setMatchmakingTargetMode] =
     useState<DrillMode | null>(null);
   const [openSquadRoomOnMenuReturn, setOpenSquadRoomOnMenuReturn] = useState(false);
+  const [standalonePrivacyOpen, setStandalonePrivacyOpen] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const p = window.location.pathname.toLowerCase();
+    const q = window.location.search.toLowerCase();
+    return p === '/privacy' || p === '/privacidade' || q.includes('privacy=1');
+  });
   const [gameSettings, setGameSettings] = useState<GameSettings>(() => loadGameSettings());
   const gameSettingsRef = useRef<GameSettings>(gameSettings);
   gameSettingsRef.current = gameSettings;
@@ -520,6 +527,21 @@ export default function App() {
           hud.screen === 'MAIN_MENU' ||
           hud.screen === 'TITLE'
         }
+      />
+      <PrivacyPolicyModal
+        visible={standalonePrivacyOpen}
+        isStandalonePage={true}
+        onClose={() => {
+          setStandalonePrivacyOpen(false);
+          try {
+            if (
+              window.location.pathname.toLowerCase() === '/privacy' ||
+              window.location.pathname.toLowerCase() === '/privacidade'
+            ) {
+              window.history.replaceState({}, '', '/');
+            }
+          } catch {}
+        }}
       />
     </main>
   );

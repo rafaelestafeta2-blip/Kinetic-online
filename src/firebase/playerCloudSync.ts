@@ -627,6 +627,78 @@ export async function claimFounderWelcomeDiamonds(): Promise<{
   return { ok: true, granted: FOUNDER_WELCOME_DIAMONDS };
 }
 
+const ALLOWED_DIAMOND_PACK_AMOUNTS: Record<string, number> = {
+  pack_400: 400,
+  pack_800: 880,
+  pack_1800: 2050,
+  pack_4000: 4800,
+};
+
+export async function creditPurchasedDiamondPack(params: {
+  packId: string;
+  purchaseToken: string;
+}): Promise<{
+  ok: boolean;
+  credited?: number;
+  newBalance?: number;
+  error?: string;
+}> {
+  await ensureCloudProfileHydrated();
+  const creditedAmount = ALLOWED_DIAMOND_PACK_AMOUNTS[params.packId];
+  if (!creditedAmount || !params.purchaseToken) {
+    return {
+      ok: false,
+      error: 'Pacote ou token de compra da Google Play inválido.',
+    };
+  }
+
+  clearPendingCloudPushTimer();
+  const prevProfile = { ...state.profile };
+  const currentDiamonds = Math.max(0, Math.floor(Number(state.profile.diamonds) || 0));
+  const nextDiamonds = Math.min(1_000_000, currentDiamonds + creditedAmount);
+  const nowIso = new Date().toISOString();
+
+  const updatedProfile: PlayerCloudProfile = {
+    ...state.profile,
+    diamonds: nextDiamonds,
+    updatedAt: nowIso,
+  };
+
+  state.profile = updatedProfile;
+  persistLocalProfile(updatedProfile);
+  emitState();
+
+  const user = auth.currentUser;
+  if (user) {
+    const cloudSafePayload = buildCloudSafeProfilePayload(updatedProfile, user.uid);
+    try {
+      state.isSyncing = true;
+      emitState();
+      await setDoc(doc(db, 'players', user.uid), cloudSafePayload);
+      state.lastSyncedAt = nowIso;
+      state.syncError = null;
+    } catch (err) {
+      state.profile = prevProfile;
+      persistLocalProfile(prevProfile);
+      emitState();
+      handleFirestoreError(err, OperationType.WRITE, `players/${user.uid}`);
+      return {
+        ok: false,
+        error: 'Não foi possível salvar os Diamantes comprados na nuvem.',
+      };
+    } finally {
+      state.isSyncing = false;
+      emitState();
+    }
+  }
+
+  return {
+    ok: true,
+    credited: creditedAmount,
+    newBalance: nextDiamonds,
+  };
+}
+
 export interface WarboxResolvedDropResult {
   item: WarboxDropItem;
   wasGuaranteedPity: boolean;

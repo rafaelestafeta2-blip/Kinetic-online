@@ -8,7 +8,7 @@ import {
 import {
   alignWeaponPropToMixamoHands,
   createBotThirdPersonWeaponMesh,
-  preloadRealBotWeaponGlbs,
+  preloadSingleBotWeaponGlb,
 } from '../three/botWeaponProps';
 import {
   createSecondaryWebGLRenderer,
@@ -428,7 +428,9 @@ export const SquadFormation3DCanvas: React.FC<SquadFormation3DCanvasProps> = ({
 
     void Promise.all([
       preloadProRifleBotCharacter(),
-      preloadRealBotWeaponGlbs(),
+      ...membersRef.current.map((m) =>
+        preloadSingleBotWeaponGlb(m.weaponId, m.weaponSkinId)
+      ),
     ]).then(() => {
       if (disposed) return;
       assetsReady = true;

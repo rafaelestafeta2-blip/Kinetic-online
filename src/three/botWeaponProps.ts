@@ -540,56 +540,19 @@ export function ensureSharedWeaponProps(): void {
   // No legacy blocky geometries needed; all non-GLB weapons use sculpted PBR geometry.
 }
 
-export function preloadRealBotWeaponGlbs(): Promise<void> {
-  if (preloadAllPromise) return preloadAllPromise;
+let sharedBotGlbLoader: GLTFLoader | null = null;
+let aemondirLoadPromise: Promise<void> | null = null;
 
-  const loader = createGlbLoader();
-  const perSpecPromises: Array<Promise<void>> = [];
-
-  for (const spec of WEAPON_GLB_SPECS) {
-    const p = new Promise<THREE.Group | null>((resolve) => {
-      loader.load(
-        resolveAssetUrl(spec.url),
-        (gltf) => {
-          const previewTpl = buildBakedStaticGroup(
-            gltf.scene,
-            gltf.animations,
-            spec,
-            0
-          );
-          if (previewTpl.children.length > 0) {
-            const tpl = new THREE.Group();
-            if (spec.rotX !== 0) {
-              const tilted = previewTpl.clone();
-              tilted.rotation.x = spec.rotX;
-              tpl.add(tilted);
-            } else {
-              tpl.add(previewTpl.clone());
-            }
-            glbLevelPreviewTemplates.set(spec.id, previewTpl);
-            glbWeaponTemplates.set(spec.id, tpl);
-            for (let i = pendingWeaponMounts.length - 1; i >= 0; i--) {
-              const item = pendingWeaponMounts[i];
-              if (item.weaponId === spec.id) {
-                if (populateMountWithRealGlb(item.group, item.weaponId)) {
-                  pendingWeaponMounts.splice(i, 1);
-                }
-              }
-            }
-            resolve(tpl);
-          } else {
-            resolve(null);
-          }
-        },
-        undefined,
-        () => resolve(null)
-      );
-    });
-    glbWeaponPromises.set(spec.id, p);
-    perSpecPromises.push(p.then(() => undefined));
+function getSharedBotGlbLoader(): GLTFLoader {
+  if (!sharedBotGlbLoader) {
+    sharedBotGlbLoader = createGlbLoader();
   }
+  return sharedBotGlbLoader;
+}
 
-  // Preload Aemondir Bucky Legion 3D skin override for SHOTGUN_12
+function ensureAemondirSkinLoaded(): Promise<void> {
+  if (aemondirLoadPromise) return aemondirLoadPromise;
+  const loader = getSharedBotGlbLoader();
   const aemondirSpec: RealGlbWeaponSpec = {
     id: 'SHOTGUN_12',
     url: '/models/weapons/shotgun_aemondir_lv1.glb',
@@ -600,7 +563,7 @@ export function preloadRealBotWeaponGlbs(): Promise<void> {
     rotX: 0.19,
     rotY: 0,
   };
-  const aemondirPromise = new Promise<void>((resolve) => {
+  aemondirLoadPromise = new Promise<void>((resolve) => {
     loader.load(
       resolveAssetUrl(aemondirSpec.url),
       (gltf) => {
@@ -631,6 +594,14 @@ export function preloadRealBotWeaponGlbs(): Promise<void> {
             tilted.add(clone);
             glbSkinPreviewTemplates.set('shotgun_aemondir_legion', previewTpl);
             glbSkinWorldTemplates.set('shotgun_aemondir_legion', tilted);
+            for (let i = pendingWeaponMounts.length - 1; i >= 0; i--) {
+              const item = pendingWeaponMounts[i];
+              if (item.group.userData?.desiredSkinId === 'shotgun_aemondir_legion') {
+                item.group.clear();
+                item.group.add(tilted.clone());
+                pendingWeaponMounts.splice(i, 1);
+              }
+            }
           }
         } catch {
           // Fallback to base shotgun
@@ -641,37 +612,77 @@ export function preloadRealBotWeaponGlbs(): Promise<void> {
       () => resolve()
     );
   });
-  perSpecPromises.push(aemondirPromise);
+  return aemondirLoadPromise;
+}
 
-  // Spare GLBs → inventory preview only (never bot mounts / 1P).
-  for (const spec of INVENTORY_PREVIEW_OVERRIDE_SPECS) {
-    const p = new Promise<void>((resolve) => {
-      loader.load(
-        resolveAssetUrl(spec.url),
-        (gltf) => {
-          try {
-            const previewTpl = buildBakedStaticGroup(
-              gltf.scene,
-              gltf.animations,
-              spec,
-              0
-            );
-            // Only replace inventory preview when bake produced usable meshes.
-            if (previewTpl.children.length >= 2) {
-              glbLevelPreviewTemplates.set(spec.id, previewTpl);
-            }
-          } catch {
-            // Keep existing gameplay preview template on failure.
-          }
-          resolve();
-        },
-        undefined,
-        () => resolve()
-      );
-    });
-    perSpecPromises.push(p);
+export function preloadSingleBotWeaponGlb(
+  weaponId: WeaponId,
+  skinId?: string
+): Promise<void> {
+  if (skinId === 'shotgun_aemondir_legion') {
+    void ensureAemondirSkinLoaded();
   }
+  const existing = glbWeaponPromises.get(weaponId);
+  if (existing) {
+    return skinId === 'shotgun_aemondir_legion' && aemondirLoadPromise
+      ? Promise.all([existing, aemondirLoadPromise]).then(() => undefined)
+      : existing.then(() => undefined);
+  }
+  const spec = WEAPON_GLB_SPECS.find((s) => s.id === weaponId);
+  if (!spec) {
+    return Promise.resolve();
+  }
+  const loader = getSharedBotGlbLoader();
+  const p = new Promise<THREE.Group | null>((resolve) => {
+    loader.load(
+      resolveAssetUrl(spec.url),
+      (gltf) => {
+        const previewTpl = buildBakedStaticGroup(
+          gltf.scene,
+          gltf.animations,
+          spec,
+          0
+        );
+        if (previewTpl.children.length > 0) {
+          const tpl = new THREE.Group();
+          if (spec.rotX !== 0) {
+            const tilted = previewTpl.clone();
+            tilted.rotation.x = spec.rotX;
+            tpl.add(tilted);
+          } else {
+            tpl.add(previewTpl.clone());
+          }
+          glbLevelPreviewTemplates.set(spec.id, previewTpl);
+          glbWeaponTemplates.set(spec.id, tpl);
+          for (let i = pendingWeaponMounts.length - 1; i >= 0; i--) {
+            const item = pendingWeaponMounts[i];
+            if (item.weaponId === spec.id) {
+              if (populateMountWithRealGlb(item.group, item.weaponId)) {
+                pendingWeaponMounts.splice(i, 1);
+              }
+            }
+          }
+          resolve(tpl);
+        } else {
+          resolve(null);
+        }
+      },
+      undefined,
+      () => resolve(null)
+    );
+  });
+  glbWeaponPromises.set(spec.id, p);
+  return skinId === 'shotgun_aemondir_legion' && aemondirLoadPromise
+    ? Promise.all([p, aemondirLoadPromise]).then(() => undefined)
+    : p.then(() => undefined);
+}
 
+export function preloadRealBotWeaponGlbs(): Promise<void> {
+  if (preloadAllPromise) return preloadAllPromise;
+  const perSpecPromises: Array<Promise<void>> = WEAPON_GLB_SPECS.map((spec) =>
+    preloadSingleBotWeaponGlb(spec.id)
+  );
+  perSpecPromises.push(ensureAemondirSkinLoaded());
   preloadAllPromise = Promise.all(perSpecPromises).then(() => undefined);
   return preloadAllPromise;
 }
@@ -690,9 +701,7 @@ export async function buildLevel3DWeaponPreviewGroup(
   if (isSculptedWeaponId(weaponId)) {
     return createSculptedThirdPersonWeaponMesh(weaponId, true).group;
   }
-  await preloadRealBotWeaponGlbs();
-  const p = glbWeaponPromises.get(weaponId);
-  if (p) await p;
+  await preloadSingleBotWeaponGlb(weaponId, skinId);
   if (skinId && glbSkinPreviewTemplates.has(skinId)) {
     return glbSkinPreviewTemplates.get(skinId)!.clone();
   }
@@ -710,10 +719,10 @@ export function createBotThirdPersonWeaponMesh(
   _isAlly: boolean,
   weaponSkinId?: string
 ): THREE.Group {
-  preloadRealBotWeaponGlbs();
-
   const chosen: WeaponId = weaponId || 'AK47_RIFLE';
   const skinId = weaponSkinId || 'default';
+  void preloadSingleBotWeaponGlb(chosen, skinId);
+
   const group = new THREE.Group();
   group.name = 'BotWorldWeapon';
   group.userData.desiredSkinWeaponId = chosen;

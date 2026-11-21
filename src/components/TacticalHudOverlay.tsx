@@ -113,7 +113,8 @@ export const TacticalHudOverlay: React.FC<TacticalHudOverlayProps> = ({
   }, [hasTeamScoreboard, isMatchOver]);
   const hasOpticalSniperScope =
     hud.activeWeapon === 'SNIPER_AWP' ||
-    hud.activeWeapon === 'SNIPER_HEAVY' ||
+    (hud.activeWeapon === 'SNIPER_HEAVY' &&
+      (hud.optic === 'iron' || hud.optic === 'lpvo')) ||
     ((hud.activeWeapon === 'SNIPER_BOLT' ||
       hud.activeWeapon === 'SNIPER_TACTICAL') &&
       hud.optic === 'lpvo');

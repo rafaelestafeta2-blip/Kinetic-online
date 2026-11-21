@@ -7,6 +7,7 @@ import { Dust2LevelBundle, runExclusiveGlbLoad } from './dust2LevelBuilder';
 import { TacticalTargetEntity } from './levelBuilder';
 import { YardBotEntity } from './yardPropsBuilder';
 import { resolveAssetUrl } from '../utils/assetUrl';
+import { readCachedAssetBuffer } from '../utils/resourcePackManager';
 
 /** Station Arena — FBX urban transit station + optimized PBR atlas (`Arena_tex01.webp`). */
 export const STATION_ARENA_FBX_URL = resolveAssetUrl('/maps/station_arena/Station_Arena.FBX');
@@ -126,18 +127,36 @@ export async function loadStationArenaMapGeometry(
           (err) => reject(err)
         );
       }),
-      new Promise<THREE.Group>((resolve, reject) => {
-        fbxLoader.load(
-          STATION_ARENA_FBX_URL,
-          (group) => resolve(group),
-          (evt) => {
-            if (evt.lengthComputable && evt.total > 0) {
-              onByteProgress?.(Math.min(1, evt.loaded / evt.total));
-            }
-          },
-          (err) => reject(err)
-        );
-      }),
+      (async (): Promise<THREE.Group> => {
+        const cachedFbx = await readCachedAssetBuffer('/maps/station_arena/Station_Arena.FBX');
+        if (cachedFbx && cachedFbx.byteLength > 0) {
+          loadingManager.itemStart(STATION_ARENA_FBX_URL);
+          try {
+            onByteProgress?.(1);
+            const parsed = fbxLoader.parse(
+              cachedFbx,
+              THREE.LoaderUtils.extractUrlBase(STATION_ARENA_FBX_URL)
+            );
+            loadingManager.itemEnd(STATION_ARENA_FBX_URL);
+            return parsed;
+          } catch {
+            loadingManager.itemEnd(STATION_ARENA_FBX_URL);
+            // Fall back to network load if parse fails
+          }
+        }
+        return new Promise<THREE.Group>((resolve, reject) => {
+          fbxLoader.load(
+            STATION_ARENA_FBX_URL,
+            (group) => resolve(group),
+            (evt) => {
+              if (evt.lengthComputable && evt.total > 0) {
+                onByteProgress?.(Math.min(1, evt.loaded / evt.total));
+              }
+            },
+            (err) => reject(err)
+          );
+        });
+      })(),
     ]);
 
     atlasTex.colorSpace = THREE.SRGBColorSpace;

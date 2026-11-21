@@ -23,6 +23,7 @@ import {
 } from './src/server/combatAuthority';
 import {
   broadcastToRoom,
+  cancelPlayerDisconnectGraceTimer,
   evaluateAndConfirmRankedRoomIfFull,
   matchmakingQueue,
   purgeStaleRooms,
@@ -199,6 +200,45 @@ async function startServer(): Promise<void> {
     }
   });
 
+  const processedPlayPurchaseTokens = new Set<string>();
+
+  app.post('/api/billing/google-play/verify', (req, res) => {
+    const body = req.body as {
+      uid?: string;
+      packId?: string;
+      sku?: string;
+      purchaseToken?: string;
+    } | undefined;
+    const uid = typeof body?.uid === 'string' ? body.uid.trim() : '';
+    const packId = typeof body?.packId === 'string' ? body.packId.trim() : '';
+    const purchaseToken = typeof body?.purchaseToken === 'string' ? body.purchaseToken.trim() : '';
+    const pack = SERVER_DIAMOND_PACKS[packId];
+
+    if (!uid || !/^[a-zA-Z0-9_-]{6,128}$/.test(uid) || !pack || !purchaseToken) {
+      res.status(400).json({ ok: false, error: 'Recibo do Google Play Billing inválido.' });
+      return;
+    }
+    if (processedPlayPurchaseTokens.has(purchaseToken)) {
+      res.status(409).json({ ok: false, error: 'Este recibo da Google Play já foi creditado.' });
+      return;
+    }
+    processedPlayPurchaseTokens.add(purchaseToken);
+    if (processedPlayPurchaseTokens.size > 2000) {
+      const oldest = processedPlayPurchaseTokens.values().next().value;
+      if (oldest) processedPlayPurchaseTokens.delete(oldest);
+    }
+
+    const totalDiamonds = pack.diamonds + pack.bonusDiamonds;
+    res.json({
+      ok: true,
+      provider: 'GOOGLE_PLAY_BILLING',
+      packId: pack.id,
+      sku: pack.sku,
+      creditedDiamonds: totalDiamonds,
+      ts: Date.now(),
+    });
+  });
+
   const telemetryBuffer: Array<Record<string, unknown>> = [];
   const MAX_TELEMETRY_BUFFER = 200;
 
@@ -353,9 +393,15 @@ async function startServer(): Promise<void> {
       arenaMode: 'DUST2_BOMB_5V5',
       mmr: 1000,
       enqueuedAtMs: Date.now(),
+      lastSeenAtMs: Date.now(),
     };
 
+    ws.on('pong', () => {
+      clientMeta.lastSeenAtMs = Date.now();
+    });
+
     ws.on('message', async (raw) => {
+      clientMeta.lastSeenAtMs = Date.now();
       try {
         const msg = JSON.parse(String(raw)) as {
           type?: string;
@@ -421,11 +467,13 @@ async function startServer(): Promise<void> {
           return;
         }
 
-        // 2. Entrada em Sala (verifica Tipo de Fila e compatibilidade de MMR no Modo Ranked)
+        // 2. Entrada em Sala (verifica Tipo de Fila, reconexão em partida ativa e compatibilidade de MMR no Modo Ranked)
         if (msg.type === 'JOIN_ROOM' && msg.roomId && msg.uid) {
-          removeClientFromRoom(clientMeta);
           const roomId = String(msg.roomId).toUpperCase().slice(0, 12);
           const uid = String(msg.uid).slice(0, 128);
+          if (clientMeta.roomId && clientMeta.roomId !== roomId) {
+            removeClientFromRoom(clientMeta, { immediate: true });
+          }
           const queueType = normalizeQueueType(msg.queueType);
           const arenaMode = String(msg.arenaMode || 'DUST2_BOMB_5V5');
           const isPrivate = Boolean(msg.isPrivate);
@@ -436,9 +484,9 @@ async function startServer(): Promise<void> {
             Number(msg.mmr ?? msg.player?.mmr) || 1000
           );
 
-          const enrichedPlayer = msg.player
-            ? { ...msg.player, uid, mmr: verifiedMmr }
-            : { uid, mmr: verifiedMmr };
+          const enrichedPlayer: Record<string, unknown> = msg.player
+            ? { ...msg.player, uid, mmr: verifiedMmr, connectionState: 'CONNECTED', disconnectedAtMs: undefined }
+            : { uid, mmr: verifiedMmr, connectionState: 'CONNECTED', disconnectedAtMs: undefined };
 
           const randomMap =
             typeof msg.randomMap === 'boolean'
@@ -449,6 +497,7 @@ async function startServer(): Promise<void> {
           const includeBots = isPrivate ? Boolean(msg.includeBots) : false;
 
           let meta = roomMetaMap.get(roomId);
+          let wasReconnectingInMatch = false;
           if (!meta) {
             meta = {
               roomId,
@@ -464,13 +513,20 @@ async function startServer(): Promise<void> {
               status: 'WAITING',
               isSearchingMatch: false,
               searchStartedAtMs: null,
+              currentRound: 1,
+              vanguardScore: 0,
+              blackthornScore: 0,
+              bombStatus: 'CARRIED',
+              plantedSite: 'NONE',
               readyByUid: new Map([[uid, false]]),
               chatHistory: [],
               memberMmrs: new Map([[uid, verifiedMmr]]),
               memberPlayers: new Map([[uid, { ...enrichedPlayer, isReady: false }]]),
+              disconnectGraceTimers: new Map(),
             };
             roomMetaMap.set(roomId, meta);
           } else {
+            wasReconnectingInMatch = cancelPlayerDisconnectGraceTimer(meta, uid);
             if (
               meta.queueType === 'RANKED' &&
               !meta.isPrivate &&
@@ -497,9 +553,27 @@ async function startServer(): Promise<void> {
               }
             }
             const existingReady = meta.readyByUid.get(uid) ?? false;
+            const prevMember = meta.memberPlayers.get(uid);
             meta.readyByUid.set(uid, existingReady);
             meta.memberMmrs.set(uid, verifiedMmr);
-            meta.memberPlayers.set(uid, { ...enrichedPlayer, isReady: existingReady });
+            // If reconnecting during an active match, preserve authoritative team, kills, deaths, headshots & load status
+            const restoredPlayer =
+              meta.status === 'PLAYING' && prevMember
+                ? {
+                    ...enrichedPlayer,
+                    ...prevMember,
+                    callsign: enrichedPlayer.callsign || prevMember.callsign,
+                    team: prevMember.team || enrichedPlayer.team,
+                    kills: Number(prevMember.kills ?? enrichedPlayer.kills ?? 0),
+                    deaths: Number(prevMember.deaths ?? enrichedPlayer.deaths ?? 0),
+                    assists: Number(prevMember.assists ?? enrichedPlayer.assists ?? 0),
+                    headshots: Number(prevMember.headshots ?? enrichedPlayer.headshots ?? 0),
+                    isReady: existingReady,
+                    connectionState: 'CONNECTED',
+                    disconnectedAtMs: undefined,
+                  }
+                : { ...enrichedPlayer, isReady: existingReady, connectionState: 'CONNECTED', disconnectedAtMs: undefined };
+            meta.memberPlayers.set(uid, restoredPlayer);
             if (!meta.hostUid) meta.hostUid = uid;
             recalculateRoomAverageMmr(meta);
           }
@@ -516,9 +590,29 @@ async function startServer(): Promise<void> {
             set = new Set();
             roomsMap.set(roomId, set);
           }
+          // Deduplicate any stale socket with same UID in this room
+          set.forEach((other) => {
+            if (other !== clientMeta && other.uid === uid) {
+              set!.delete(other);
+            }
+          });
           set.add(clientMeta);
 
           const memberPlayerForBroadcast = meta.memberPlayers.get(uid) || enrichedPlayer;
+          if (wasReconnectingInMatch) {
+            broadcastToRoom(
+              roomId,
+              {
+                type: 'PLAYER_CONNECTION_STATE',
+                roomId,
+                uid,
+                hostUid: meta.hostUid,
+                connectionState: 'CONNECTED',
+                ts: Date.now(),
+              },
+              clientMeta.uid
+            );
+          }
           broadcastToRoom(
             roomId,
             {
@@ -556,6 +650,11 @@ async function startServer(): Promise<void> {
               status: meta.status,
               isSearchingMatch: meta.isSearchingMatch,
               searchStartedAtMs: meta.searchStartedAtMs,
+              currentRound: meta.currentRound,
+              vanguardScore: meta.vanguardScore,
+              blackthornScore: meta.blackthornScore,
+              bombStatus: meta.bombStatus,
+              plantedSite: meta.plantedSite,
               averageMmr: meta.averageMmr,
               playerMmr: verifiedMmr,
               playersCount: set.size,
@@ -571,7 +670,7 @@ async function startServer(): Promise<void> {
 
         if (msg.type === 'LEAVE_ROOM') {
           removeClientFromQueue(clientMeta);
-          removeClientFromRoom(clientMeta);
+          removeClientFromRoom(clientMeta, { immediate: true });
           return;
         }
 
@@ -775,6 +874,11 @@ async function startServer(): Promise<void> {
           meta.serverConfirmedStart = false;
           meta.isSearchingMatch = false;
           meta.searchStartedAtMs = null;
+          meta.currentRound = 1;
+          meta.vanguardScore = 0;
+          meta.blackthornScore = 0;
+          meta.bombStatus = 'CARRIED';
+          meta.plantedSite = 'NONE';
           meta.readyByUid.forEach((_val, mUid) => {
             meta.readyByUid.set(mUid, false);
           });
@@ -974,6 +1078,30 @@ async function startServer(): Promise<void> {
               (msg.hit || {}) as IncomingHitLike
             );
             if (!verdict.ok) return;
+            const hit = verdict.sanitized || (msg.hit as Record<string, unknown> | undefined);
+            const meta = roomMetaMap.get(clientMeta.roomId);
+            if (meta && hit && Boolean(hit.lethal)) {
+              const atkUid = String(hit.attackerUid || clientMeta.uid || '');
+              const tgtUid = String(hit.targetUid || '');
+              const atkMember = meta.memberPlayers.get(atkUid);
+              if (atkMember) {
+                meta.memberPlayers.set(atkUid, {
+                  ...atkMember,
+                  kills: Number(atkMember.kills || 0) + 1,
+                  headshots:
+                    Number(atkMember.headshots || 0) + (hit.isHeadshot ? 1 : 0),
+                });
+              }
+              const tgtMember = meta.memberPlayers.get(tgtUid);
+              if (tgtMember) {
+                meta.memberPlayers.set(tgtUid, {
+                  ...tgtMember,
+                  deaths: Number(tgtMember.deaths || 0) + 1,
+                  health: 0,
+                  isDown: true,
+                });
+              }
+            }
             broadcastToRoom(
               clientMeta.roomId,
               {
@@ -987,6 +1115,50 @@ async function startServer(): Promise<void> {
               null
             );
             return;
+          }
+
+          if (msg.type === 'BOMB_EVENT') {
+            const meta = roomMetaMap.get(clientMeta.roomId);
+            if (meta) {
+              if (
+                msg.bombStatus === 'CARRIED' ||
+                msg.bombStatus === 'PLANTED' ||
+                msg.bombStatus === 'DEFUSED' ||
+                msg.bombStatus === 'DETONATED'
+              ) {
+                meta.bombStatus = msg.bombStatus;
+              }
+              if (
+                msg.plantedSite === 'NONE' ||
+                msg.plantedSite === 'A' ||
+                msg.plantedSite === 'B'
+              ) {
+                meta.plantedSite = msg.plantedSite;
+              }
+            }
+          }
+
+          if (msg.type === 'ROUND_EVENT' && msg.event && typeof msg.event === 'object') {
+            const meta = roomMetaMap.get(clientMeta.roomId);
+            const evt = msg.event as {
+              kind?: string;
+              roundNumber?: number;
+              vanguardScore?: number;
+              blackthornScore?: number;
+            };
+            if (meta) {
+              if (typeof evt.vanguardScore === 'number') {
+                meta.vanguardScore = Math.max(meta.vanguardScore, evt.vanguardScore);
+              }
+              if (typeof evt.blackthornScore === 'number') {
+                meta.blackthornScore = Math.max(meta.blackthornScore, evt.blackthornScore);
+              }
+              if (evt.kind === 'NEXT_ROUND' && typeof evt.roundNumber === 'number') {
+                meta.currentRound = Math.max(meta.currentRound, evt.roundNumber);
+                meta.bombStatus = 'CARRIED';
+                meta.plantedSite = 'NONE';
+              }
+            }
           }
 
           broadcastToRoom(
@@ -1163,7 +1335,7 @@ async function startServer(): Promise<void> {
         const prevPlayerSnapshot = prevRoomMeta?.memberPlayers.get(entry.uid);
 
         matchmakingQueue.delete(entry.uid);
-        removeClientFromRoom(client);
+        removeClientFromRoom(client, { immediate: true });
         client.roomId = roomId;
         client.arenaMode = drawnArenaMode;
         client.queueType = queueType;
@@ -1180,6 +1352,7 @@ async function startServer(): Promise<void> {
           isReady: true,
           isLoaded: false,
           loadProgress: 0,
+          connectionState: 'CONNECTED',
         });
       });
 
@@ -1198,10 +1371,16 @@ async function startServer(): Promise<void> {
         status: 'PLAYING',
         isSearchingMatch: false,
         searchStartedAtMs: null,
+        currentRound: 1,
+        vanguardScore: 0,
+        blackthornScore: 0,
+        bombStatus: 'CARRIED',
+        plantedSite: 'NONE',
         readyByUid: new Map(),
         chatHistory: [],
         memberMmrs,
         memberPlayers,
+        disconnectGraceTimers: new Map(),
       });
 
       broadcastToRoom(roomId, {
@@ -1220,6 +1399,28 @@ async function startServer(): Promise<void> {
   };
 
   setInterval(runMatchmakingSweep, 2000);
+
+  // Server-side WebSocket heartbeat sweep: detects half-open/zombie mobile sockets (Wi-Fi <-> 4G drops)
+  const HEARTBEAT_TIMEOUT_MS = 28_000;
+  setInterval(() => {
+    const nowMs = Date.now();
+    const checkClientLiveness = (client: WsClientMeta) => {
+      if (client.ws.readyState !== 1) return;
+      if (nowMs - client.lastSeenAtMs > HEARTBEAT_TIMEOUT_MS) {
+        try {
+          client.ws.terminate();
+        } catch {}
+        removeClientFromQueue(client);
+        removeClientFromRoom(client);
+        return;
+      }
+      try {
+        client.ws.ping();
+      } catch {}
+    };
+    roomsMap.forEach((set) => set.forEach(checkClientLiveness));
+    matchmakingQueue.forEach(checkClientLiveness);
+  }, 10_000);
 
   if (process.env.NODE_ENV !== 'production') {
     app.use((req, res, next) => {
