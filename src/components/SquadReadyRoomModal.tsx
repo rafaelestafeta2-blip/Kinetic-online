@@ -36,15 +36,26 @@ import {
   OnlineRoomState,
   SquadChatMessage,
 } from '../multiplayer/onlineTypes';
+import {
+  GAME_MODE_CATALOG,
+  GameModeCategory,
+  getDefaultArenaForCategory,
+  getGameModeCategoryForArena,
+  getGameModeMeta,
+  getMapLabelForArena,
+  getMapsForCategory,
+} from '../multiplayer/gameModeCatalog';
 import { VoiceChatState, voiceChatManager } from '../multiplayer/voiceChatManager';
+import { getCompetitiveRankProgression } from '../progression/competitiveRanks';
 import {
   getEquippedWeaponSkinId,
   getPlayerInventoryState,
 } from '../progression/loadoutSystem';
 import { getOperatorOwnershipState } from '../progression/operatorSkinsSystem';
-import { DrillMode, WeaponId } from '../types/game';
+import { WeaponId } from '../types/game';
 import { ClanCenterTab } from './ClanCenterModal';
 import { ClanEmblemIcon, ClanEmblemId } from './ClanEmblemIcons';
+import { CompetitiveRankBadgeSvg } from './RankedInsigniasSvg';
 import {
   SquadFormation3DCanvas,
   SquadFormationMemberSpec,
@@ -57,22 +68,8 @@ interface SquadReadyRoomModalProps {
   onMinimize: () => void;
   onLeaveRoom: () => void;
   onOpenClanModal?: (tab: ClanCenterTab) => void;
+  onOpenRanksModal?: () => void;
 }
-
-const PRIVATE_ROOM_MAPS: Array<{
-  id: DrillMode;
-  label: string;
-  modeTag: string;
-}> = [
-  { id: 'DUST2_BOMB_5V5', label: 'DE_DUST2', modeTag: 'BOMB 5V5' },
-  { id: 'STATION_TDM_5V5', label: 'STATION ARENA', modeTag: 'TDM 5V5' },
-  { id: 'ASSAULT_BOMB_5V5', label: 'CS_ASSAULT', modeTag: 'BOMB 5V5' },
-  { id: 'INDUSTRIA_BOMB_5V5', label: 'INDUSTRIA', modeTag: 'BOMB 5V5' },
-  { id: 'HANGAR_BOMB_5V5', label: 'HANGAR', modeTag: 'BOMB 5V5' },
-  { id: 'EASTERN_CITY_BOMB_5V5', label: 'EASTERN CITY', modeTag: 'BOMB 5V5' },
-  { id: 'MIRAGE_ANUBIS_BOMB_5V5', label: 'MIRAGE ANUBIS', modeTag: 'BOMB 5V5' },
-  { id: 'STATION_CAPTURE_5V5', label: 'STATION CTF', modeTag: 'CTF 5V5' },
-];
 
 const DEFAULT_SQUAD_WEAPONS: WeaponId[] = [
   'M4_CARBINE',
@@ -98,21 +95,12 @@ const DEFAULT_SQUAD_OP_SKINS: string[] = [
   'op_emerald_viper',
 ];
 
-function getCompetitiveTierLabel(mmr = 2450): string {
-  if (mmr >= 3200) return 'ELITE I';
-  if (mmr >= 2850) return 'DIAMANTE I';
-  if (mmr >= 2600) return 'PLATINA II';
-  if (mmr >= 2350) return 'OURO II';
-  if (mmr >= 2100) return 'OURO III';
-  if (mmr >= 1800) return 'PRATA I';
-  return 'BRONZE I';
-}
-
 export const SquadReadyRoomModal: React.FC<SquadReadyRoomModalProps> = ({
   isOpen,
   onMinimize,
   onLeaveRoom,
   onOpenClanModal,
+  onOpenRanksModal,
 }) => {
   const [room, setRoom] = useState<OnlineRoomState | null>(null);
   const [clanState, setClanState] = useState<ClanServiceState>(() =>
@@ -273,8 +261,16 @@ export const SquadReadyRoomModal: React.FC<SquadReadyRoomModalProps> = ({
   const allSquadReady = unreadyNonHosts.length === 0;
   const isSearching = Boolean(room.isSearchingMatch);
   const queueType: MatchQueueType = room.queueType === 'RANKED' ? 'RANKED' : 'CASUAL';
-  const currentPrivateMapMeta =
-    PRIVATE_ROOM_MAPS.find((m) => m.id === room.arenaMode) || PRIVATE_ROOM_MAPS[0];
+  const isRankedRoom = queueType === 'RANKED' && !room.isPrivate;
+  const currentCategory: GameModeCategory = isRankedRoom
+    ? 'PLANT_BOMB'
+    : getGameModeCategoryForArena(room.arenaMode);
+  const currentCategoryMeta = getGameModeMeta(currentCategory);
+  const categoryMaps = getMapsForCategory(currentCategory);
+  const isRandomMap = isRankedRoom ? true : Boolean(room.randomMap);
+  const includeBots = Boolean(room.isPrivate && room.includeBots);
+  const currentMapLabel = getMapLabelForArena(room.arenaMode);
+
   const friendsList = Object.values(inbox.friends || {});
   const wsOnline = isWebSocketConnected();
 
@@ -282,21 +278,41 @@ export const SquadReadyRoomModal: React.FC<SquadReadyRoomModalProps> = ({
   const searchSecs = String(searchElapsedSec % 60).padStart(2, '0');
 
   const localMmr = localPlayer?.mmr || profile.mmr || 2450;
-  const rankTierTitle = getCompetitiveTierLabel(localMmr);
+  const competitiveProg = getCompetitiveRankProgression(localMmr);
+  const rankTierTitle = competitiveProg.current.name;
 
   const modeDisplayLabel = room.isPrivate
     ? 'SALA PRIVADA'
-    : queueType === 'RANKED'
+    : isRankedRoom
       ? 'RANQUEADA'
-      : room.arenaMode === 'STATION_TDM_5V5'
-        ? 'MATA-MATA'
-        : 'CLÁSSICA';
+      : 'CASUAL';
 
-  const matchSubtitleLabel = room.isPrivate
-    ? currentPrivateMapMeta.label
-    : room.arenaMode === 'STATION_TDM_5V5'
-      ? 'STATION ARENA'
-      : 'MAPA SORTEADO';
+  const matchSubtitleLabel = isRankedRoom
+    ? 'PLANTAR A BOMBA · ALEATÓRIO'
+    : `${currentCategoryMeta.shortLabel} · ${isRandomMap ? 'ALEATÓRIO' : currentMapLabel}`;
+
+  const handleSelectGameModeCategory = (cat: GameModeCategory) => {
+    if (!isHost || isSearching || isRankedRoom) return;
+    soundEngine.playMenuSelect();
+    const defaultArena = getDefaultArenaForCategory(cat);
+    const catMaps = getMapsForCategory(cat);
+    // If mode has multiple maps and randomMap wasn't turned off, keep random; if 1 map, select it
+    const nextRandom = catMaps.length > 1 ? isRandomMap : false;
+    updateSquadRoomConfig(defaultArena, queueType, room.isPrivate, {
+      randomMap: nextRandom,
+      includeBots,
+    });
+    setShowPrivateMapPicker(false);
+  };
+
+  const handleTogglePrivateBots = () => {
+    if (!isHost || isSearching || !room.isPrivate) return;
+    soundEngine.playMenuSelect();
+    updateSquadRoomConfig(room.arenaMode, queueType, true, {
+      randomMap: isRandomMap,
+      includeBots: !includeBots,
+    });
+  };
 
   const handleOpenClanTab = (tab: ClanCenterTab) => {
     soundEngine.playMenuSelect();
@@ -437,7 +453,7 @@ export const SquadReadyRoomModal: React.FC<SquadReadyRoomModalProps> = ({
             <div>
               <div className="flex items-center gap-1.5">
                 <h1 className="font-display font-black text-xs sm:text-sm lg:text-base tracking-wider text-white uppercase leading-none">
-                  SALA DE PARTIDA
+                  {isRankedRoom ? 'SALA RANQUEADA' : room.isPrivate ? 'SALA PRIVADA' : 'SALA DE PARTIDA'}
                 </h1>
                 <button
                   type="button"
@@ -449,7 +465,9 @@ export const SquadReadyRoomModal: React.FC<SquadReadyRoomModalProps> = ({
                 </button>
               </div>
               <div className="flex items-center gap-1.5 text-[9px] font-mono text-slate-300 leading-none mt-0.5">
-                <span className="font-bold uppercase">{modeDisplayLabel} · 5V5</span>
+                <span className={`font-bold uppercase ${isRankedRoom ? 'text-amber-300' : ''}`}>
+                  {modeDisplayLabel} · {currentCategoryMeta.shortLabel} · 5V5
+                </span>
                 <span>·</span>
                 <span className={wsOnline ? 'text-emerald-400' : 'text-amber-300'}>
                   #{room.roomId}
@@ -458,19 +476,27 @@ export const SquadReadyRoomModal: React.FC<SquadReadyRoomModalProps> = ({
             </div>
           </div>
 
-          {/* Top-Right Corner: Compact Rank Plaque (kept away from center 3D operator face) */}
+          {/* Top-Right Corner: Premium Competitive Rank Plaque (shows real MMR insignia in Ranked) */}
           <div className="relative pointer-events-auto">
-            <div className="px-2.5 sm:px-3 py-1 rounded-lg bg-[#14110e]/90 border border-amber-400/45 shadow-md flex items-center gap-2">
-              <WarfaceRankIcon
-                level={localPlayer?.rankLevel || profile.rankLevel || 4}
-                className="w-4 h-4 sm:w-5 sm:h-5 shrink-0"
+            <div
+              className={`px-2.5 sm:px-3 py-1 rounded-lg shadow-md flex items-center gap-2 border ${
+                isRankedRoom
+                  ? 'bg-gradient-to-r from-[#241608]/95 via-[#18110b]/95 to-[#2b100c]/95 border-amber-400/75 shadow-[0_0_18px_rgba(245,158,11,0.35)]'
+                  : 'bg-[#14110e]/90 border-amber-400/45'
+              }`}
+            >
+              <CompetitiveRankBadgeSvg
+                tier={competitiveProg.current.id}
+                className="w-5 h-5 sm:w-6 sm:h-6 shrink-0 drop-shadow-[0_0_10px_rgba(251,191,36,0.45)]"
               />
               <div className="leading-none">
                 <div className="font-display font-black text-[10px] sm:text-xs tracking-wider text-white uppercase">
                   {rankTierTitle}
                 </div>
-                <div className="font-mono text-[8px] text-amber-300/90 uppercase">
-                  {modeDisplayLabel}
+                <div className="font-mono text-[8px] text-amber-300/95 uppercase">
+                  {isRankedRoom
+                    ? `${localMmr.toLocaleString('pt-BR')} MMR · TEMP. 1`
+                    : modeDisplayLabel}
                 </div>
               </div>
               <button
@@ -487,23 +513,44 @@ export const SquadReadyRoomModal: React.FC<SquadReadyRoomModalProps> = ({
             </div>
 
             {showRoomInfoPopover && (
-              <div className="absolute top-full right-0 mt-1.5 w-56 p-2.5 rounded-lg bg-[#0d111a]/98 border border-amber-400/50 shadow-2xl text-[10px] font-mono text-slate-200 z-40">
-                <div className="flex items-center justify-between pb-1 mb-1 border-b border-white/10">
+              <div className="absolute top-full right-0 mt-1.5 w-60 p-2.5 rounded-lg bg-[#0d111a]/98 border border-amber-400/50 shadow-2xl text-[10px] font-mono text-slate-200 z-40 space-y-2">
+                <div className="flex items-center justify-between pb-1 border-b border-white/10">
                   <span className="text-amber-300 font-bold">CÓDIGO DA SALA</span>
                   <span className="font-black text-white tracking-widest">
                     {room.roomId}
                   </span>
                 </div>
-                <div className="text-slate-400 mb-2">
-                  MMR do Esquadrão: <strong className="text-amber-300">{localMmr}</strong>
+                <div className="text-slate-300 flex items-center justify-between">
+                  <span>Patente: <strong className="text-white">{rankTierTitle}</strong></span>
+                  <strong className="text-amber-300">{localMmr.toLocaleString('pt-BR')} MMR</strong>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleCopyCode}
-                  className="w-full py-1 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-display font-black text-[10px] uppercase cursor-pointer"
-                >
-                  {copiedCode ? 'CÓDIGO COPIADO ✓' : 'COPIAR CÓDIGO'}
-                </button>
+                {competitiveProg.next && (
+                  <div className="text-[9px] text-slate-400">
+                    Próxima: <strong className="text-sky-300">{competitiveProg.next.name}</strong> (faltam {Math.max(0, competitiveProg.next.minMmr - localMmr)} MMR)
+                  </div>
+                )}
+                <div className="flex gap-1.5">
+                  <button
+                    type="button"
+                    onClick={handleCopyCode}
+                    className="flex-1 py-1 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-display font-black text-[9px] uppercase cursor-pointer"
+                  >
+                    {copiedCode ? 'COPIADO ✓' : 'COPIAR CÓDIGO'}
+                  </button>
+                  {onOpenRanksModal && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playMenuSelect();
+                        setShowRoomInfoPopover(false);
+                        onOpenRanksModal();
+                      }}
+                      className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 border border-white/15 text-amber-200 font-display font-black text-[9px] uppercase cursor-pointer"
+                    >
+                      PATENTES
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -602,29 +649,58 @@ export const SquadReadyRoomModal: React.FC<SquadReadyRoomModalProps> = ({
               </div>
             )}
 
-            {/* 2. Map Rule Strip: ONLY Private Rooms can pick a map; Ranked & Classic draw automatically */}
-            {room.isPrivate ? (
-              <div className="relative rounded-lg border border-amber-400/35 bg-[#0e131d]/90 px-2 py-1 flex items-center justify-between gap-1 shrink-0">
-                <div className="min-w-0">
-                  <div className="text-[7px] font-mono text-amber-300 uppercase">
-                    SALA PRIVADA · MAPA
-                  </div>
-                  <div className="font-display font-black text-[10px] text-white uppercase truncate">
-                    {currentPrivateMapMeta.label}
-                  </div>
+            {/* 2. Mode & Map Selector: Ranked is locked to Plant Bomb (Random Map); Casual & Private allow choosing Game Mode + Specific Map or Random; Private also has Bots toggle */}
+            {isRankedRoom ? (
+              <div className="rounded-lg border border-amber-400/55 bg-gradient-to-r from-[#261606]/92 via-[#150e0a]/92 to-[#220a0d]/92 px-2 py-1.5 shrink-0 shadow-[0_0_16px_rgba(245,158,11,0.2)]">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[7px] sm:text-[8px] font-mono font-bold text-amber-300 uppercase tracking-wider">
+                    🏆 MODO RANQUEADO OFICIAL
+                  </span>
+                  <span className="text-[7px] font-mono font-bold text-emerald-300 uppercase">
+                    MMR ON
+                  </span>
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      soundEngine.playMenuSelect();
-                      void switchLocalPlayerTeam();
-                    }}
-                    title="Alternar Time (Vanguard / Blackthorn)"
-                    className="px-1.5 py-0.5 rounded bg-sky-500/20 border border-sky-400/40 text-[8px] font-display font-bold text-sky-200 uppercase cursor-pointer"
-                  >
-                    TIME ⇄
-                  </button>
+                <div className="font-display font-black text-[10px] sm:text-[11px] text-white uppercase leading-tight mt-0.5">
+                  💣 PLANTAR A BOMBA · 5V5
+                </div>
+                <div className="text-[8px] font-mono text-slate-300 truncate">
+                  Mapa sorteado automaticamente
+                </div>
+              </div>
+            ) : (
+              <div className="relative rounded-lg border border-amber-400/35 bg-[#0e131d]/92 p-1.5 flex flex-col gap-1 shrink-0 shadow-lg">
+                {/* Game Mode Selector: Plant Bomb | Mata-Mata | Captura */}
+                <div className="grid grid-cols-3 gap-0.5">
+                  {GAME_MODE_CATALOG.map((cat) => {
+                    const active = currentCategory === cat.id;
+                    return (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        disabled={!isHost || isSearching}
+                        onClick={() => handleSelectGameModeCategory(cat.id)}
+                        className={`py-1 px-1 rounded text-[7px] sm:text-[8px] font-display font-black uppercase tracking-tight transition-all truncate ${
+                          active
+                            ? 'bg-amber-500 text-slate-950 shadow'
+                            : 'bg-black/50 text-slate-300 hover:bg-white/10 hover:text-white'
+                        } ${!isHost || isSearching ? 'cursor-default opacity-80' : 'cursor-pointer'}`}
+                      >
+                        {cat.shortLabel}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Map Selector Row (Random or Specific Map of Selected Mode) */}
+                <div className="flex items-center justify-between gap-1">
+                  <div className="min-w-0 leading-tight">
+                    <div className="text-[7px] font-mono text-slate-400 uppercase">
+                      MAPA ({currentCategoryMeta.shortLabel})
+                    </div>
+                    <div className="font-display font-black text-[9px] sm:text-[10px] text-white uppercase truncate">
+                      {isRandomMap ? '🎲 ALEATÓRIO' : currentMapLabel}
+                    </div>
+                  </div>
                   {isHost && !isSearching && (
                     <button
                       type="button"
@@ -632,40 +708,94 @@ export const SquadReadyRoomModal: React.FC<SquadReadyRoomModalProps> = ({
                         soundEngine.playMenuSelect();
                         setShowPrivateMapPicker((prev) => !prev);
                       }}
-                      className="px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-400/50 text-[8px] font-display font-bold text-amber-200 uppercase cursor-pointer"
+                      className="px-1.5 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/50 text-[8px] font-display font-black text-amber-200 uppercase cursor-pointer shrink-0"
                     >
                       MAPA ▾
                     </button>
                   )}
                 </div>
 
+                {/* Private Room Exclusive Controls: Switch Team + Toggle AI Bots */}
+                {room.isPrivate && (
+                  <div className="flex items-center gap-1 pt-0.5 border-t border-white/10">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playMenuSelect();
+                        void switchLocalPlayerTeam();
+                      }}
+                      title="Alternar Time (Vanguard / Blackthorn)"
+                      className="flex-1 py-0.5 px-1 rounded bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/40 text-[8px] font-display font-bold text-sky-200 uppercase cursor-pointer"
+                    >
+                      TIME ⇄
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!isHost || isSearching}
+                      onClick={handleTogglePrivateBots}
+                      title="Adicionar Bots IA nos espaços livres da Sala Privada"
+                      className={`flex-1 py-0.5 px-1 rounded border text-[8px] font-display font-black uppercase transition-all ${
+                        includeBots
+                          ? 'bg-emerald-500/25 border-emerald-400 text-emerald-200'
+                          : 'bg-white/5 border-white/15 text-slate-400 hover:text-white'
+                      } ${!isHost || isSearching ? 'cursor-default opacity-80' : 'cursor-pointer'}`}
+                    >
+                      🤖 BOTS: {includeBots ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                )}
+
                 {showPrivateMapPicker && isHost && (
-                  <div className="absolute left-0 top-full mt-1 w-48 rounded-lg bg-[#0b0f18]/98 border border-amber-400/55 p-1.5 shadow-2xl z-40 grid grid-cols-1 gap-1 max-h-40 overflow-y-auto">
-                    {PRIVATE_ROOM_MAPS.map((m) => (
+                  <div className="absolute left-0 top-full mt-1 w-48 rounded-lg bg-[#0b0f18]/98 border border-amber-400/55 p-1.5 shadow-2xl z-40 grid grid-cols-1 gap-1 max-h-44 overflow-y-auto">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playMenuSelect();
+                        updateSquadRoomConfig(
+                          getDefaultArenaForCategory(currentCategory),
+                          queueType,
+                          room.isPrivate,
+                          { randomMap: true, includeBots }
+                        );
+                        setShowPrivateMapPicker(false);
+                      }}
+                      className={`px-2 py-1 rounded text-left text-[9px] font-display font-bold uppercase flex items-center justify-between cursor-pointer ${
+                        isRandomMap
+                          ? 'bg-amber-500 text-slate-950'
+                          : 'bg-white/5 text-amber-200 hover:bg-white/10'
+                      }`}
+                    >
+                      <span>🎲 ALEATÓRIO</span>
+                      <span className="text-[7px] font-mono opacity-80">SORTEIO</span>
+                    </button>
+                    {categoryMaps.map((m) => (
                       <button
                         key={m.id}
                         type="button"
                         onClick={() => {
                           soundEngine.playMenuSelect();
-                          updateSquadRoomConfig(m.id, queueType, true);
+                          updateSquadRoomConfig(m.id, queueType, room.isPrivate, {
+                            randomMap: false,
+                            includeBots,
+                          });
                           setShowPrivateMapPicker(false);
                         }}
                         className={`px-2 py-1 rounded text-left text-[9px] font-display font-bold uppercase flex items-center justify-between cursor-pointer ${
-                          room.arenaMode === m.id
+                          !isRandomMap && room.arenaMode === m.id
                             ? 'bg-amber-500 text-slate-950'
                             : 'bg-white/5 text-slate-200 hover:bg-white/10'
                         }`}
                       >
                         <span className="truncate">{m.label}</span>
                         <span className="text-[7px] font-mono opacity-80">
-                          {m.modeTag}
+                          {m.shortTag}
                         </span>
                       </button>
                     ))}
                   </div>
                 )}
               </div>
-            ) : null}
+            )}
 
             {/* 3. LIVE VISIBLE SQUAD CHAT BOX (In the exact spot where the map card was removed) */}
             <div className="flex-1 min-h-[78px] rounded-lg border border-white/15 bg-[#0b0f18]/88 backdrop-blur-sm flex flex-col overflow-hidden shadow-lg">

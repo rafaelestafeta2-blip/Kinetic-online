@@ -151,7 +151,8 @@ export function syncOnlineMatchFrame(ctx: OnlineMatchSyncContext): void {
     isFiring: ctx.isFiring,
   });
 
-  // 2. Collect real remote players (strictly human players, ZERO AI bots)
+  // 2. Collect real remote players (human peers; in Private Rooms with bots, remaining slots stay AI bots)
+  const allowPrivateBots = Boolean(room.isPrivate && room.includeBots);
   const remotePlayers: OnlinePlayerState[] = Object.values(room.players)
     .filter((p) => p.uid !== localPlayer.uid)
     .sort((a, b) => a.uid.localeCompare(b.uid));
@@ -165,6 +166,15 @@ export function syncOnlineMatchFrame(ctx: OnlineMatchSyncContext): void {
     const remote = remotePlayers[i];
 
     if (!remote) {
+      if (allowPrivateBots) {
+        delete bot.root.userData.remotePlayerUid;
+        if (!bot.isDown && bot.health > 0) {
+          if (bot.isAlly) alliesAlive++;
+          else enemiesAlive++;
+        }
+        syncShootableHitboxes(bot, ctx.shootableMeshes, !bot.isAlly && !bot.isDown);
+        continue;
+      }
       bot.isDown = true;
       bot.health = 0;
       bot.root.visible = false;
@@ -325,13 +335,18 @@ export function syncOnlineMatchFrame(ctx: OnlineMatchSyncContext): void {
   // 4. Sync 5v5 HUD scoreboard and bomb state with real online players
   if (ctx.isBombMode) {
     const allPlayers = Object.values(room.players);
-    const vanguardTotal = allPlayers.filter((p) => p.team === 'VANGUARD').length;
-    const blackthornTotal = allPlayers.filter((p) => p.team === 'BLACKTHORN').length;
+    const vanguardTotal = allowPrivateBots
+      ? 5
+      : allPlayers.filter((p) => p.team === 'VANGUARD').length;
+    const blackthornTotal = allowPrivateBots
+      ? 5
+      : allPlayers.filter((p) => p.team === 'BLACKTHORN').length;
     ctx.yardBombSystem.setOnlineContext(
       true,
       localPlayer.team,
       vanguardTotal,
-      blackthornTotal
+      blackthornTotal,
+      allowPrivateBots
     );
 
     const vanguardAlive =

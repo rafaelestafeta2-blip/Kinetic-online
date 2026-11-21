@@ -31,3 +31,137 @@
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
+
+/* GPU-composited animations for premium animated calling cards */
+@keyframes cc-fire-rise {
+  0%, 100% {
+    transform: translate3d(0, 2px, 0) scaleY(1);
+    opacity: 0.78;
+  }
+  50% {
+    transform: translate3d(-4px, -3px, 0) scaleY(1.12);
+    opacity: 1;
+  }
+}
+
+@keyframes cc-ember-float {
+  0% {
+    transform: translate3d(0, 14px, 0) scale(0.7);
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.95;
+  }
+  100% {
+    transform: translate3d(18px, -24px, 0) scale(1.15);
+    opacity: 0;
+  }
+}
+
+@keyframes cc-neon-sweep {
+  0% {
+    transform: translate3d(-130%, 0, 0) skewX(-22deg);
+    opacity: 0.2;
+  }
+  45% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate3d(260%, 0, 0) skewX(-22deg);
+    opacity: 0.15;
+  }
+}
+
+@keyframes cc-electric-pulse {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(1);
+  }
+  12% {
+    opacity: 1;
+    transform: scale(1.03);
+  }
+  22% {
+    opacity: 0.45;
+  }
+  30% {
+    opacity: 0.95;
+  }
+  48% {
+    opacity: 0.3;
+  }
+}
+
+@keyframes cc-shimmer-slide {
+  0% {
+    transform: translate3d(-140%, 0, 0) skewX(-24deg);
+  }
+  100% {
+    transform: translate3d(280%, 0, 0) skewX(-24deg);
+  }
+}
+
+@keyframes cc-plasma-spin {
+  0% {
+    transform: rotate(0deg) scale(1);
+  }
+  50% {
+    transform: rotate(180deg) scale(1.08);
+  }
+  100% {
+    transform: rotate(360deg) scale(1);
+  }
+}
+
+@keyframes cc-wing-breathe {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.78;
+  }
+  50% {
+    transform: translate3d(3px, -2px, 0) scale(1.05);
+    opacity: 1;
+  }
+}
+
+.cc-anim-fire {
+  animation: cc-fire-rise 1.9s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+.cc-anim-fire-alt {
+  animation: cc-fire-rise 2.4s ease-in-out infinite reverse;
+  will-change: transform, opacity;
+}
+
+.cc-anim-ember {
+  animation: cc-ember-float 2.2s linear infinite;
+  will-change: transform, opacity;
+}
+
+.cc-anim-neon-sweep {
+  animation: cc-neon-sweep 2.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  will-change: transform, opacity;
+}
+
+.cc-anim-electric {
+  animation: cc-electric-pulse 2.1s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+.cc-anim-shimmer {
+  animation: cc-shimmer-slide 2.9s ease-in-out infinite;
+  will-change: transform;
+}
+
+.cc-anim-plasma {
+  animation: cc-plasma-spin 11s linear infinite;
+  transform-origin: center;
+  will-change: transform;
+}
+
+.cc-anim-wing {
+  animation: cc-wing-breathe 2.6s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+

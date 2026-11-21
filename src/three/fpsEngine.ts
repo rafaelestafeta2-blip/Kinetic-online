@@ -145,6 +145,7 @@ import {
   getActiveOnlineRoom,
   getLocalOnlinePlayerState,
   isOnlineMatchActive,
+  isPrivateRoomWithBotsActive,
   leaveActiveRoom,
   publishBombStateChange,
   publishCombatHit,
@@ -3296,11 +3297,22 @@ export class TacticalFPSEngine {
     if (isBombMode && isOnlineMatchActive()) {
       const room = getActiveOnlineRoom();
       const localOp = getLocalOnlinePlayerState();
+      const privateWithBots = isPrivateRoomWithBotsActive();
       if (room && localOp) {
         const allPlayers = Object.values(room.players || {});
-        const vgCount = allPlayers.filter((p) => p.team === 'VANGUARD').length;
-        const btCount = allPlayers.filter((p) => p.team === 'BLACKTHORN').length;
-        this.yardBombSystem.setOnlineContext(true, localOp.team, vgCount, btCount);
+        const vgCount = privateWithBots
+          ? 5
+          : allPlayers.filter((p) => p.team === 'VANGUARD').length;
+        const btCount = privateWithBots
+          ? 5
+          : allPlayers.filter((p) => p.team === 'BLACKTHORN').length;
+        this.yardBombSystem.setOnlineContext(
+          true,
+          localOp.team,
+          vgCount,
+          btCount,
+          privateWithBots
+        );
       }
       // Online used to overwrite Dust2-parity place with stale far-field coords
       // (Eastern z±48, Mirage z=-72) → outside GLB AABB → white void.
@@ -3319,11 +3331,13 @@ export class TacticalFPSEngine {
           this.scheduleFloorResnap(this.playerPos.y);
         }
       }
-      hideAllBotsForOnlineMatch(
-        this.targets as YardBotEntity[],
-        this.shootableMeshes
-      );
-      activeCount = 0;
+      if (!privateWithBots) {
+        hideAllBotsForOnlineMatch(
+          this.targets as YardBotEntity[],
+          this.shootableMeshes
+        );
+        activeCount = 0;
+      }
     } else if (isBombMode) {
       this.yardBombSystem.setOnlineContext(false);
     }

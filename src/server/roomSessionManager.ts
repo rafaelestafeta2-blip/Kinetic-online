@@ -12,6 +12,7 @@ export interface WsClientMeta {
   callsign: string;
   queueType: ServerQueueType;
   arenaMode: string;
+  preferExactMap?: boolean;
   mmr: number;
   enqueuedAtMs: number;
 }
@@ -31,6 +32,8 @@ export interface ServerRoomMeta {
   queueType: ServerQueueType;
   arenaMode: string;
   isPrivate: boolean;
+  randomMap?: boolean;
+  includeBots?: boolean;
   createdAtMs: number;
   averageMmr: number;
   serverConfirmedStart: boolean;

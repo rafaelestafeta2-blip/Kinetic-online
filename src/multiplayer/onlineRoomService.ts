@@ -9,6 +9,10 @@ import { runtimeTelemetry } from '../telemetry/runtimeTelemetry';
 import { DrillMode, WarfaceClassId, WeaponId } from '../types/game';
 import { applyIncomingPlayerState } from './combatNetcode';
 import {
+  getGameModeCategoryForArena,
+  pickRandomMapForCategory,
+} from './gameModeCatalog';
+import {
   buildClassSupportEvent,
   ClassSupportNetKind,
   ClassSupportPacket,
@@ -362,6 +366,8 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
       ws.send(JSON.stringify({
         type: 'JOIN_ROOM', roomId: liveRoom.roomId, uid: livePlayer.uid, idToken,
         queueType, arenaMode: liveRoom.arenaMode, isPrivate: liveRoom.isPrivate,
+        randomMap: Boolean(liveRoom.randomMap),
+        includeBots: Boolean(liveRoom.includeBots),
         mmr: livePlayer.mmr || 2450, player: livePlayer,
       }));
       if (
@@ -375,6 +381,7 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
           roomId: liveRoom.roomId,
           arenaMode: liveRoom.arenaMode,
           queueType,
+          randomMap: Boolean(liveRoom.randomMap),
           ts: Date.now(),
         }));
       }
@@ -443,10 +450,21 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
           }
           return;
         } else if (msg.type === 'SQUAD_CONFIG_UPDATE') {
+          const cfg = msg as {
+            isPrivate?: boolean;
+            randomMap?: boolean;
+            includeBots?: boolean;
+          };
           if (msg.arenaMode) activeRoom.arenaMode = msg.arenaMode;
           if (msg.queueType) activeRoom.queueType = msg.queueType;
-          if (typeof (msg as { isPrivate?: boolean }).isPrivate === 'boolean') {
-            activeRoom.isPrivate = Boolean((msg as { isPrivate?: boolean }).isPrivate);
+          if (typeof cfg.isPrivate === 'boolean') {
+            activeRoom.isPrivate = cfg.isPrivate;
+          }
+          if (typeof cfg.randomMap === 'boolean') {
+            activeRoom.randomMap = cfg.randomMap;
+          }
+          if (typeof cfg.includeBots === 'boolean') {
+            activeRoom.includeBots = cfg.includeBots;
           }
           activeRoom.isSearchingMatch = Boolean(msg.isSearchingMatch);
           if (!activeRoom.isSearchingMatch) activeRoom.searchStartedAtMs = null;
@@ -454,11 +472,13 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
           emitRoomState();
           return;
         } else if (msg.type === 'SQUAD_QUEUE_STATE') {
+          const qMsg = msg as { randomMap?: boolean };
           activeRoom.isSearchingMatch = Boolean(msg.isSearchingMatch);
           activeRoom.searchStartedAtMs =
             typeof msg.searchStartedAtMs === 'number' ? msg.searchStartedAtMs : null;
           if (msg.arenaMode) activeRoom.arenaMode = msg.arenaMode;
           if (msg.queueType) activeRoom.queueType = msg.queueType;
+          if (typeof qMsg.randomMap === 'boolean') activeRoom.randomMap = qMsg.randomMap;
           activeRoom.updatedAtMs = Date.now();
           emitRoomState();
           return;
@@ -542,9 +562,17 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
             emitRoomState();
           }
         } else if (msg.type === 'ROOM_SYNC_META' && msg.players) {
+          const metaMsg = msg as {
+            isPrivate?: boolean;
+            randomMap?: boolean;
+            includeBots?: boolean;
+          };
           if (msg.hostUid) activeRoom.hostUid = msg.hostUid;
           if (msg.arenaMode) activeRoom.arenaMode = msg.arenaMode;
           if (msg.queueType) activeRoom.queueType = msg.queueType;
+          if (typeof metaMsg.isPrivate === 'boolean') activeRoom.isPrivate = metaMsg.isPrivate;
+          if (typeof metaMsg.randomMap === 'boolean') activeRoom.randomMap = metaMsg.randomMap;
+          if (typeof metaMsg.includeBots === 'boolean') activeRoom.includeBots = metaMsg.includeBots;
           if (typeof msg.isSearchingMatch === 'boolean') {
             activeRoom.isSearchingMatch = msg.isSearchingMatch;
           }
@@ -566,6 +594,11 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
           }
           emitRoomState();
         } else if (msg.type === 'MATCH_START') {
+          const startMsg = msg as { arenaMode?: DrillMode; includeBots?: boolean };
+          if (startMsg.arenaMode) activeRoom.arenaMode = startMsg.arenaMode;
+          if (typeof startMsg.includeBots === 'boolean' && activeRoom.isPrivate) {
+            activeRoom.includeBots = startMsg.includeBots;
+          }
           if (activeRoom.status !== 'PLAYING') {
             activeRoom.isSearchingMatch = false;
             activeRoom.searchStartedAtMs = null;
@@ -892,8 +925,15 @@ export async function createMultiplayerRoom(
   const roomId = generateRoomCode();
   const localPlayer = createInitialLocalPlayerState(arenaMode, 'VANGUARD', 0);
   localPlayer.isReady = false;
+  const effectiveArenaMode: DrillMode =
+    queueType === 'RANKED' && !isPrivate && (arenaMode === 'STATION_TDM_5V5' || arenaMode === 'STATION_CAPTURE_5V5')
+      ? 'DUST2_BOMB_5V5'
+      : arenaMode;
+  const defaultRandomMap = queueType === 'RANKED' ? true : !isPrivate;
   const newRoom: OnlineRoomState = {
-    roomId, hostUid: uid, arenaMode, isPrivate, queueType,
+    roomId, hostUid: uid, arenaMode: effectiveArenaMode, isPrivate, queueType,
+    randomMap: defaultRandomMap,
+    includeBots: false,
     averageMmr: localPlayer.mmr || 2450, status: 'WAITING',
     isSearchingMatch: false,
     searchStartedAtMs: null,
@@ -1044,11 +1084,18 @@ export async function startMatchInActiveRoom(serverConfirmed = false): Promise<b
     }
     return false;
   }
+  // Private room with randomMap draws a fresh map from the selected mode right before launching
+  if (activeRoom.isPrivate && !serverConfirmed && activeRoom.randomMap) {
+    const cat = getGameModeCategoryForArena(activeRoom.arenaMode);
+    activeRoom.arenaMode = pickRandomMapForCategory(cat, false);
+  }
   if (!serverConfirmed && wsClient && wsClient.readyState === WebSocket.OPEN) {
     wsClient.send(JSON.stringify({
       type: 'MATCH_START',
       roomId: activeRoom.roomId,
       queueType: activeRoom.queueType || 'CASUAL',
+      arenaMode: activeRoom.arenaMode,
+      includeBots: Boolean(activeRoom.isPrivate && activeRoom.includeBots),
     }));
   }
   const inv = getPlayerInventoryState();
@@ -1131,12 +1178,40 @@ export function sendSquadChatMessage(rawText: string): boolean {
 export function updateSquadRoomConfig(
   arenaMode: DrillMode,
   queueType?: MatchQueueType,
-  isPrivate?: boolean
+  isPrivate?: boolean,
+  options?: { randomMap?: boolean; includeBots?: boolean }
 ): void {
   if (!activeRoom) return;
-  activeRoom.arenaMode = arenaMode;
-  if (queueType) activeRoom.queueType = queueType;
-  if (typeof isPrivate === 'boolean') activeRoom.isPrivate = isPrivate;
+  const nextQueue = queueType || activeRoom.queueType || 'CASUAL';
+  const nextPrivate = typeof isPrivate === 'boolean' ? isPrivate : activeRoom.isPrivate;
+  let nextArena = arenaMode;
+  let nextRandomMap =
+    typeof options?.randomMap === 'boolean'
+      ? options.randomMap
+      : typeof activeRoom.randomMap === 'boolean'
+        ? activeRoom.randomMap
+        : !nextPrivate;
+  let nextIncludeBots =
+    typeof options?.includeBots === 'boolean'
+      ? options.includeBots
+      : Boolean(activeRoom.includeBots);
+
+  if (nextQueue === 'RANKED' && !nextPrivate) {
+    if (nextArena === 'STATION_TDM_5V5' || nextArena === 'STATION_CAPTURE_5V5') {
+      nextArena = 'DUST2_BOMB_5V5';
+    }
+    nextRandomMap = true;
+    nextIncludeBots = false;
+  }
+  if (!nextPrivate) {
+    nextIncludeBots = false;
+  }
+
+  activeRoom.arenaMode = nextArena;
+  activeRoom.queueType = nextQueue;
+  activeRoom.isPrivate = nextPrivate;
+  activeRoom.randomMap = nextRandomMap;
+  activeRoom.includeBots = nextIncludeBots;
   activeRoom.isSearchingMatch = false;
   activeRoom.searchStartedAtMs = null;
   activeRoom.updatedAtMs = Date.now();
@@ -1144,9 +1219,11 @@ export function updateSquadRoomConfig(
   sendRawWsMessage({
     type: 'SQUAD_CONFIG_UPDATE',
     roomId: activeRoom.roomId,
-    arenaMode,
-    queueType: activeRoom.queueType || 'CASUAL',
-    isPrivate: activeRoom.isPrivate,
+    arenaMode: nextArena,
+    queueType: nextQueue,
+    isPrivate: nextPrivate,
+    randomMap: nextRandomMap,
+    includeBots: nextIncludeBots,
     ts: Date.now(),
   });
 }
@@ -1162,6 +1239,7 @@ const OFFICIAL_AUTO_DRAW_5V5_MAPS: DrillMode[] = [
 
 export function pickRandomOfficial5v5Map(currentMode?: DrillMode): DrillMode {
   if (currentMode === 'STATION_TDM_5V5') return 'STATION_TDM_5V5';
+  if (currentMode === 'STATION_CAPTURE_5V5') return 'STATION_CAPTURE_5V5';
   const idx = Math.floor(Math.random() * OFFICIAL_AUTO_DRAW_5V5_MAPS.length);
   return OFFICIAL_AUTO_DRAW_5V5_MAPS[idx] || 'DUST2_BOMB_5V5';
 }
@@ -1169,11 +1247,15 @@ export function pickRandomOfficial5v5Map(currentMode?: DrillMode): DrillMode {
 export function startSquadMatchSearch(): void {
   if (!activeRoom) return;
   const nowMs = Date.now();
-  // Ranked and Classic rooms draw the 5v5 map automatically (only Private Rooms allow manual map choice)
-  if (!activeRoom.isPrivate && activeRoom.arenaMode !== 'STATION_TDM_5V5') {
-    const drawnMap = pickRandomOfficial5v5Map(activeRoom.arenaMode);
-    activeRoom.arenaMode = drawnMap;
+  const isRankedQueue = activeRoom.queueType === 'RANKED' && !activeRoom.isPrivate;
+  const useRandomMap = isRankedQueue ? true : Boolean(activeRoom.randomMap);
+  if (useRandomMap) {
+    const cat = isRankedQueue
+      ? 'PLANT_BOMB'
+      : getGameModeCategoryForArena(activeRoom.arenaMode);
+    activeRoom.arenaMode = pickRandomMapForCategory(cat, isRankedQueue);
   }
+  activeRoom.randomMap = useRandomMap;
   activeRoom.isSearchingMatch = true;
   activeRoom.searchStartedAtMs = nowMs;
   activeRoom.updatedAtMs = nowMs;
@@ -1191,6 +1273,7 @@ export function startSquadMatchSearch(): void {
     roomId: activeRoom.roomId,
     arenaMode: activeRoom.arenaMode,
     queueType: activeRoom.queueType || 'CASUAL',
+    randomMap: useRandomMap,
     ts: nowMs,
   });
 }
@@ -1570,6 +1653,11 @@ export function isOnlineMatchActive(): boolean {
   return activeRoom !== null;
 }
 
+/** True only when the active room is a Private Room with optional AI bots enabled by the host. */
+export function isPrivateRoomWithBotsActive(): boolean {
+  return Boolean(activeRoom?.isPrivate && activeRoom?.includeBots);
+}
+
 /** True when all players currently registered in the active online room have finished loading. */
 export function areAllOnlinePlayersLoaded(): boolean {
   if (!activeRoom) return true;
@@ -1591,10 +1679,11 @@ export function countOtherHumanPlayersInRoom(): number {
 
 /**
  * XP / cash / rank unlocks / combat profile telemetry may only come from
- * real online matches with at least one other human. Bot / offline / solo
- * practice modes grant none.
+ * real online matches with at least one other human (and never against AI bots
+ * in private practice rooms).
  */
 export function canGrantMatchProgressionRewards(): boolean {
+  if (isPrivateRoomWithBotsActive()) return false;
   return isOnlineMatchActive() && countOtherHumanPlayersInRoom() >= 1;
 }
 

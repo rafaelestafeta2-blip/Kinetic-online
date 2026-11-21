@@ -183,6 +183,7 @@ export class YardBombSystem {
   private onlineLocalTeam: 'VANGUARD' | 'BLACKTHORN' = 'VANGUARD';
   private onlineVanguardCount = 0;
   private onlineBlackthornCount = 0;
+  private allowPrivateBots = false;
   private onBombStateChangedCb:
     | ((
         status: 'CARRIED' | 'PLANTED' | 'DEFUSED' | 'DETONATED',
@@ -206,12 +207,14 @@ export class YardBombSystem {
     isOnline: boolean,
     localTeam: 'VANGUARD' | 'BLACKTHORN' = 'VANGUARD',
     vanguardCount = 1,
-    blackthornCount = 0
+    blackthornCount = 0,
+    allowPrivateBots = false
   ): void {
     this.isOnlineMatch = isOnline;
     this.onlineLocalTeam = localTeam;
     this.onlineVanguardCount = vanguardCount;
     this.onlineBlackthornCount = blackthornCount;
+    this.allowPrivateBots = isOnline && allowPrivateBots;
   }
 
   public setOnBombStateChanged(
@@ -740,7 +743,7 @@ export class YardBombSystem {
     let alliesPendingRevive = playerPendingRevive ? 1 : 0;
     for (let i = 0; i < targets.length; i++) {
       const bot = targets[i] as YardBotEntity;
-      if (this.isOnlineMatch && !bot.root.userData?.remotePlayerUid) continue;
+      if (this.isOnlineMatch && !this.allowPrivateBots && !bot.root.userData?.remotePlayerUid) continue;
       if (bot.isDown) {
         if (
           !isStationTdm &&

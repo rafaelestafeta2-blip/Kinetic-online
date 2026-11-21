@@ -12,8 +12,6 @@ import {
 } from './RankedInsigniasSvg';
 
 export type MainMenuPlayModeId =
-  | 'TDM'
-  | 'CAPTURE'
   | 'RANKED'
   | 'CASUAL'
   | 'PRIVATE_ROOM'
@@ -29,32 +27,25 @@ export const PLAY_MODE_OPTIONS: Array<{
   arena?: DrillMode;
 }> = [
   {
-    id: 'TDM',
-    label: 'MATA-MATA 5V5 · STATION ARENA',
-    subtitle: 'Team Deathmatch · Respawn Imediato · Alvo 40 Abates',
-    badge: 'NOVO MODO',
-    arena: 'STATION_TDM_5V5',
-  },
-  {
     id: 'RANKED',
-    label: 'RANKED 5V5 COMPETITIVO',
-    subtitle: 'Fila Oficial · Mapa Sorteado Aleatoriamente no Pareamento',
-    badge: 'SORTEIO DE MAPA',
+    label: 'RANKED 5V5 · PLANTAR A BOMBA',
+    subtitle: 'Competitivo Oficial · Mapa Sorteado · Disputa de MMR',
+    badge: 'RANQUEADA',
     arena: 'DUST2_BOMB_5V5',
   },
   {
     id: 'CASUAL',
     label: 'PARTIDA CASUAL 5V5',
-    subtitle: 'Sala de Partida · Escolha o Mapa Dentro da Sala Antes de Iniciar',
-    badge: 'ESCOLHER NA SALA',
-    arena: 'STATION_TDM_5V5',
+    subtitle: 'Escolha Bomba, Mata-Mata ou Captura e Mapa na Sala',
+    badge: 'MODOS & MAPAS',
+    arena: 'DUST2_BOMB_5V5',
   },
   {
     id: 'PRIVATE_ROOM',
     label: 'SALA PRIVADA (X1 / CLÃ)',
-    subtitle: 'Crie ou Entre por Código · Menu Focado de Escolha de Mapa na Sala',
-    badge: 'CÓDIGO 6 DÍGITOS',
-    arena: 'STATION_TDM_5V5',
+    subtitle: 'Escolha Modo, Mapa ou Aleatório + Opção de Bots',
+    badge: 'PERSONALIZADA',
+    arena: 'DUST2_BOMB_5V5',
   },
   {
     id: 'RANGE',
@@ -254,12 +245,11 @@ export const MainMenuRightWidgets: React.FC<MainMenuRightWidgetsProps> = ({
             </span>
           </div>
 
-          {/* Pílulas rápidas dos modos principais */}
+          {/* Pílulas rápidas dos tipos de sala (Modos de jogo são escolhidos dentro da Sala Casual/Privada) */}
           <div className="p-2 flex flex-col gap-1.5">
-            <div className="grid grid-cols-4 gap-1">
+            <div className="grid grid-cols-3 gap-1">
               {(
                 [
-                  { id: 'TDM', short: 'MATA-MATA' },
                   { id: 'RANKED', short: 'RANKED' },
                   { id: 'CASUAL', short: 'CASUAL' },
                   { id: 'PRIVATE_ROOM', short: 'PRIVADA' },
@@ -274,9 +264,11 @@ export const MainMenuRightWidgets: React.FC<MainMenuRightWidgetsProps> = ({
                       soundEngine.playMenuSelect();
                       onCyclePlayMode(m.id);
                     }}
-                    className={`py-1 px-1 rounded text-[8px] lg:text-[9px] font-display font-black uppercase tracking-wider border transition-all cursor-pointer ${
+                    className={`py-1.5 px-1.5 rounded text-[9px] lg:text-[10px] font-display font-black uppercase tracking-wider border transition-all cursor-pointer ${
                       isSelected
-                        ? 'bg-red-600/90 border-amber-300 text-white shadow-[0_0_10px_rgba(239,68,68,0.5)]'
+                        ? m.id === 'RANKED'
+                          ? 'bg-amber-500/90 border-yellow-200 text-slate-950 shadow-[0_0_12px_rgba(245,158,11,0.55)]'
+                          : 'bg-red-600/90 border-amber-300 text-white shadow-[0_0_10px_rgba(239,68,68,0.5)]'
                         : 'bg-black/50 border-white/12 text-slate-400 hover:text-white hover:border-white/30'
                     }`}
                   >

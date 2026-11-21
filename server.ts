@@ -440,6 +440,14 @@ async function startServer(): Promise<void> {
             ? { ...msg.player, uid, mmr: verifiedMmr }
             : { uid, mmr: verifiedMmr };
 
+          const randomMap =
+            typeof msg.randomMap === 'boolean'
+              ? msg.randomMap
+              : queueType === 'RANKED'
+                ? true
+                : !isPrivate;
+          const includeBots = isPrivate ? Boolean(msg.includeBots) : false;
+
           let meta = roomMetaMap.get(roomId);
           if (!meta) {
             meta = {
@@ -448,6 +456,8 @@ async function startServer(): Promise<void> {
               queueType,
               arenaMode,
               isPrivate,
+              randomMap,
+              includeBots,
               createdAtMs: Date.now(),
               averageMmr: verifiedMmr,
               serverConfirmedStart: false,
@@ -540,6 +550,9 @@ async function startServer(): Promise<void> {
               hostUid: meta.hostUid,
               queueType: meta.queueType,
               arenaMode: meta.arenaMode,
+              isPrivate: meta.isPrivate,
+              randomMap: Boolean(meta.randomMap),
+              includeBots: Boolean(meta.includeBots),
               status: meta.status,
               isSearchingMatch: meta.isSearchingMatch,
               searchStartedAtMs: meta.searchStartedAtMs,
@@ -631,16 +644,37 @@ async function startServer(): Promise<void> {
         if (clientMeta.roomId && clientMeta.uid && msg.type === 'SQUAD_CONFIG_UPDATE') {
           const meta = roomMetaMap.get(clientMeta.roomId);
           if (!meta || (meta.hostUid && meta.hostUid !== clientMeta.uid)) return;
-          const nextArena =
-            typeof msg.arenaMode === 'string' && ALLOWED_SQUAD_ARENAS.has(msg.arenaMode)
-              ? msg.arenaMode
-              : meta.arenaMode;
           const nextQueue = msg.queueType ? normalizeQueueType(msg.queueType) : meta.queueType;
           const nextPrivate =
             typeof msg.isPrivate === 'boolean' ? msg.isPrivate : meta.isPrivate;
+          let nextArena =
+            typeof msg.arenaMode === 'string' && ALLOWED_SQUAD_ARENAS.has(msg.arenaMode)
+              ? msg.arenaMode
+              : meta.arenaMode;
+          let nextRandomMap =
+            typeof msg.randomMap === 'boolean' ? msg.randomMap : Boolean(meta.randomMap);
+          let nextIncludeBots =
+            typeof msg.includeBots === 'boolean'
+              ? msg.includeBots
+              : Boolean(meta.includeBots);
+
+          // Ranked is always Plant Bomb with automatic random map and zero bots
+          if (nextQueue === 'RANKED' && !nextPrivate) {
+            if (nextArena === 'STATION_TDM_5V5' || nextArena === 'STATION_CAPTURE_5V5') {
+              nextArena = 'DUST2_BOMB_5V5';
+            }
+            nextRandomMap = true;
+            nextIncludeBots = false;
+          }
+          if (!nextPrivate) {
+            nextIncludeBots = false;
+          }
+
           meta.arenaMode = nextArena;
           meta.queueType = nextQueue;
           meta.isPrivate = nextPrivate;
+          meta.randomMap = nextRandomMap;
+          meta.includeBots = nextIncludeBots;
           meta.isSearchingMatch = false;
           meta.searchStartedAtMs = null;
 
@@ -648,6 +682,7 @@ async function startServer(): Promise<void> {
           members?.forEach((c) => {
             c.arenaMode = nextArena;
             c.queueType = nextQueue;
+            c.preferExactMap = nextQueue === 'CASUAL' && !nextRandomMap;
             removeClientFromQueue(c);
           });
 
@@ -657,6 +692,8 @@ async function startServer(): Promise<void> {
             arenaMode: nextArena,
             queueType: nextQueue,
             isPrivate: nextPrivate,
+            randomMap: nextRandomMap,
+            includeBots: nextIncludeBots,
             isSearchingMatch: false,
             ts: Date.now(),
           });
@@ -672,9 +709,19 @@ async function startServer(): Promise<void> {
           if (msg.queueType) {
             meta.queueType = normalizeQueueType(msg.queueType);
           }
+          if (typeof msg.randomMap === 'boolean') {
+            meta.randomMap = msg.randomMap;
+          }
+          if (meta.queueType === 'RANKED' && !meta.isPrivate) {
+            if (meta.arenaMode === 'STATION_TDM_5V5' || meta.arenaMode === 'STATION_CAPTURE_5V5') {
+              meta.arenaMode = 'DUST2_BOMB_5V5';
+            }
+            meta.randomMap = true;
+          }
           const nowMs = Date.now();
           meta.isSearchingMatch = true;
           meta.searchStartedAtMs = nowMs;
+          const preferExact = meta.queueType === 'CASUAL' && meta.randomMap === false;
 
           const members = roomsMap.get(clientMeta.roomId);
           if (members && !meta.isPrivate) {
@@ -682,6 +729,7 @@ async function startServer(): Promise<void> {
               if (!c.uid) return;
               c.arenaMode = meta.arenaMode;
               c.queueType = meta.queueType;
+              c.preferExactMap = preferExact;
               c.enqueuedAtMs = nowMs;
               matchmakingQueue.set(c.uid, c);
             });
@@ -694,6 +742,7 @@ async function startServer(): Promise<void> {
             searchStartedAtMs: nowMs,
             arenaMode: meta.arenaMode,
             queueType: meta.queueType,
+            randomMap: Boolean(meta.randomMap),
             ts: nowMs,
           });
           return;
@@ -772,6 +821,16 @@ async function startServer(): Promise<void> {
             return;
           }
           if (meta) {
+            if (
+              meta.isPrivate &&
+              typeof msg.arenaMode === 'string' &&
+              ALLOWED_SQUAD_ARENAS.has(msg.arenaMode)
+            ) {
+              meta.arenaMode = msg.arenaMode;
+            }
+            if (meta.isPrivate && typeof msg.includeBots === 'boolean') {
+              meta.includeBots = msg.includeBots;
+            }
             meta.status = 'PLAYING';
             meta.isSearchingMatch = false;
             meta.searchStartedAtMs = null;
@@ -1065,14 +1124,19 @@ async function startServer(): Promise<void> {
     const buckets = new Map<string, QueuedPlayerEntry[]>();
     matchmakingQueue.forEach((client) => {
       if (!client.uid || client.ws.readyState !== 1) return;
-      const poolKey = getMatchmakingPoolKey(client.arenaMode);
-      const key = `${client.queueType}::${poolKey}`;
+      const poolKey = getMatchmakingPoolKey(
+        client.arenaMode,
+        client.queueType,
+        Boolean(client.preferExactMap)
+      );
+      const key = `${client.queueType}|||${poolKey}`;
       const list = buckets.get(key) || [];
       list.push({
         uid: client.uid,
         callsign: client.callsign,
         arenaMode: client.arenaMode,
         queueType: client.queueType,
+        preferExactMap: Boolean(client.preferExactMap),
         mmr: client.mmr,
         enqueuedAtMs: client.enqueuedAtMs,
         roomId: client.roomId,
@@ -1081,7 +1145,7 @@ async function startServer(): Promise<void> {
     });
 
     buckets.forEach((entries, key) => {
-      const [queueTypeRaw, poolKey] = key.split('::');
+      const [queueTypeRaw, poolKey] = key.split('|||');
       const queueType: ServerQueueType = queueTypeRaw === 'RANKED' ? 'RANKED' : 'CASUAL';
       const roomId = `MM${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
       const allocation = tryFindBalancedMatch(entries, queueType, poolKey, roomId);

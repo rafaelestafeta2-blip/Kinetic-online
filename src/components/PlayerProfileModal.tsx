@@ -79,23 +79,26 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
       onClick={(e) => e.stopPropagation()}
       className="fixed inset-0 z-50 bg-[#06080c]/95 backdrop-blur-xl flex flex-col justify-between overflow-hidden text-white font-sans select-none"
     >
-      {/* 1. Barra de Topo AAA: < PERFIL DO JOGADOR + Nível e Botão Fechar */}
-      <header className="relative z-20 w-full px-4 sm:px-8 py-2.5 flex items-center justify-between border-b border-white/10 bg-black/60 shrink-0">
-        <div className="flex items-center gap-3">
+      {/* 1. Barra de Topo AAA: ← VOLTAR AO MENU + Título + Nível e Botão Fechar */}
+      <header className="relative z-20 w-full px-3 sm:px-8 py-2.5 flex items-center justify-between gap-2 border-b border-white/10 bg-black/70 shrink-0">
+        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
           <button
             type="button"
             onClick={() => {
               soundEngine.playMenuSelect();
               onClose();
             }}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-amber-500/20 hover:bg-amber-500/35 active:scale-[0.98] border border-amber-400/60 text-amber-200 hover:text-white transition-all cursor-pointer touch-manipulation shrink-0 shadow-[0_0_12px_rgba(245,158,11,0.18)]"
           >
-            <span className="font-mono text-xs">‹</span>
-            <span className="font-display font-black text-xs uppercase tracking-wider">
-              PERFIL DO JOGADOR
+            <span className="font-mono text-sm font-black leading-none">←</span>
+            <span className="font-display font-black text-[11px] sm:text-xs uppercase tracking-wider">
+              VOLTAR AO MENU
             </span>
           </button>
-          <span className="hidden sm:inline-block font-mono text-[10px] text-emerald-400">
+          <span className="font-display font-black text-xs sm:text-sm text-white uppercase tracking-wider truncate">
+            PERFIL DO JOGADOR
+          </span>
+          <span className="hidden md:inline-block font-mono text-[10px] text-emerald-400 shrink-0">
             {isGoogleLinked ? 'CLOUD PROFILE SINCRONIZADO' : 'CONTA GOOGLE REQUERIDA'}
           </span>
         </div>

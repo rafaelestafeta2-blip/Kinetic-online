@@ -31,6 +31,7 @@ export const PlayerProfileCallingCardsPanel: React.FC<
   const [equippedId, setEquippedId] = useState<string>(() =>
     getEquippedCallingCardId()
   );
+  const [filterMode, setFilterMode] = useState<'ALL' | 'ANIMATED' | 'UNLOCKED'>('ALL');
 
   useEffect(() => {
     return subscribeEquippedCallingCard(setEquippedId);
@@ -42,6 +43,12 @@ export const PlayerProfileCallingCardsPanel: React.FC<
   const unlockedCount = CALLING_CARD_CATALOG.filter((c) =>
     c.isUnlocked(profile)
   ).length;
+  const animatedCount = CALLING_CARD_CATALOG.filter((c) => c.animated).length;
+  const filteredCards = CALLING_CARD_CATALOG.filter((c) => {
+    if (filterMode === 'ANIMATED') return Boolean(c.animated);
+    if (filterMode === 'UNLOCKED') return c.isUnlocked(profile);
+    return true;
+  });
 
   const handleEquip = (cardId: string) => {
     const ok = setEquippedCallingCardId(cardId, profile);
@@ -60,9 +67,16 @@ export const PlayerProfileCallingCardsPanel: React.FC<
           <div className="font-mono text-[9px] font-bold uppercase tracking-[0.22em] text-amber-400">
             PRÉVIA NA TELA DE LOADING DO MAPA
           </div>
-          <h4 className="font-display font-black text-sm sm:text-base text-white uppercase tracking-wider">
-            {activeCard.name}
-          </h4>
+          <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
+            <h4 className="font-display font-black text-sm sm:text-base text-white uppercase tracking-wider">
+              {activeCard.name}
+            </h4>
+            {activeCard.animated && (
+              <span className="px-1.5 py-0.5 rounded bg-gradient-to-r from-orange-500/30 to-fuchsia-500/30 border border-orange-400/60 font-mono text-[8px] font-black text-amber-200 uppercase tracking-wider">
+                ✦ ANIMADA
+              </span>
+            )}
+          </div>
           <p className="font-mono text-[10px] text-slate-400">
             {activeCard.description} ·{' '}
             <span className="text-emerald-300 font-bold">
@@ -123,9 +137,44 @@ export const PlayerProfileCallingCardsPanel: React.FC<
         </div>
       </div>
 
-      {/* Grid of All 12 Premium Calling Cards */}
+      {/* Filter bar for All / Animated / Unlocked calling cards */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5">
+          {([
+            { id: 'ALL', label: `TODAS (${CALLING_CARD_CATALOG.length})` },
+            { id: 'ANIMATED', label: `✦ ANIMADAS (${animatedCount})` },
+            { id: 'UNLOCKED', label: `DESBLOQUEADAS (${unlockedCount})` },
+          ] as const).map((tab) => {
+            const active = filterMode === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => {
+                  soundEngine.playMenuSelect();
+                  setFilterMode(tab.id);
+                }}
+                className={`px-2.5 py-1 rounded-md border font-mono text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer touch-manipulation ${
+                  active
+                    ? tab.id === 'ANIMATED'
+                      ? 'bg-orange-500/25 border-orange-400/70 text-amber-200'
+                      : 'bg-amber-500/20 border-amber-400/60 text-amber-200'
+                    : 'bg-white/5 border-white/10 text-slate-400 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+        <span className="font-mono text-[9px] text-slate-400">
+          CLIQUE PARA EQUIPAR · APARECE NO PERFIL E NO LOADING DO MAPA
+        </span>
+      </div>
+
+      {/* Grid of Premium Calling Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-        {CALLING_CARD_CATALOG.map((card) => {
+        {filteredCards.map((card) => {
           const unlocked = card.isUnlocked(profile);
           const isEquipped = equippedId === card.id;
           const rarityMeta = CALLING_CARD_RARITY_META[card.rarity];
@@ -151,12 +200,17 @@ export const PlayerProfileCallingCardsPanel: React.FC<
 
               <div className="relative z-10 p-2.5 flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <span
                       className={`px-1.5 py-0.5 rounded border text-[8px] font-mono font-bold uppercase tracking-wider ${rarityMeta.badgeClass}`}
                     >
                       {rarityMeta.label}
                     </span>
+                    {card.animated && (
+                      <span className="px-1.5 py-0.5 rounded bg-black/70 border border-orange-400/60 text-amber-200 font-mono text-[8px] font-black uppercase">
+                        ✦ ANIMADA
+                      </span>
+                    )}
                     {isEquipped && (
                       <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-mono text-[8px] font-black uppercase">
                         ✓ EQUIPADA

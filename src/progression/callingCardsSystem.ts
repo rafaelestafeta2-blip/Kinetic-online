@@ -21,7 +21,12 @@ export type CallingCardPattern =
   | 'imperial_gold'
   | 'viper_scales'
   | 'solar_flare'
-  | 'mythic_wings';
+  | 'mythic_wings'
+  | 'inferno_blaze'
+  | 'neon_overdrive'
+  | 'thunder_volt'
+  | 'aurum_shimmer'
+  | 'cosmic_nebula';
 
 export interface CallingCardDefinition {
   id: string;
@@ -30,6 +35,7 @@ export interface CallingCardDefinition {
   description: string;
   unlockLabel: string;
   pattern: CallingCardPattern;
+  animated?: boolean;
   bgStyle: string;
   accentHex: string;
   secondaryHex: string;
@@ -232,17 +238,107 @@ export const CALLING_CARD_CATALOG: CallingCardDefinition[] = [
       `Nv.${p.rankLevel || 1}/20 · Vitórias ${Math.min(10, p.matchesWon || 0)}/10 · C4 ${Math.min(5, p.bombsPlanted || 0)}/5`,
   },
   {
+    id: 'inferno_blaze',
+    name: 'Chamas Infernais',
+    rarity: 'EPICO',
+    animated: true,
+    description: 'Faixa animada pegando fogo vivo com labaredas e brasas ascendentes.',
+    unlockLabel: 'Nível 3 ou 10 Abates Online',
+    pattern: 'inferno_blaze',
+    bgStyle:
+      'radial-gradient(ellipse at 78% 72%, rgba(249,115,22,0.72) 0%, rgba(220,38,38,0.46) 44%, rgba(18,5,4,0.98) 86%)',
+    accentHex: '#fb923c',
+    secondaryHex: '#facc15',
+    borderHex: 'rgba(251,146,60,0.72)',
+    isUnlocked: (p) => (p.rankLevel || 1) >= 3 || (p.totalKills || 0) >= 10,
+    getProgressText: (p) =>
+      `Nv.${p.rankLevel || 1}/3 · Abates ${Math.min(10, p.totalKills || 0)}/10`,
+  },
+  {
+    id: 'neon_overdrive',
+    name: 'Neon Overdrive',
+    rarity: 'EPICO',
+    animated: true,
+    description: 'Grade synthwave animada com varredura laser ciano e magenta neon.',
+    unlockLabel: 'Nível 4 ou 1 Missão/Partida Online',
+    pattern: 'neon_overdrive',
+    bgStyle:
+      'radial-gradient(ellipse at 76% 50%, rgba(236,72,153,0.52) 0%, rgba(6,182,212,0.34) 44%, rgba(7,6,20,0.98) 84%)',
+    accentHex: '#22d3ee',
+    secondaryHex: '#f472b6',
+    borderHex: 'rgba(34,211,238,0.72)',
+    isUnlocked: (p) =>
+      (p.rankLevel || 1) >= 4 ||
+      countCompletedMissions(p) >= 1 ||
+      (p.matchesPlayed || 0) >= 1,
+    getProgressText: (p) =>
+      `Nv.${p.rankLevel || 1}/4 · Missões ${Math.min(1, countCompletedMissions(p))}/1`,
+  },
+  {
+    id: 'thunder_volt',
+    name: 'Trovão de Plasma',
+    rarity: 'LENDARIO',
+    animated: true,
+    description: 'Raios elétricos animados de alta voltagem pulsando sobre fibra tática.',
+    unlockLabel: 'Nível 12 ou 5 Vitórias Online',
+    pattern: 'thunder_volt',
+    bgStyle:
+      'radial-gradient(ellipse at 74% 50%, rgba(56,189,248,0.62) 0%, rgba(37,99,235,0.38) 44%, rgba(4,9,22,0.98) 85%)',
+    accentHex: '#38bdf8',
+    secondaryHex: '#e0f2fe',
+    borderHex: 'rgba(56,189,248,0.78)',
+    isUnlocked: (p) => (p.rankLevel || 1) >= 12 || (p.matchesWon || 0) >= 5,
+    getProgressText: (p) =>
+      `Nv.${p.rankLevel || 1}/12 · Vitórias ${Math.min(5, p.matchesWon || 0)}/5`,
+  },
+  {
+    id: 'aurum_shimmer',
+    name: 'Ouro Vivo Imperial',
+    rarity: 'LENDARIO',
+    animated: true,
+    description: 'Lâmina dourada animada com brilho metálico líquido e faíscas reais.',
+    unlockLabel: 'Nível 16 ou 4 Missões Completas',
+    pattern: 'aurum_shimmer',
+    bgStyle:
+      'radial-gradient(ellipse at 76% 50%, rgba(250,204,21,0.58) 0%, rgba(180,83,9,0.36) 44%, rgba(16,11,4,0.98) 85%)',
+    accentHex: '#fde047',
+    secondaryHex: '#f59e0b',
+    borderHex: 'rgba(250,204,21,0.78)',
+    isUnlocked: (p) =>
+      (p.rankLevel || 1) >= 16 || countCompletedMissions(p) >= 4,
+    getProgressText: (p) =>
+      `Nv.${p.rankLevel || 1}/16 · Missões ${Math.min(4, countCompletedMissions(p))}/4`,
+  },
+  {
+    id: 'cosmic_nebula',
+    name: 'Nebulosa Prisma',
+    rarity: 'MITICO',
+    animated: true,
+    description: 'Vórtice estelar animado em rotação contínua com aurora violeta.',
+    unlockLabel: 'Nível 22 ou 80 Abates Online',
+    pattern: 'cosmic_nebula',
+    bgStyle:
+      'radial-gradient(ellipse at 74% 50%, rgba(168,85,247,0.62) 0%, rgba(14,165,233,0.34) 44%, rgba(7,5,19,0.98) 86%)',
+    accentHex: '#c084fc',
+    secondaryHex: '#38bdf8',
+    borderHex: 'rgba(192,132,252,0.8)',
+    isUnlocked: (p) => (p.rankLevel || 1) >= 22 || (p.totalKills || 0) >= 80,
+    getProgressText: (p) =>
+      `Nv.${p.rankLevel || 1}/22 · Abates ${Math.min(80, p.totalKills || 0)}/80`,
+  },
+  {
     id: 'mythic_dragon',
     name: 'Dragão Mítico',
     rarity: 'MITICO',
-    description: 'Asas incandescentes de ouro e fogo reservadas às lendas do KINETIC.',
+    animated: true,
+    description: 'Asas animadas incandescentes de ouro e fogo reservadas às lendas do KINETIC.',
     unlockLabel: 'Nível 30, 150 Abates ou 25 Headshots',
     pattern: 'mythic_wings',
     bgStyle:
       'radial-gradient(ellipse at 74% 48%, rgba(234,179,8,0.62) 0%, rgba(185,28,28,0.4) 44%, rgba(14,5,5,0.98) 84%)',
     accentHex: '#fde047',
     secondaryHex: '#f43f5e',
-    borderHex: 'rgba(253,224,71,0.72)',
+    borderHex: 'rgba(253,224,71,0.78)',
     isUnlocked: (p) =>
       (p.rankLevel || 1) >= 30 ||
       (p.totalKills || 0) >= 150 ||

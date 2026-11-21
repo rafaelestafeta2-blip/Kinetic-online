@@ -8,6 +8,7 @@ export interface QueuedPlayerEntry {
   callsign: string;
   arenaMode: string;
   queueType: ServerQueueType;
+  preferExactMap?: boolean;
   mmr: number;
   enqueuedAtMs: number;
   roomId?: string | null;
@@ -46,14 +47,27 @@ export const OFFICIAL_5V5_BOMB_MAPS: readonly string[] = [
  * para que esquadrões em Ranqueada ou Clássica sempre se encontrem na mesma fila,
  * enquanto o servidor sorteia UM único mapa oficial compartilhado na hora de fechar a partida.
  */
-export function getMatchmakingPoolKey(arenaMode: string): string {
+export function getMatchmakingPoolKey(
+  arenaMode: string,
+  queueType: ServerQueueType = 'CASUAL',
+  preferExactMap = false
+): string {
   const normalized = String(arenaMode || '').trim().toUpperCase();
+  if (queueType === 'RANKED') {
+    return 'BOMB_5V5';
+  }
   if (normalized === 'STATION_TDM_5V5') return 'STATION_TDM_5V5';
   if (normalized === 'STATION_CAPTURE_5V5') return 'STATION_CAPTURE_5V5';
+  if (preferExactMap && normalized) {
+    return `EXACT::${normalized}`;
+  }
   return 'BOMB_5V5';
 }
 
 export function drawOfficialArenaForPool(poolKey: string): string {
+  if (poolKey.startsWith('EXACT::')) {
+    return poolKey.slice('EXACT::'.length) || 'DUST2_BOMB_5V5';
+  }
   if (poolKey === 'STATION_TDM_5V5') return 'STATION_TDM_5V5';
   if (poolKey === 'STATION_CAPTURE_5V5') return 'STATION_CAPTURE_5V5';
   const idx = Math.floor(Math.random() * OFFICIAL_5V5_BOMB_MAPS.length);
@@ -210,10 +224,14 @@ export function tryFindBalancedMatch(
   roomId: string,
   nowMs = Date.now()
 ): BalancedMatchAllocation | null {
-  const poolKey = getMatchmakingPoolKey(poolKeyOrArena);
+  const poolKey = poolKeyOrArena.startsWith('EXACT::')
+    ? poolKeyOrArena
+    : getMatchmakingPoolKey(poolKeyOrArena, queueType, false);
   const candidates = queueEntries.filter(
     (entry) =>
-      entry.queueType === queueType && getMatchmakingPoolKey(entry.arenaMode) === poolKey
+      entry.queueType === queueType &&
+      getMatchmakingPoolKey(entry.arenaMode, entry.queueType, Boolean(entry.preferExactMap)) ===
+        poolKey
   );
 
   if (candidates.length < MIN_HUMAN_MATCH_PLAYERS) {

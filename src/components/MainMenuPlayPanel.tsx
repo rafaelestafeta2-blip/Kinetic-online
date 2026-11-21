@@ -57,7 +57,7 @@ export const MainMenuPlayPanel: React.FC<MainMenuPlayPanelProps> = ({
   onHover,
 }) => {
   const [selectedPlayMode, setSelectedPlayMode] =
-    useState<MainMenuPlayModeId>('TDM');
+    useState<MainMenuPlayModeId>('CASUAL');
   const [activeSidebarId, setActiveSidebarId] =
     useState<LeftSidebarButtonId>('INICIO');
 
@@ -73,7 +73,7 @@ export const MainMenuPlayPanel: React.FC<MainMenuPlayPanelProps> = ({
         onOpenStoreTab();
         break;
       case 'RANKED':
-        onOpenRankedScreen('DUST2_BOMB_5V5');
+        onOpenSquadRoom('DUST2_BOMB_5V5', 'RANKED', false);
         break;
       case 'CLAN':
         onOpenClanModal?.();
@@ -104,14 +104,8 @@ export const MainMenuPlayPanel: React.FC<MainMenuPlayPanelProps> = ({
       PLAY_MODE_OPTIONS.find((m) => m.id === selectedPlayMode) ||
       PLAY_MODE_OPTIONS[0];
     switch (selectedPlayMode) {
-      case 'TDM':
-        onOpenSquadRoom('STATION_TDM_5V5', 'CASUAL', false);
-        break;
-      case 'CAPTURE':
-        onOpenSquadRoom('STATION_CAPTURE_5V5', 'CASUAL', false);
-        break;
       case 'RANKED':
-        onOpenSquadRoom(modeObj.arena || 'DUST2_BOMB_5V5', 'RANKED', false);
+        onOpenSquadRoom('DUST2_BOMB_5V5', 'RANKED', false);
         break;
       case 'CASUAL':
         onOpenSquadRoom(modeObj.arena || 'DUST2_BOMB_5V5', 'CASUAL', false);
@@ -153,7 +147,7 @@ export const MainMenuPlayPanel: React.FC<MainMenuPlayPanelProps> = ({
         selectedPlayMode={selectedPlayMode}
         onCyclePlayMode={setSelectedPlayMode}
         onLaunchSelectedMode={handleLaunchSelectedMode}
-        onOpenRankedScreen={() => onOpenRankedScreen('DUST2_BOMB_5V5')}
+        onOpenRankedScreen={() => onOpenSquadRoom('DUST2_BOMB_5V5', 'RANKED', false)}
         onOpenRanksModal={onOpenRanksTab}
         onOpenInventory={onOpenInventory}
         selectedClass={selectedClass}

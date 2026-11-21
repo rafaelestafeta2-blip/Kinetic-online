@@ -235,7 +235,10 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     const existing = getActiveOnlineRoom();
     if (existing) {
       if (existing.hostUid === getLocalEffectiveUid() && !existing.isSearchingMatch) {
-        updateSquadRoomConfig(targetMode, queueType, isPrivate);
+        updateSquadRoomConfig(targetMode, queueType, isPrivate, {
+          randomMap: queueType === 'RANKED' ? true : !isPrivate,
+          includeBots: isPrivate ? Boolean(existing.includeBots) : false,
+        });
       }
       setShowSquadRoom(true);
       return;
@@ -466,6 +469,10 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         onMinimize={() => setShowSquadRoom(false)}
         onLeaveRoom={() => setShowSquadRoom(false)}
         onOpenClanModal={(tab) => setClanModalTab(tab)}
+        onOpenRanksModal={() => {
+          setShowSquadRoom(false);
+          setActiveTab('RANKS');
+        }}
       />
 
       <ClanCenterModal

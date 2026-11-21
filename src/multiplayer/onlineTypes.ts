@@ -101,6 +101,8 @@ export interface OnlineRoomState {
   arenaMode: DrillMode;
   isPrivate: boolean;
   queueType?: MatchQueueType;
+  randomMap?: boolean;
+  includeBots?: boolean;
   averageMmr?: number;
   status: 'WAITING' | 'PLAYING' | 'FINISHED';
   isSearchingMatch?: boolean;

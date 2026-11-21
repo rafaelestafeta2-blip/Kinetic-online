@@ -6,7 +6,10 @@ import {
 } from '../audio/spatialCombatAudio';
 import { soundEngine } from '../audio/soundEngine';
 import { mobileHardware } from '../mobile/nativeHardware';
-import { isOnlineMatchActive } from '../multiplayer/onlineRoomService';
+import {
+  isOnlineMatchActive,
+  isPrivateRoomWithBotsActive,
+} from '../multiplayer/onlineRoomService';
 import { addPlayerCash } from '../progression/ranks';
 import { canGrantMatchProgressionRewards } from '../progression/matchProgressionGate';
 import {
@@ -31,6 +34,8 @@ import {
   STATION_ARENA_DEFENDER_SPAWN,
 } from './stationArenaLevelBuilder';
 
+
+const _privateAiBotsScratch: YardBotEntity[] = [];
 
 /**
  * Extracted from TacticalFPSEngine.updateTargetsAndCombatAI — behavior preserved.
@@ -73,7 +78,11 @@ export function updateTargetsAndCombatAI(engine: any, dt: number): void {
             if (t.armorMesh) t.armorMesh.visible = true;
             soundEngine.playMechanicalSwitch(0.85);
           }
-        } else if (engine.state.drillMode === 'STATION_TDM_5V5' && !isOnlineMatchActive()) {
+        } else if (
+          engine.state.drillMode === 'STATION_TDM_5V5' &&
+          (!isOnlineMatchActive() ||
+            (isPrivateRoomWithBotsActive() && !t.root.userData?.remotePlayerUid))
+        ) {
           t.downTimer -= dt;
           if (t.downTimer <= 0) {
             const isAlly = Boolean((t as YardBotEntity).isAlly);
@@ -131,7 +140,10 @@ export function updateTargetsAndCombatAI(engine: any, dt: number): void {
       engine.state.drillMode === 'STATION_CAPTURE_5V5';
 
     if (engine.state.drillMode !== 'FREE_RANGE' && engine.targets.length > 0) {
-      if (isOnlineMatchActive()) {
+      const onlineActive = isOnlineMatchActive();
+      const privateBotsActive = isPrivateRoomWithBotsActive();
+
+      if (onlineActive) {
         const shotsFired = Number(engine.state?.shotsFired || 0);
         const prevNetShots =
           typeof engine._lastNetShotsFired === 'number'
@@ -165,7 +177,22 @@ export function updateTargetsAndCombatAI(engine: any, dt: number): void {
         if (isBombMode || isTdmMode) {
           engine.state.yardBomb = { ...engine.yardBombSystem.info };
         }
-      } else {
+      }
+
+      if (!onlineActive || privateBotsActive) {
+        // Zero-GC scratch list: in Private Room + Bots, run AI only on non-human slots
+        let aiTargets: YardBotEntity[] = engine.targets as YardBotEntity[];
+        if (onlineActive && privateBotsActive) {
+          _privateAiBotsScratch.length = 0;
+          for (let i = 0; i < engine.targets.length; i++) {
+            const candidate = engine.targets[i] as YardBotEntity;
+            if (!candidate.root.userData?.remotePlayerUid) {
+              _privateAiBotsScratch.push(candidate);
+            }
+          }
+          aiTargets = _privateAiBotsScratch;
+        }
+
         // Full GLB triangle collider for all bomb arenas (Dust2/Assault +
         // Industria/Hangar/Eastern/Mirage) so collision-baked navmesh matches floors.
         const activeGlbCollider = getActiveGlbCollider(engine);
@@ -189,7 +216,7 @@ export function updateTargetsAndCombatAI(engine: any, dt: number): void {
           if (engine._botFootstepHearTimer <= 0) {
             engine._botFootstepHearTimer = isSprinting ? 0.34 : 0.55;
             alertBotsToPlayerFootsteps(
-              engine.targets,
+              aiTargets,
               _worldPos,
               isSprinting,
               true
@@ -200,7 +227,7 @@ export function updateTargetsAndCombatAI(engine: any, dt: number): void {
         }
 
         updateSmartBotNavigation(
-          engine.targets as YardBotEntity[],
+          aiTargets,
           engine.state.drillMode,
           _worldPos,
           engine.yaw,
@@ -321,7 +348,7 @@ export function updateTargetsAndCombatAI(engine: any, dt: number): void {
         dt,
         engine.isSoftwareGl
       );
-      if (isOnlineMatchActive()) {
+      if (isOnlineMatchActive() && !isPrivateRoomWithBotsActive()) {
         enforceUnusedBotVisibility(engine.targets as YardBotEntity[]);
       }
     }

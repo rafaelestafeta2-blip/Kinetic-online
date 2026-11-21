@@ -576,28 +576,80 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
           ? 'Calibre sua mira e teste armamentos no estande.'
           : 'Plante ou desarme a C4 nos alvos táticos A ou B.';
 
-  const vanguardDisplay: LoadingRow[] = isOnline
-    ? onlinePlayers
-        .filter((p) => p.team === 'VANGUARD')
-        .map((p) => {
-          const isLocal = p.uid === profile.uid || p.callsign === localCallsign;
-          const ready = Boolean(p.isLoaded || (p.loadProgress ?? 0) >= 100);
-          const realClanName = (isLocal ? localClan?.clanName : undefined) || p.clanName;
-          const realClanEmblem = ((isLocal ? localClan?.clanEmblemId : undefined) ||
-            p.clanEmblemId) as ClanEmblemId | undefined;
-          return {
-            callsign: p.callsign,
-            title: ready ? '✓ PRONTO' : `${p.loadProgress ?? 0}%`,
-            classId: isLocal ? playerSelectedClass : (p.classId || 'FUZILEIRO'),
-            isPlayer: isLocal,
-            isReady: ready,
-            avatarDataUrl: (isLocal ? profile.avatarDataUrl : undefined) || p.avatarDataUrl,
-            rankLevel: p.rankLevel || (isLocal ? profile.rankLevel : 1),
-            clanName: realClanName || undefined,
-            clanEmblemId: realClanName ? realClanEmblem || 'alpha_wolf' : undefined,
-            callingCardId: isLocal ? localCallingCardId : p.callingCardId,
-          };
+  const privateWithBots = Boolean(onlineRoom?.isPrivate && onlineRoom?.includeBots);
+
+  const onlineVanguardHumans: LoadingRow[] = onlinePlayers
+    .filter((p) => p.team === 'VANGUARD')
+    .map((p) => {
+      const isLocal = p.uid === profile.uid || p.callsign === localCallsign;
+      const ready = Boolean(p.isLoaded || (p.loadProgress ?? 0) >= 100);
+      const realClanName = (isLocal ? localClan?.clanName : undefined) || p.clanName;
+      const realClanEmblem = ((isLocal ? localClan?.clanEmblemId : undefined) ||
+        p.clanEmblemId) as ClanEmblemId | undefined;
+      return {
+        callsign: p.callsign,
+        title: ready ? '✓ PRONTO' : `${p.loadProgress ?? 0}%`,
+        classId: isLocal ? playerSelectedClass : (p.classId || 'FUZILEIRO'),
+        isPlayer: isLocal,
+        isReady: ready,
+        avatarDataUrl: (isLocal ? profile.avatarDataUrl : undefined) || p.avatarDataUrl,
+        rankLevel: p.rankLevel || (isLocal ? profile.rankLevel : 1),
+        clanName: realClanName || undefined,
+        clanEmblemId: realClanName ? realClanEmblem || 'alpha_wolf' : undefined,
+        callingCardId: isLocal ? localCallingCardId : p.callingCardId,
+      };
+    });
+
+  const onlineBlackthornHumans: LoadingRow[] = onlinePlayers
+    .filter((p) => p.team === 'BLACKTHORN')
+    .map((p) => {
+      const isLocal = p.uid === profile.uid || p.callsign === localCallsign;
+      const ready = Boolean(p.isLoaded || (p.loadProgress ?? 0) >= 100);
+      const realClanName = (isLocal ? localClan?.clanName : undefined) || p.clanName;
+      const realClanEmblem = ((isLocal ? localClan?.clanEmblemId : undefined) ||
+        p.clanEmblemId) as ClanEmblemId | undefined;
+      return {
+        callsign: p.callsign,
+        title: ready ? '✓ PRONTO' : `${p.loadProgress ?? 0}%`,
+        classId: isLocal ? playerSelectedClass : (p.classId || 'ENGENHEIRO'),
+        isPlayer: isLocal,
+        isReady: ready,
+        avatarDataUrl: (isLocal ? profile.avatarDataUrl : undefined) || p.avatarDataUrl,
+        rankLevel: p.rankLevel || (isLocal ? profile.rankLevel : 1),
+        clanName: realClanName || undefined,
+        clanEmblemId: realClanName ? realClanEmblem || 'alpha_wolf' : undefined,
+        callingCardId: isLocal ? localCallingCardId : p.callingCardId,
+      };
+    });
+
+  const vanguardBotFillers: LoadingRow[] = privateWithBots
+    ? VANGUARD_ROSTER.filter((op) => !op.isPlayer)
+        .slice(0, Math.max(0, 5 - onlineVanguardHumans.length))
+        .map((op, idx) => ({
+          callsign: `[BOT] ${op.callsign}`,
+          title: 'IA TÁTICA · PRONTO',
+          classId: op.classId,
+          isPlayer: false,
+          isReady: true,
+          rankLevel: 20 + idx * 8,
+        }))
+    : [];
+
+  const blackthornBotFillers: LoadingRow[] = privateWithBots
+    ? BLACKTHORN_ROSTER.slice(0, Math.max(0, 5 - onlineBlackthornHumans.length)).map(
+        (op, idx) => ({
+          callsign: `[BOT] ${op.callsign}`,
+          title: 'IA TÁTICA · PRONTO',
+          classId: op.classId,
+          isPlayer: false,
+          isReady: true,
+          rankLevel: 22 + idx * 8,
         })
+      )
+    : [];
+
+  const vanguardDisplay: LoadingRow[] = isOnline
+    ? [...onlineVanguardHumans, ...vanguardBotFillers]
     : VANGUARD_ROSTER.map((op, idx) => ({
         callsign: op.isPlayer ? `${localCallsign}` : op.callsign,
         title: op.isPlayer ? 'PRONTO' : op.title,
@@ -613,27 +665,7 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
       }));
 
   const blackthornDisplay: LoadingRow[] = isOnline
-    ? onlinePlayers
-        .filter((p) => p.team === 'BLACKTHORN')
-        .map((p) => {
-          const isLocal = p.uid === profile.uid || p.callsign === localCallsign;
-          const ready = Boolean(p.isLoaded || (p.loadProgress ?? 0) >= 100);
-          const realClanName = (isLocal ? localClan?.clanName : undefined) || p.clanName;
-          const realClanEmblem = ((isLocal ? localClan?.clanEmblemId : undefined) ||
-            p.clanEmblemId) as ClanEmblemId | undefined;
-          return {
-            callsign: p.callsign,
-            title: ready ? '✓ PRONTO' : `${p.loadProgress ?? 0}%`,
-            classId: isLocal ? playerSelectedClass : (p.classId || 'ENGENHEIRO'),
-            isPlayer: isLocal,
-            isReady: ready,
-            avatarDataUrl: (isLocal ? profile.avatarDataUrl : undefined) || p.avatarDataUrl,
-            rankLevel: p.rankLevel || (isLocal ? profile.rankLevel : 1),
-            clanName: realClanName || undefined,
-            clanEmblemId: realClanName ? realClanEmblem || 'alpha_wolf' : undefined,
-            callingCardId: isLocal ? localCallingCardId : p.callingCardId,
-          };
-        })
+    ? [...onlineBlackthornHumans, ...blackthornBotFillers]
     : BLACKTHORN_ROSTER.map((op, idx) => ({
         ...op,
         isReady: isArenaReady,
