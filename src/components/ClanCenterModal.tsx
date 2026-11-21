@@ -12,7 +12,6 @@ import {
   joinExistingClanById,
   leaveOrDisbandClan,
   MAX_CLAN_MEMBERS,
-  recordClanMissionActivity,
   redeemClanStoreOffer,
   refreshClanLeaderboard,
   removeMemberFromClan,
@@ -377,10 +376,10 @@ export const ClanCenterModal: React.FC<ClanCenterModalProps> = ({
                       />
                       <div>
                         <div className="font-display font-black text-xs text-white uppercase">
-                          {clanNameInput.trim() || 'ALPHAGYM'}
+                          {clanNameInput.trim() || 'SEU CLÃ'}
                         </div>
                         <div className="text-[9px] font-mono text-amber-300">
-                          [{clanTagInput.trim() || 'ALPH'}] · NV. 1
+                          [{clanTagInput.trim() || 'TAG'}] · NV. 1
                         </div>
                       </div>
                     </div>
@@ -398,7 +397,7 @@ export const ClanCenterModal: React.FC<ClanCenterModalProps> = ({
                         maxLength={18}
                         value={clanNameInput}
                         onChange={(e) => setClanNameInput(e.target.value)}
-                        placeholder="Ex: AlphaGym"
+                        placeholder="Ex: Tropa de Elite"
                         className="w-full px-3 py-2 rounded-xl bg-black/70 border border-white/20 focus:border-red-400 focus:outline-none text-sm font-display font-bold text-white"
                       />
                     </div>
@@ -418,7 +417,7 @@ export const ClanCenterModal: React.FC<ClanCenterModalProps> = ({
                               .slice(0, 4)
                           )
                         }
-                        placeholder="ALPH"
+                        placeholder="TAG"
                         className="w-full px-3 py-2 rounded-xl bg-black/70 border border-white/20 focus:border-amber-400 focus:outline-none text-sm font-mono font-black text-amber-300 uppercase text-center tracking-widest"
                       />
                     </div>
@@ -500,7 +499,7 @@ export const ClanCenterModal: React.FC<ClanCenterModalProps> = ({
                       type="text"
                       value={joinClanIdInput}
                       onChange={(e) => setJoinClanIdInput(e.target.value)}
-                      placeholder="Ex: AlphaGym"
+                      placeholder="Digite o nome exato do clã"
                       className="flex-1 px-3 py-2 rounded-xl bg-black/70 border border-white/20 text-xs font-mono text-white focus:outline-none focus:border-amber-400"
                     />
                     <button
@@ -516,44 +515,55 @@ export const ClanCenterModal: React.FC<ClanCenterModalProps> = ({
 
                 <div className="flex-1 rounded-2xl border border-white/15 bg-[#0e121b]/95 p-4 flex flex-col min-h-0">
                   <h3 className="font-display font-black text-xs text-slate-300 uppercase tracking-wider mb-2">
-                    CLÃS EM DESTAQUE NO SERVIDOR
+                    CLÃS REGISTRADOS NO SERVIDOR ({clanState.leaderboard.length})
                   </h3>
                   <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-                    {clanState.leaderboard.map((c, idx) => {
-                      const count = Math.max(
-                        1,
-                        c.memberUids?.length || Object.keys(c.members || {}).length
-                      );
-                      return (
-                        <div
-                          key={c.clanId}
-                          className="p-2.5 rounded-xl bg-black/50 border border-white/10 flex items-center justify-between gap-2"
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <span className="font-mono font-black text-xs text-amber-400 w-4">
-                              #{idx + 1}
-                            </span>
-                            <ClanEmblemIcon
-                              emblemId={c.emblemId}
-                              className="w-8 h-8"
-                            />
-                            <div className="min-w-0">
-                              <div className="font-display font-black text-xs text-white truncate">
-                                {c.name}{' '}
-                                <span className="text-amber-300">[{c.tag}]</span>
-                              </div>
-                              <div className="text-[9px] font-mono text-slate-400">
-                                Nível {c.clanLevel} · {count}/{MAX_CLAN_MEMBERS} Membros · Líder:{' '}
-                                <span className="text-amber-200">{c.ownerCallsign} ♛</span>
+                    {clanState.leaderboard.length === 0 ? (
+                      <div className="h-full min-h-[120px] flex flex-col items-center justify-center text-center p-4 rounded-xl bg-black/40 border border-dashed border-white/15">
+                        <div className="font-display font-black text-xs text-amber-300 uppercase tracking-wider">
+                          NENHUM CLÃ FUNDADO AINDA
+                        </div>
+                        <p className="text-[10px] font-mono text-slate-400 mt-1 max-w-[240px]">
+                          Seja o primeiro comandante a criar um clã oficial no servidor KINETIC e liderar o ranking global!
+                        </p>
+                      </div>
+                    ) : (
+                      clanState.leaderboard.map((c, idx) => {
+                        const count = Math.max(
+                          1,
+                          c.memberUids?.length || Object.keys(c.members || {}).length
+                        );
+                        return (
+                          <div
+                            key={c.clanId}
+                            className="p-2.5 rounded-xl bg-black/50 border border-white/10 flex items-center justify-between gap-2"
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <span className="font-mono font-black text-xs text-amber-400 w-4">
+                                #{idx + 1}
+                              </span>
+                              <ClanEmblemIcon
+                                emblemId={c.emblemId}
+                                className="w-8 h-8"
+                              />
+                              <div className="min-w-0">
+                                <div className="font-display font-black text-xs text-white truncate">
+                                  {c.name}{' '}
+                                  <span className="text-amber-300">[{c.tag}]</span>
+                                </div>
+                                <div className="text-[9px] font-mono text-slate-400">
+                                  Nível {c.clanLevel} · {count}/{MAX_CLAN_MEMBERS} Membros · Líder:{' '}
+                                  <span className="text-amber-200">{c.ownerCallsign} ♛</span>
+                                </div>
                               </div>
                             </div>
+                            <span className="text-[10px] font-mono font-bold text-red-300 shrink-0">
+                              {c.clanXp.toLocaleString('pt-BR')} XP
+                            </span>
                           </div>
-                          <span className="text-[10px] font-mono font-bold text-red-300 shrink-0">
-                            {c.clanXp.toLocaleString('pt-BR')} XP
-                          </span>
-                        </div>
-                      );
-                    })}
+                        );
+                      })
+                    )}
                   </div>
                 </div>
               </div>
@@ -766,24 +776,12 @@ export const ClanCenterModal: React.FC<ClanCenterModalProps> = ({
                     🏆 DESAFIOS DIÁRIOS DO CLÃ ({myClan.name})
                   </h3>
                   <p className="text-[11px] font-mono text-slate-400">
-                    Complete objetivos em partidas para subir o Nível do Clã e ganhar Moedas do Clã + K-Money.
+                    Complete objetivos em partidas online reais para subir o Nível do Clã e ganhar Moedas do Clã + K-Money.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEngine.playMenuSelect();
-                    void recordClanMissionActivity({
-                      matches: 1,
-                      kills: 10,
-                      headshots: 4,
-                      wins: 1,
-                    });
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/60 text-amber-200 font-display font-bold text-[10px] uppercase tracking-wider cursor-pointer"
-                >
-                  ⚡ SINCRONIZAR COMBATE DO CLÃ (+PROGRESSO)
-                </button>
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-400/40 text-emerald-300 font-mono font-bold text-[10px] uppercase tracking-wider">
+                  SYNC ONLINE AUTOMÁTICO
+                </span>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1016,54 +1014,60 @@ export const ClanCenterModal: React.FC<ClanCenterModalProps> = ({
                 📊 CLASSIFICAÇÃO GLOBAL DE CLÃS
               </h3>
               <div className="space-y-2">
-                {clanState.leaderboard.map((c, idx) => {
-                  const isMine = c.clanId === myClan.clanId;
-                  const count = Math.max(
-                    1,
-                    c.memberUids?.length || Object.keys(c.members || {}).length
-                  );
-                  return (
-                    <div
-                      key={c.clanId}
-                      className={`p-3 rounded-xl border flex items-center justify-between gap-3 ${
-                        isMine
-                          ? 'bg-red-950/45 border-red-400 shadow-[0_0_20px_rgba(239,68,68,0.25)]'
-                          : 'bg-[#0e131d] border-white/10'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="w-7 text-center font-display font-black text-base text-amber-400">
-                          #{idx + 1}
-                        </span>
-                        <ClanEmblemIcon emblemId={c.emblemId} className="w-10 h-10" />
-                        <div className="min-w-0">
-                          <div className="font-display font-black text-sm text-white flex items-center gap-1.5">
-                            <span>{c.name}</span>
-                            <span className="text-amber-300">[{c.tag}]</span>
-                            {isMine && (
-                              <span className="px-1.5 py-0.2 rounded bg-red-500 text-white font-mono text-[9px] uppercase">
-                                SEU CLÃ
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-[10px] font-mono text-slate-400">
-                            Líder: <strong className="text-amber-200">{c.ownerCallsign} ♛</strong> ·{' '}
-                            {count}/{MAX_CLAN_MEMBERS} Membros
+                {clanState.leaderboard.length === 0 ? (
+                  <div className="p-6 rounded-2xl bg-black/45 border border-dashed border-white/15 text-center font-mono text-xs text-slate-400">
+                    Nenhum clã ranqueado no servidor ainda.
+                  </div>
+                ) : (
+                  clanState.leaderboard.map((c, idx) => {
+                    const isMine = c.clanId === myClan.clanId;
+                    const count = Math.max(
+                      1,
+                      c.memberUids?.length || Object.keys(c.members || {}).length
+                    );
+                    return (
+                      <div
+                        key={c.clanId}
+                        className={`p-3 rounded-xl border flex items-center justify-between gap-3 ${
+                          isMine
+                            ? 'bg-red-950/45 border-red-400 shadow-[0_0_20px_rgba(239,68,68,0.25)]'
+                            : 'bg-[#0e131d] border-white/10'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="w-7 text-center font-display font-black text-base text-amber-400">
+                            #{idx + 1}
+                          </span>
+                          <ClanEmblemIcon emblemId={c.emblemId} className="w-10 h-10" />
+                          <div className="min-w-0">
+                            <div className="font-display font-black text-sm text-white flex items-center gap-1.5">
+                              <span>{c.name}</span>
+                              <span className="text-amber-300">[{c.tag}]</span>
+                              {isMine && (
+                                <span className="px-1.5 py-0.2 rounded bg-red-500 text-white font-mono text-[9px] uppercase">
+                                  SEU CLÃ
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] font-mono text-slate-400">
+                              Líder: <strong className="text-amber-200">{c.ownerCallsign} ♛</strong> ·{' '}
+                              {count}/{MAX_CLAN_MEMBERS} Membros
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      <div className="text-right font-mono shrink-0">
-                        <div className="text-xs font-black text-amber-300">
-                          CLÃ NÍVEL {c.clanLevel}
-                        </div>
-                        <div className="text-[10px] text-slate-300">
-                          {c.clanXp.toLocaleString('pt-BR')} XP
+                        <div className="text-right font-mono shrink-0">
+                          <div className="text-xs font-black text-amber-300">
+                            CLÃ NÍVEL {c.clanLevel}
+                          </div>
+                          <div className="text-[10px] text-slate-300">
+                            {c.clanXp.toLocaleString('pt-BR')} XP
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
             </div>
           ) : (

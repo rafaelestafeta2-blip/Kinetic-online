@@ -475,7 +475,13 @@ export const MainMenu: React.FC<MainMenuProps> = ({
       />
 
       <ActiveSquadDockBar
-        visible={Boolean(activeRoom) && !showSquadRoom && !showRankedScreen}
+        visible={
+          Boolean(activeRoom) &&
+          activeTab === 'PLAY' &&
+          !showSquadRoom &&
+          !showRankedScreen &&
+          clanModalTab === null
+        }
         onOpenSquadRoom={() => setShowSquadRoom(true)}
         onLeftRoom={() => setShowSquadRoom(false)}
       />

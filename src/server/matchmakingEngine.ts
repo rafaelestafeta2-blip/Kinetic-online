@@ -28,6 +28,37 @@ const BASE_RANKED_MMR_TOLERANCE = 150;
 const EXPAND_MMR_PER_10S = 50;
 const MAX_RANKED_MMR_TOLERANCE = 600;
 const REQUIRED_MATCH_PLAYERS = 10;
+const MIN_HUMAN_MATCH_PLAYERS = 2;
+const CASUAL_PARTIAL_WAIT_MS = 10_000;
+const RANKED_PARTIAL_WAIT_MS = 15_000;
+
+export const OFFICIAL_5V5_BOMB_MAPS: readonly string[] = [
+  'DUST2_BOMB_5V5',
+  'ASSAULT_BOMB_5V5',
+  'INDUSTRIA_BOMB_5V5',
+  'HANGAR_BOMB_5V5',
+  'EASTERN_CITY_BOMB_5V5',
+  'MIRAGE_ANUBIS_BOMB_5V5',
+];
+
+/**
+ * Unifica todos os mapas oficiais 5v5 Defusal/Bomb no mesmo pool de matchmaking ('BOMB_5V5')
+ * para que esquadrões em Ranqueada ou Clássica sempre se encontrem na mesma fila,
+ * enquanto o servidor sorteia UM único mapa oficial compartilhado na hora de fechar a partida.
+ */
+export function getMatchmakingPoolKey(arenaMode: string): string {
+  const normalized = String(arenaMode || '').trim().toUpperCase();
+  if (normalized === 'STATION_TDM_5V5') return 'STATION_TDM_5V5';
+  if (normalized === 'STATION_CAPTURE_5V5') return 'STATION_CAPTURE_5V5';
+  return 'BOMB_5V5';
+}
+
+export function drawOfficialArenaForPool(poolKey: string): string {
+  if (poolKey === 'STATION_TDM_5V5') return 'STATION_TDM_5V5';
+  if (poolKey === 'STATION_CAPTURE_5V5') return 'STATION_CAPTURE_5V5';
+  const idx = Math.floor(Math.random() * OFFICIAL_5V5_BOMB_MAPS.length);
+  return OFFICIAL_5V5_BOMB_MAPS[idx] || 'DUST2_BOMB_5V5';
+}
 
 let cachedFirebaseConfig: { projectId: string; firestoreDatabaseId: string } | null = null;
 
@@ -138,62 +169,102 @@ export function isPlayerMmrCompatibleWithRoom(
   return Math.abs(playerMmr - roomAverageMmr) <= tolerance;
 }
 
+function findBestRankedWindow(
+  sortedByMmr: QueuedPlayerEntry[],
+  windowSize: number,
+  nowMs: number
+): QueuedPlayerEntry[] | null {
+  if (sortedByMmr.length < windowSize) return null;
+  let bestSpread = Infinity;
+  let bestWindow: QueuedPlayerEntry[] | null = null;
+
+  for (let i = 0; i <= sortedByMmr.length - windowSize; i++) {
+    const windowSlice = sortedByMmr.slice(i, i + windowSize);
+    const minMmr = windowSlice[0].mmr;
+    const maxMmr = windowSlice[windowSlice.length - 1].mmr;
+    const spread = maxMmr - minMmr;
+
+    const oldestEnqueue = Math.min(...windowSlice.map((p) => p.enqueuedAtMs));
+    const maxAllowedSpread = getAllowedMmrTolerance(oldestEnqueue, nowMs) * 2;
+
+    if (spread <= maxAllowedSpread && spread < bestSpread) {
+      bestSpread = spread;
+      bestWindow = windowSlice;
+    }
+  }
+  return bestWindow;
+}
+
 /**
- * Tenta formar uma partida de 10 jogadores:
- * - Na fila CASUAL: junta os primeiros 10 jogadores da mesma arena.
- * - Na fila RANKED: ordena por MMR e procura uma janela de 10 jogadores cujo spread de MMR
- *   esteja dentro da tolerância permitida, distribuindo os times em Snake Draft (1-2-2-2-2-1)
- *   para equilibrar o MMR médio de VANGUARD vs BLACKTHORN.
+ * Tenta formar uma partida online equilibrada no pool unificado (`BOMB_5V5`, `STATION_TDM_5V5` ou `STATION_CAPTURE_5V5`):
+ * - Prioriza 10 jogadores humanos imediatamente assim que houver >= 10 na fila.
+ * - Caso haja entre 2 e 9 jogadores reais esperando no mesmo pool há >= 10s (Casual) ou >= 15s (Ranked),
+ *   forma partida real balanceada via Snake Draft (bots completam apenas os slots restantes no cliente,
+ *   nunca liberando 1 jogador sozinho na Ranqueada).
+ * - Sorteia UM único mapa oficial no servidor para todos os jogadores da partida.
  */
 export function tryFindBalancedMatch(
   queueEntries: QueuedPlayerEntry[],
   queueType: ServerQueueType,
-  arenaMode: string,
+  poolKeyOrArena: string,
   roomId: string,
   nowMs = Date.now()
 ): BalancedMatchAllocation | null {
+  const poolKey = getMatchmakingPoolKey(poolKeyOrArena);
   const candidates = queueEntries.filter(
-    (entry) => entry.queueType === queueType && entry.arenaMode === arenaMode
+    (entry) =>
+      entry.queueType === queueType && getMatchmakingPoolKey(entry.arenaMode) === poolKey
   );
 
-  if (candidates.length < REQUIRED_MATCH_PLAYERS) {
+  if (candidates.length < MIN_HUMAN_MATCH_PLAYERS) {
     return null;
   }
 
-  let selectedTen: QueuedPlayerEntry[] | null = null;
+  let selectedPlayers: QueuedPlayerEntry[] | null = null;
 
-  if (queueType === 'CASUAL') {
-    const byWaitTime = [...candidates].sort((a, b) => a.enqueuedAtMs - b.enqueuedAtMs);
-    selectedTen = byWaitTime.slice(0, REQUIRED_MATCH_PLAYERS);
+  if (candidates.length >= REQUIRED_MATCH_PLAYERS) {
+    if (queueType === 'CASUAL') {
+      const byWaitTime = [...candidates].sort((a, b) => a.enqueuedAtMs - b.enqueuedAtMs);
+      selectedPlayers = byWaitTime.slice(0, REQUIRED_MATCH_PLAYERS);
+    } else {
+      const byMmr = [...candidates].sort((a, b) => a.mmr - b.mmr);
+      selectedPlayers = findBestRankedWindow(byMmr, REQUIRED_MATCH_PLAYERS, nowMs);
+    }
   } else {
-    const byMmr = [...candidates].sort((a, b) => a.mmr - b.mmr);
-    let bestSpread = Infinity;
-    let bestWindow: QueuedPlayerEntry[] | null = null;
+    const oldestWaitMs = Math.max(
+      0,
+      nowMs - Math.min(...candidates.map((p) => p.enqueuedAtMs))
+    );
+    const minWaitRequired =
+      queueType === 'RANKED' ? RANKED_PARTIAL_WAIT_MS : CASUAL_PARTIAL_WAIT_MS;
 
-    for (let i = 0; i <= byMmr.length - REQUIRED_MATCH_PLAYERS; i++) {
-      const windowSlice = byMmr.slice(i, i + REQUIRED_MATCH_PLAYERS);
-      const minMmr = windowSlice[0].mmr;
-      const maxMmr = windowSlice[windowSlice.length - 1].mmr;
-      const spread = maxMmr - minMmr;
-
-      const oldestEnqueue = Math.min(...windowSlice.map((p) => p.enqueuedAtMs));
-      const maxAllowedSpread = getAllowedMmrTolerance(oldestEnqueue, nowMs) * 2;
-
-      if (spread <= maxAllowedSpread && spread < bestSpread) {
-        bestSpread = spread;
-        bestWindow = windowSlice;
-      }
+    if (oldestWaitMs < minWaitRequired) {
+      return null;
     }
 
-    selectedTen = bestWindow;
+    if (queueType === 'CASUAL') {
+      selectedPlayers = [...candidates]
+        .sort((a, b) => a.enqueuedAtMs - b.enqueuedAtMs)
+        .slice(0, REQUIRED_MATCH_PLAYERS);
+    } else {
+      const byMmr = [...candidates].sort((a, b) => a.mmr - b.mmr);
+      // Encontra a maior janela MMR-compatível (>= 2 humanos reais)
+      for (let size = Math.min(byMmr.length, REQUIRED_MATCH_PLAYERS); size >= MIN_HUMAN_MATCH_PLAYERS; size--) {
+        const win = findBestRankedWindow(byMmr, size, nowMs);
+        if (win) {
+          selectedPlayers = win;
+          break;
+        }
+      }
+    }
   }
 
-  if (!selectedTen || selectedTen.length < REQUIRED_MATCH_PLAYERS) {
+  if (!selectedPlayers || selectedPlayers.length < MIN_HUMAN_MATCH_PLAYERS) {
     return null;
   }
 
-  // Ordenar por MMR decrescente e aplicar Snake Draft para equilibrar as duas equipes 5v5
-  const sortedBySkill = [...selectedTen].sort((a, b) => b.mmr - a.mmr);
+  // Ordenar por MMR decrescente e aplicar Snake Draft para equilibrar as duas equipes
+  const sortedBySkill = [...selectedPlayers].sort((a, b) => b.mmr - a.mmr);
   const vanguardUids: string[] = [];
   const blackthornUids: string[] = [];
 
@@ -220,12 +291,13 @@ export function tryFindBalancedMatch(
   });
 
   const totalMmr = sortedBySkill.reduce((sum, p) => sum + p.mmr, 0);
-  const averageMmr = Math.round(totalMmr / REQUIRED_MATCH_PLAYERS);
+  const averageMmr = Math.round(totalMmr / sortedBySkill.length);
+  const drawnArenaMode = drawOfficialArenaForPool(poolKey);
 
   return {
     roomId,
     queueType,
-    arenaMode,
+    arenaMode: drawnArenaMode,
     averageMmr,
     vanguardUids,
     blackthornUids,

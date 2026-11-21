@@ -360,6 +360,20 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
         queueType, arenaMode: liveRoom.arenaMode, isPrivate: liveRoom.isPrivate,
         mmr: livePlayer.mmr || 2450, player: livePlayer,
       }));
+      if (
+        liveRoom.isSearchingMatch &&
+        !liveRoom.isPrivate &&
+        liveRoom.status === 'WAITING' &&
+        liveRoom.hostUid === livePlayer.uid
+      ) {
+        ws.send(JSON.stringify({
+          type: 'SQUAD_QUEUE_START',
+          roomId: liveRoom.roomId,
+          arenaMode: liveRoom.arenaMode,
+          queueType,
+          ts: Date.now(),
+        }));
+      }
       startWsPingTimer(ws);
       if (liveRoom.status !== 'PLAYING') emitRoomState();
     };
@@ -427,6 +441,9 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
         } else if (msg.type === 'SQUAD_CONFIG_UPDATE') {
           if (msg.arenaMode) activeRoom.arenaMode = msg.arenaMode;
           if (msg.queueType) activeRoom.queueType = msg.queueType;
+          if (typeof (msg as { isPrivate?: boolean }).isPrivate === 'boolean') {
+            activeRoom.isPrivate = Boolean((msg as { isPrivate?: boolean }).isPrivate);
+          }
           activeRoom.isSearchingMatch = Boolean(msg.isSearchingMatch);
           if (!activeRoom.isSearchingMatch) activeRoom.searchStartedAtMs = null;
           activeRoom.updatedAtMs = Date.now();
@@ -682,6 +699,10 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
         } else if (msg.type === 'SERVER_MATCH_READY' && msg.serverConfirmed) {
           if (msg.roomId) activeRoom.roomId = msg.roomId;
           if (msg.arenaMode) activeRoom.arenaMode = msg.arenaMode;
+          if (msg.queueType) activeRoom.queueType = msg.queueType;
+          activeRoom.isPrivate = false;
+          activeRoom.isSearchingMatch = false;
+          activeRoom.searchStartedAtMs = null;
           if (msg.players) {
             activeRoom.players = mergePreservingFresherPlayers(
               activeRoom.players,
@@ -712,6 +733,7 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
             });
           }
           activeRoom.status = 'PLAYING';
+          activeRoom.updatedAtMs = Date.now();
           resetCombatNetcodeThrottle();
           emitRoomState();
           void startMatchInActiveRoom(true);
@@ -1120,6 +1142,7 @@ export function updateSquadRoomConfig(
     roomId: activeRoom.roomId,
     arenaMode,
     queueType: activeRoom.queueType || 'CASUAL',
+    isPrivate: activeRoom.isPrivate,
     ts: Date.now(),
   });
 }
@@ -1151,6 +1174,14 @@ export function startSquadMatchSearch(): void {
   activeRoom.searchStartedAtMs = nowMs;
   activeRoom.updatedAtMs = nowMs;
   emitRoomState();
+
+  if (!wsClient || wsClient.readyState === WebSocket.CLOSED) {
+    const localPlayer = activeRoom.players[getEffectiveLocalUid()];
+    if (localPlayer) {
+      connectWebSocketForRoom(activeRoom, localPlayer);
+    }
+  }
+
   sendRawWsMessage({
     type: 'SQUAD_QUEUE_START',
     roomId: activeRoom.roomId,

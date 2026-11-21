@@ -10,6 +10,7 @@ import {
   query,
   setDoc,
   Unsubscribe,
+  where,
 } from 'firebase/firestore';
 import {
   ClanEmblemId,
@@ -256,7 +257,7 @@ function loadLocalTokensState(): {
 } {
   try {
     const raw = localStorage.getItem(LOCAL_CLAN_TOKENS_KEY);
-    if (!raw) return { clanTokens: 120, purchasedOfferIds: [] };
+    if (!raw) return { clanTokens: 0, purchasedOfferIds: [] };
     const parsed = JSON.parse(raw);
     return {
       clanTokens: Math.max(0, Number(parsed.clanTokens) || 0),
@@ -265,7 +266,7 @@ function loadLocalTokensState(): {
         : [],
     };
   } catch {
-    return { clanTokens: 120, purchasedOfferIds: [] };
+    return { clanTokens: 0, purchasedOfferIds: [] };
   }
 }
 
@@ -400,20 +401,90 @@ function attachClanListener(clanId: string): void {
   );
 }
 
+async function hydrateRealClanForUser(uid: string): Promise<void> {
+  if (!uid) return;
+  try {
+    // 1. If we have a locally cached clan, verify it truly exists in Firestore and includes this user
+    if (currentState.myClan?.clanId) {
+      const ref = doc(db, 'clans', currentState.myClan.clanId);
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        const data = snap.data() as ClanDocument;
+        if (data.members && data.members[uid]) {
+          currentState.myClan = data;
+          saveCachedClan(data);
+          attachClanListener(data.clanId);
+          emitClanState();
+          return;
+        }
+      }
+      // Cached clan does not exist or user is not a member -> clear immediately
+      currentState.myClan = null;
+      saveCachedClan(null);
+      emitClanState();
+    }
+
+    // 2. Otherwise look up whether this user belongs to any real clan in Firestore
+    const q = query(
+      collection(db, 'clans'),
+      where('memberUids', 'array-contains', uid),
+      limit(1)
+    );
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      const data = snap.docs[0].data() as ClanDocument;
+      if (data.members && data.members[uid]) {
+        currentState.myClan = data;
+        saveCachedClan(data);
+        attachClanListener(data.clanId);
+        emitClanState();
+        return;
+      }
+    }
+
+    currentState.myClan = null;
+    saveCachedClan(null);
+    emitClanState();
+  } catch (err) {
+    if (!isFirestoreOfflineError(err)) {
+      handleFirestoreError(err, OperationType.LIST, 'clans');
+    }
+  }
+}
+
 onAuthStateChanged(auth, (user) => {
   if (!user) {
     if (clanDocUnsub) {
       clanDocUnsub();
       clanDocUnsub = null;
     }
+    currentState.myClan = null;
+    currentState.leaderboard = [];
+    saveCachedClan(null);
     emitClanState();
     return;
   }
-  if (currentState.myClan?.clanId) {
-    attachClanListener(currentState.myClan.clanId);
-  }
+  void hydrateRealClanForUser(user.uid);
   void refreshClanLeaderboard();
 });
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('kinetic:online-combat-delta', (evt: Event) => {
+    const detail = (evt as CustomEvent<{
+      kills?: number;
+      headshots?: number;
+      matchesPlayed?: number;
+      matchesWon?: number;
+    }>).detail;
+    if (!detail || !currentState.myClan) return;
+    void recordClanMissionActivity({
+      matches: detail.matchesPlayed || 0,
+      kills: detail.kills || 0,
+      headshots: detail.headshots || 0,
+      wins: detail.matchesWon || 0,
+    });
+  });
+}
 
 subscribePlayerProfile((sync) => {
   const myClan = currentState.myClan;
@@ -1012,99 +1083,22 @@ export function redeemClanStoreOffer(
 }
 
 export async function refreshClanLeaderboard(): Promise<void> {
-  const fallbackClans: ClanDocument[] = [
-    {
-      clanId: 'alphagym',
-      name: 'AlphaGym',
-      tag: 'ALPH',
-      emblemId: 'alpha_wolf',
-      motto: 'Força, Disciplina e Domínio Ranqueado 5v5.',
-      ownerUid: 'leader_alpha',
-      ownerCallsign: 'RAFA',
-      clanXp: 19840,
-      clanLevel: 8,
-      memberUids: ['u1', 'u2', 'u3', 'u4'],
-      members: {},
-      dailyState: { dayKey: getTodayKey(), progress: {}, claimedBy: {} },
-      updatedAtMs: Date.now(),
-      createdAt: new Date().toISOString(),
-    },
-    {
-      clanId: 'blackthornelite',
-      name: 'BlackthornElite',
-      tag: 'BLKT',
-      emblemId: 'crimson_skull',
-      motto: 'Esquadrão de Operações Especiais Noturnas.',
-      ownerUid: 'leader_blkt',
-      ownerCallsign: 'VORTEX',
-      clanXp: 16200,
-      clanLevel: 7,
-      memberUids: ['u1', 'u2', 'u3', 'u4', 'u5', 'u6', 'u7'],
-      members: {},
-      dailyState: { dayKey: getTodayKey(), progress: {}, claimedBy: {} },
-      updatedAtMs: Date.now(),
-      createdAt: new Date().toISOString(),
-    },
-    {
-      clanId: 'vanguardgold',
-      name: 'VanguardGold',
-      tag: 'VGOLD',
-      emblemId: 'golden_eagle',
-      motto: 'Soberania competitiva nos mapas clássicos.',
-      ownerUid: 'leader_vg',
-      ownerCallsign: 'KRONOS',
-      clanXp: 12900,
-      clanLevel: 6,
-      memberUids: ['u1', 'u2', 'u3', 'u4', 'u5'],
-      members: {},
-      dailyState: { dayKey: getTodayKey(), progress: {}, claimedBy: {} },
-      updatedAtMs: Date.now(),
-      createdAt: new Date().toISOString(),
-    },
-    {
-      clanId: 'spartan7',
-      name: 'Spartan7',
-      tag: 'SP7',
-      emblemId: 'spartan_helm',
-      motto: '7 Espartanos na linha de frente.',
-      ownerUid: 'leader_sp7',
-      ownerCallsign: 'LEONIDAS',
-      clanXp: 9400,
-      clanLevel: 4,
-      memberUids: ['u1', 'u2', 'u3', 'u4', 'u5', 'u6'],
-      members: {},
-      dailyState: { dayKey: getTodayKey(), progress: {}, claimedBy: {} },
-      updatedAtMs: Date.now(),
-      createdAt: new Date().toISOString(),
-    },
-  ];
-
   if (!auth.currentUser) {
-    const merged = [...fallbackClans];
-    if (
-      currentState.myClan &&
-      !merged.some((c) => c.clanId === currentState.myClan?.clanId)
-    ) {
-      merged.unshift(currentState.myClan);
-    }
-    merged.sort((a, b) => (b.clanXp || 0) - (a.clanXp || 0));
-    currentState.leaderboard = merged;
+    currentState.leaderboard = currentState.myClan ? [currentState.myClan] : [];
     emitClanState();
     return;
   }
 
   try {
-    const q = query(collection(db, 'clans'), limit(20));
+    const q = query(collection(db, 'clans'), limit(30));
     const snap = await getDocs(q);
     const list: ClanDocument[] = [];
     snap.forEach((d) => {
-      list.push(d.data() as ClanDocument);
-    });
-    for (const fb of fallbackClans) {
-      if (!list.some((c) => c.clanId === fb.clanId)) {
-        list.push(fb);
+      const data = d.data() as ClanDocument;
+      if (data && data.clanId && data.name) {
+        list.push(data);
       }
-    }
+    });
     if (
       currentState.myClan &&
       !list.some((c) => c.clanId === currentState.myClan?.clanId)
@@ -1114,8 +1108,11 @@ export async function refreshClanLeaderboard(): Promise<void> {
     list.sort((a, b) => (b.clanXp || 0) - (a.clanXp || 0));
     currentState.leaderboard = list;
     emitClanState();
-  } catch {
-    currentState.leaderboard = fallbackClans;
+  } catch (err) {
+    if (!isFirestoreOfflineError(err)) {
+      handleFirestoreError(err, OperationType.LIST, 'clans');
+    }
+    currentState.leaderboard = currentState.myClan ? [currentState.myClan] : [];
     emitClanState();
   }
 }

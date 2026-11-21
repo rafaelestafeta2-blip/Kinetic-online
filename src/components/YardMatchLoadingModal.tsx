@@ -23,7 +23,6 @@ import { isMapSpawnHarness } from '../three/mapModeUtils';
 import {
   ClanEmblemIcon,
   ClanEmblemId,
-  CLAN_EMBLEM_CATALOG,
 } from './ClanEmblemIcons';
 import {
   BlackthornTeamEmblem,
@@ -524,16 +523,15 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
     [profile.unlockedAchievements]
   );
 
-  const defaultVanguardClanName = localClan?.clanName || 'AlphaGym';
-  const defaultVanguardClanEmblem: ClanEmblemId =
-    localClan?.clanEmblemId || 'alpha_wolf';
-
   const vanguardDisplay: LoadingRow[] = isOnline
     ? onlinePlayers
         .filter((p) => p.team === 'VANGUARD')
         .map((p) => {
           const isLocal = p.uid === profile.uid || p.callsign === localCallsign;
           const ready = Boolean(p.isLoaded || (p.loadProgress ?? 0) >= 100);
+          const realClanName = (isLocal ? localClan?.clanName : undefined) || p.clanName;
+          const realClanEmblem = ((isLocal ? localClan?.clanEmblemId : undefined) ||
+            p.clanEmblemId) as ClanEmblemId | undefined;
           return {
             callsign: p.callsign,
             title: ready ? '✓ 100% PRONTO' : `CARREGANDO ${p.loadProgress ?? 0}%`,
@@ -542,13 +540,8 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
             isReady: ready,
             avatarDataUrl: (isLocal ? profile.avatarDataUrl : undefined) || p.avatarDataUrl,
             rankLevel: p.rankLevel || (isLocal ? profile.rankLevel : 1),
-            clanName:
-              (isLocal ? localClan?.clanName : undefined) ||
-              p.clanName ||
-              defaultVanguardClanName,
-            clanEmblemId: ((isLocal ? localClan?.clanEmblemId : undefined) ||
-              p.clanEmblemId ||
-              defaultVanguardClanEmblem) as ClanEmblemId,
+            clanName: realClanName || undefined,
+            clanEmblemId: realClanName ? realClanEmblem || 'alpha_wolf' : undefined,
             bannerTitle: isLocal ? showcase?.title : undefined,
             bannerIcon: isLocal ? showcase?.icon : undefined,
             bannerTier: isLocal ? showcase?.tier : undefined,
@@ -564,8 +557,9 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
         isReady: isArenaReady,
         avatarDataUrl: op.isPlayer ? profile.avatarDataUrl : undefined,
         rankLevel: op.isPlayer ? profile.rankLevel : 55 + idx * 12,
-        clanName: defaultVanguardClanName,
-        clanEmblemId: defaultVanguardClanEmblem,
+        clanName: op.isPlayer ? localClan?.clanName : undefined,
+        clanEmblemId:
+          op.isPlayer && localClan?.clanName ? localClan.clanEmblemId : undefined,
         bannerTitle: op.isPlayer ? showcase?.title : undefined,
         bannerIcon: op.isPlayer ? showcase?.icon : undefined,
         bannerTier: op.isPlayer ? showcase?.tier : undefined,
@@ -577,6 +571,9 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
         .map((p) => {
           const isLocal = p.uid === profile.uid || p.callsign === localCallsign;
           const ready = Boolean(p.isLoaded || (p.loadProgress ?? 0) >= 100);
+          const realClanName = (isLocal ? localClan?.clanName : undefined) || p.clanName;
+          const realClanEmblem = ((isLocal ? localClan?.clanEmblemId : undefined) ||
+            p.clanEmblemId) as ClanEmblemId | undefined;
           return {
             callsign: p.callsign,
             title: ready ? '✓ 100% PRONTO' : `CARREGANDO ${p.loadProgress ?? 0}%`,
@@ -585,24 +582,14 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
             isReady: ready,
             avatarDataUrl: (isLocal ? profile.avatarDataUrl : undefined) || p.avatarDataUrl,
             rankLevel: p.rankLevel || (isLocal ? profile.rankLevel : 1),
-            clanName:
-              (isLocal ? localClan?.clanName : undefined) ||
-              p.clanName ||
-              'BlackthornLegion',
-            clanEmblemId: ((isLocal ? localClan?.clanEmblemId : undefined) ||
-              p.clanEmblemId ||
-              'crimson_skull') as ClanEmblemId,
+            clanName: realClanName || undefined,
+            clanEmblemId: realClanName ? realClanEmblem || 'alpha_wolf' : undefined,
           };
         })
     : BLACKTHORN_ROSTER.map((op, idx) => ({
         ...op,
         isReady: isArenaReady,
         rankLevel: 48 + idx * 11,
-        clanName: idx < 3 ? 'BlackthornLegion' : 'CrimsonVipers',
-        clanEmblemId: (
-          CLAN_EMBLEM_CATALOG[(idx + 1) % CLAN_EMBLEM_CATALOG.length]?.id ||
-          'crimson_skull'
-        ) as ClanEmblemId,
       }));
 
   return (

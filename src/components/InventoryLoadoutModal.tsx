@@ -298,9 +298,13 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
         setInspectedWeaponId(classLoadout.primaryWeapon);
       }
     } else if (selectedSlot === 'secondaryWeapon') {
-      setInspectedWeaponId(classLoadout.secondaryWeapon);
+      if (inspectedWeaponId !== 'P50_PISTOL' && inspectedWeaponId !== 'M1911_PISTOL') {
+        setInspectedWeaponId(classLoadout.secondaryWeapon);
+      }
     } else if (selectedSlot === 'meleeWeapon') {
-      setInspectedWeaponId(classLoadout.meleeWeapon);
+      if (inspectedWeaponId !== 'KNIFE_TACTICAL') {
+        setInspectedWeaponId(classLoadout.meleeWeapon);
+      }
     }
   }, [activeClass, selectedSlot, classLoadout.primaryWeapon, classLoadout.secondaryWeapon, classLoadout.meleeWeapon, classCombat.allowedPrimaries, inspectedWeaponId]);
 
@@ -487,8 +491,37 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
   const isInspectedGearEquipped =
     inspectedGearItem && currentEquippedForSlot === inspectedGearItem.id;
 
+  const handleConfirmAndClose = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    soundEngine.playMenuSelect();
+    let finalPrimary = classLoadout.primaryWeapon;
+    if (
+      selectedSlot === 'primaryWeapon' &&
+      isWeaponOwnedInInventory(inspectedWeaponSpec.id, playerXp) &&
+      classCombat.allowedPrimaries.includes(inspectedWeaponSpec.id)
+    ) {
+      equipClassSlotItem(activeClass, 'primaryWeapon', inspectedWeaponSpec.id);
+      finalPrimary = inspectedWeaponSpec.id;
+    } else if (
+      selectedSlot === 'secondaryWeapon' &&
+      isWeaponOwnedInInventory(inspectedWeaponSpec.id, playerXp)
+    ) {
+      equipClassSlotItem(activeClass, 'secondaryWeapon', inspectedWeaponSpec.id);
+    }
+    try {
+      onSyncEquippedWeapon(finalPrimary);
+    } catch {
+      // Never block closing the inventory modal
+    }
+    onClose();
+  };
+
   return (
-    <div className="w-full h-full max-w-[1440px] min-h-0 flex bg-[#0a0d12]/96 border border-white/15 rounded-[2px] overflow-hidden shadow-2xl pointer-events-auto text-slate-100">
+    <div
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      className="relative z-30 w-full h-full max-w-[1440px] min-h-0 flex bg-[#0a0d12]/96 border border-white/15 rounded-[2px] overflow-hidden shadow-2xl pointer-events-auto text-slate-100"
+    >
       {/* ================================================================= */}
       {/* ESQUERDA: PALCO 3D DO OPERADOR COM SETAS DE ROTAÇÃO (COMPACTO)    */}
       {/* ================================================================= */}
@@ -623,12 +656,8 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
           {/* Botão Confirmar separado e compacto */}
           <button
             type="button"
-            onClick={() => {
-              soundEngine.playMenuSelect();
-              onSyncEquippedWeapon(classLoadout.primaryWeapon);
-              onClose();
-            }}
-            className="h-7 sm:h-8 px-2.5 sm:px-3.5 rounded bg-gradient-to-r from-[#ea580c] to-[#f97316] hover:from-[#f97316] hover:to-[#fb923c] border border-amber-300/60 text-[10px] sm:text-[11px] font-display font-black tracking-wider text-slate-950 uppercase whitespace-nowrap shrink-0 cursor-pointer transition-all shadow-[0_0_12px_rgba(249,115,22,0.3)]"
+            onClick={(e) => handleConfirmAndClose(e)}
+            className="relative z-20 min-h-[30px] h-8 sm:h-9 px-3 sm:px-4 rounded bg-gradient-to-r from-[#ea580c] to-[#f97316] hover:from-[#f97316] hover:to-[#fb923c] active:scale-95 border border-amber-300/60 text-[10px] sm:text-[11px] font-display font-black tracking-wider text-slate-950 uppercase whitespace-nowrap shrink-0 cursor-pointer transition-all shadow-[0_0_12px_rgba(249,115,22,0.3)]"
           >
             CONFIRMAR ✕
           </button>
@@ -1447,13 +1476,20 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
               {isWeaponSlot && (
                 <div className="flex-1 min-w-0">
                   {isInspectedWeaponEquipped ? (
-                    <div className="w-full py-1.5 px-2 rounded-[2px] border border-[#f97316]/60 bg-[#f97316]/15 text-center font-mono font-bold text-[9px] sm:text-[10px] text-[#fb923c] uppercase truncate">
-                      ✓ EQUIPADA ({CLASS_TAB_SHORT[activeClass]})
-                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => handleConfirmAndClose(e)}
+                      className="w-full py-1.5 px-2 rounded-[2px] border border-[#f97316]/75 bg-[#f97316]/20 hover:bg-[#f97316]/35 text-center font-mono font-bold text-[9px] sm:text-[10px] text-[#fb923c] uppercase truncate cursor-pointer transition-colors"
+                    >
+                      ✓ EQUIPADA · CONFIRMAR ({CLASS_TAB_SHORT[activeClass]})
+                    </button>
                   ) : inspectedWeaponOwned ? (
                     <button
                       type="button"
-                      onClick={() => handleEquipOrBuyWeapon(inspectedWeaponSpec.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEquipOrBuyWeapon(inspectedWeaponSpec.id);
+                      }}
                       className="w-full py-1.5 px-2 rounded-[2px] bg-[#ea580c] hover:bg-[#f97316] text-white font-display font-black text-[10px] uppercase tracking-wider cursor-pointer transition-colors truncate"
                     >
                       EQUIPAR {inspectedWeaponSpec.name}
@@ -1462,7 +1498,10 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
                     <button
                       type="button"
                       disabled={playerCash < inspectedWeaponSpec.cashPrice}
-                      onClick={() => handleEquipOrBuyWeapon(inspectedWeaponSpec.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEquipOrBuyWeapon(inspectedWeaponSpec.id);
+                      }}
                       className={`w-full py-1.5 px-2 rounded-[2px] font-display font-black text-[9px] sm:text-[10px] uppercase tracking-wider transition-colors truncate ${
                         playerCash >= inspectedWeaponSpec.cashPrice
                           ? 'bg-[#ea580c] hover:bg-[#f97316] text-white cursor-pointer'
@@ -1480,13 +1519,20 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
               {!isWeaponSlot && selectedSlot !== 'specialGadget' && inspectedGearItem && (
                 <div className="flex-1 min-w-0">
                   {isInspectedGearEquipped ? (
-                    <div className="w-full py-1.5 px-2 rounded-[2px] border border-[#f97316]/60 bg-[#f97316]/15 text-center font-mono font-bold text-[9px] sm:text-[10px] text-[#fb923c] uppercase truncate">
-                      ✓ EQUIPADO ({CLASS_TAB_SHORT[activeClass]})
-                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => handleConfirmAndClose(e)}
+                      className="w-full py-1.5 px-2 rounded-[2px] border border-[#f97316]/75 bg-[#f97316]/20 hover:bg-[#f97316]/35 text-center font-mono font-bold text-[9px] sm:text-[10px] text-[#fb923c] uppercase truncate cursor-pointer transition-colors"
+                    >
+                      ✓ EQUIPADO · CONFIRMAR ({CLASS_TAB_SHORT[activeClass]})
+                    </button>
                   ) : isInspectedGearOwned ? (
                     <button
                       type="button"
-                      onClick={() => handleEquipOrBuyGear(inspectedGearItem)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEquipOrBuyGear(inspectedGearItem);
+                      }}
                       className="w-full py-1.5 px-2 rounded-[2px] bg-[#ea580c] hover:bg-[#f97316] text-white font-display font-black text-[10px] uppercase tracking-wider cursor-pointer transition-colors truncate"
                     >
                       EQUIPAR ITEM
@@ -1495,7 +1541,10 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
                     <button
                       type="button"
                       disabled={playerCash < inspectedGearItem.cashPrice}
-                      onClick={() => handleEquipOrBuyGear(inspectedGearItem)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEquipOrBuyGear(inspectedGearItem);
+                      }}
                       className={`w-full py-1.5 px-2 rounded-[2px] font-display font-black text-[9px] sm:text-[10px] uppercase tracking-wider transition-colors truncate ${
                         playerCash >= inspectedGearItem.cashPrice
                           ? 'bg-[#ea580c] hover:bg-[#f97316] text-white cursor-pointer'
@@ -1512,11 +1561,7 @@ export const InventoryLoadoutModal: React.FC<InventoryLoadoutModalProps> = ({
 
               <button
                 type="button"
-                onClick={() => {
-                  soundEngine.playMenuSelect();
-                  onSyncEquippedWeapon(classLoadout.primaryWeapon);
-                  onClose();
-                }}
+                onClick={(e) => handleConfirmAndClose(e)}
                 className="py-1.5 px-2.5 rounded-[2px] bg-[#161b24] hover:bg-[#1e2532] border border-white/15 text-[9px] sm:text-[10px] font-mono font-bold text-slate-200 uppercase cursor-pointer transition-colors shrink-0"
               >
                 PRONTO ✓

@@ -1022,6 +1022,19 @@ export function recordCombatTelemetryDelta(delta: {
     matchesWon: delta.matchesWon,
   });
 
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('kinetic:online-combat-delta', {
+        detail: {
+          kills: delta.kills || 0,
+          headshots: delta.headshots || 0,
+          matchesPlayed: delta.matchesPlayed || 0,
+          matchesWon: delta.matchesWon || 0,
+        },
+      })
+    );
+  }
+
   const p = state.profile;
   const totalKills = p.totalKills + (delta.kills || 0);
   const totalDeaths = p.totalDeaths + (delta.deaths || 0);

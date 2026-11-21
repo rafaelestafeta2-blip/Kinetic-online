@@ -7,6 +7,7 @@ import { WebSocketServer } from 'ws';
 import {
   fetchPlayerMmrFromFirebase,
   getAllowedMmrTolerance,
+  getMatchmakingPoolKey,
   isPlayerMmrCompatibleWithRoom,
   normalizeQueueType,
   QueuedPlayerEntry,
@@ -635,8 +636,11 @@ async function startServer(): Promise<void> {
               ? msg.arenaMode
               : meta.arenaMode;
           const nextQueue = msg.queueType ? normalizeQueueType(msg.queueType) : meta.queueType;
+          const nextPrivate =
+            typeof msg.isPrivate === 'boolean' ? msg.isPrivate : meta.isPrivate;
           meta.arenaMode = nextArena;
           meta.queueType = nextQueue;
+          meta.isPrivate = nextPrivate;
           meta.isSearchingMatch = false;
           meta.searchStartedAtMs = null;
 
@@ -652,6 +656,7 @@ async function startServer(): Promise<void> {
             roomId: clientMeta.roomId,
             arenaMode: nextArena,
             queueType: nextQueue,
+            isPrivate: nextPrivate,
             isSearchingMatch: false,
             ts: Date.now(),
           });
@@ -768,6 +773,10 @@ async function startServer(): Promise<void> {
           }
           if (meta) {
             meta.status = 'PLAYING';
+            meta.isSearchingMatch = false;
+            meta.searchStartedAtMs = null;
+            const members = roomsMap.get(clientMeta.roomId);
+            members?.forEach((c) => removeClientFromQueue(c));
           }
         }
 
@@ -1051,12 +1060,13 @@ async function startServer(): Promise<void> {
     });
     purgeStaleRooms();
     staleRooms.forEach((rid) => clearRoomCombatAuthority(rid));
-    if (matchmakingQueue.size < 10) return;
+    if (matchmakingQueue.size < 2) return;
 
     const buckets = new Map<string, QueuedPlayerEntry[]>();
     matchmakingQueue.forEach((client) => {
       if (!client.uid || client.ws.readyState !== 1) return;
-      const key = `${client.queueType}::${client.arenaMode}`;
+      const poolKey = getMatchmakingPoolKey(client.arenaMode);
+      const key = `${client.queueType}::${poolKey}`;
       const list = buckets.get(key) || [];
       list.push({
         uid: client.uid,
@@ -1071,12 +1081,13 @@ async function startServer(): Promise<void> {
     });
 
     buckets.forEach((entries, key) => {
-      const [queueTypeRaw, arenaMode] = key.split('::');
+      const [queueTypeRaw, poolKey] = key.split('::');
       const queueType: ServerQueueType = queueTypeRaw === 'RANKED' ? 'RANKED' : 'CASUAL';
       const roomId = `MM${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-      const allocation = tryFindBalancedMatch(entries, queueType, arenaMode, roomId);
+      const allocation = tryFindBalancedMatch(entries, queueType, poolKey, roomId);
       if (!allocation) return;
 
+      const drawnArenaMode = allocation.arenaMode;
       const memberMmrs = new Map<string, number>();
       const memberPlayers = new Map<string, Record<string, unknown>>();
       const matchedClients = new Set<WsClientMeta>();
@@ -1084,28 +1095,38 @@ async function startServer(): Promise<void> {
       allocation.players.forEach((entry) => {
         const client = matchmakingQueue.get(entry.uid);
         if (!client) return;
+        const prevRoomMeta = client.roomId ? roomMetaMap.get(client.roomId) : undefined;
+        const prevPlayerSnapshot = prevRoomMeta?.memberPlayers.get(entry.uid);
+
         matchmakingQueue.delete(entry.uid);
         removeClientFromRoom(client);
         client.roomId = roomId;
+        client.arenaMode = drawnArenaMode;
+        client.queueType = queueType;
         matchedClients.add(client);
         memberMmrs.set(entry.uid, entry.mmr);
+
         const team = allocation.vanguardUids.includes(entry.uid) ? 'VANGUARD' : 'BLACKTHORN';
         memberPlayers.set(entry.uid, {
+          ...(prevPlayerSnapshot || {}),
           uid: entry.uid,
           callsign: entry.callsign,
           team,
           mmr: entry.mmr,
+          isReady: true,
+          isLoaded: false,
+          loadProgress: 0,
         });
       });
 
-      if (matchedClients.size < 10) return;
+      if (matchedClients.size < 2) return;
 
       roomsMap.set(roomId, matchedClients);
       roomMetaMap.set(roomId, {
         roomId,
         hostUid: allocation.players[0]?.uid ?? null,
         queueType,
-        arenaMode,
+        arenaMode: drawnArenaMode,
         isPrivate: false,
         createdAtMs: Date.now(),
         averageMmr: allocation.averageMmr,
@@ -1123,7 +1144,7 @@ async function startServer(): Promise<void> {
         type: 'SERVER_MATCH_READY',
         roomId,
         queueType,
-        arenaMode,
+        arenaMode: drawnArenaMode,
         averageMmr: allocation.averageMmr,
         vanguardUids: allocation.vanguardUids,
         blackthornUids: allocation.blackthornUids,

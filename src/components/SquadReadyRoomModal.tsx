@@ -98,54 +98,6 @@ const DEFAULT_SQUAD_OP_SKINS: string[] = [
   'op_emerald_viper',
 ];
 
-/**
- * Compact overhead nameplates anchored above the 4 3D V-formation operators' heads.
- */
-const OVERHEAD_NAMEPLATE_ANCHORS: Array<{
-  leftPct: string;
-  topPct: string;
-  isCenterLeader?: boolean;
-  badgeColor: string;
-  badgeSymbol: string;
-}> = [
-  {
-    // Slot 0: Center Foreground Leader
-    leftPct: '47.5%',
-    topPct: '16.5%',
-    isCenterLeader: true,
-    badgeColor: 'text-amber-400',
-    badgeSymbol: '♛',
-  },
-  {
-    // Slot 1: Left Flank
-    leftPct: '31%',
-    topPct: '24.5%',
-    badgeColor: 'text-purple-400',
-    badgeSymbol: '✪',
-  },
-  {
-    // Slot 2: Right Inner Flank
-    leftPct: '60%',
-    topPct: '28%',
-    badgeColor: 'text-sky-400',
-    badgeSymbol: '★',
-  },
-  {
-    // Slot 3: Far Right Flank
-    leftPct: '72.5%',
-    topPct: '30.5%',
-    badgeColor: 'text-emerald-400',
-    badgeSymbol: '◆',
-  },
-  {
-    // Slot 4: Far Left Rear Flank (5th member)
-    leftPct: '20%',
-    topPct: '30.5%',
-    badgeColor: 'text-rose-400',
-    badgeSymbol: '▲',
-  },
-];
-
 function getCompetitiveTierLabel(mmr = 2450): string {
   if (mmr >= 3200) return 'ELITE I';
   if (mmr >= 2850) return 'DIAMANTE I';
@@ -250,19 +202,10 @@ export const SquadReadyRoomModal: React.FC<SquadReadyRoomModalProps> = ({
   const activeClan = clanState.myClan;
   const clanLevelInfo = activeClan
     ? computeClanLevelFromXp(activeClan.clanXp)
-    : {
-        level: 8,
-        currentLevelXp: 2840,
-        nextLevelXp: 5000,
-        progressPct: 56.8,
-      };
-  const displayClanName = activeClan ? activeClan.name : 'AlphaGym';
-  const displayClanEmblem: ClanEmblemId = activeClan
-    ? activeClan.emblemId
-    : 'alpha_wolf';
+    : null;
   const displayClanMembersCount = activeClan
-    ? activeClan.memberUids.length
-    : Math.min(MAX_CLAN_MEMBERS, 4);
+    ? Math.max(1, activeClan.memberUids?.length || Object.keys(activeClan.members || {}).length)
+    : 0;
 
   const playersList = useMemo<OnlinePlayerState[]>(() => {
     if (!room?.players) return [];
@@ -472,76 +415,9 @@ export const SquadReadyRoomModal: React.FC<SquadReadyRoomModalProps> = ({
         <SquadFormation3DCanvas members={formationMembers} />
       </div>
 
-      {/* 2.5 COMPACT OVERHEAD CLAN + CALLSIGN NAMEPLATES ONLY FOR REAL PLAYERS IN THE ROOM */}
-      <div className="absolute inset-0 z-15 pointer-events-none overflow-hidden">
-        {formationMembers.map((memberSpec, slotIdx) => {
-          const anchor = OVERHEAD_NAMEPLATE_ANCHORS[slotIdx];
-          if (!anchor) return null;
-          const realMember = playersList[slotIdx];
-          const isSlotLocal = memberSpec.uid === localUid;
-          const isSlotLeader = realMember
-            ? realMember.uid === room.hostUid
-            : Boolean(memberSpec.isLeader);
-          const callsign = realMember?.callsign || memberSpec.callsign;
-          const memberClanName =
-            (isSlotLocal ? activeClan?.name : undefined) || realMember?.clanName;
-          const memberClanEmblem = ((isSlotLocal ? activeClan?.emblemId : undefined) ||
-            realMember?.clanEmblemId ||
-            'alpha_wolf') as ClanEmblemId;
-
-          return (
-            <div
-              key={`overhead-tag-${memberSpec.uid}`}
-              style={{ left: anchor.leftPct, top: anchor.topPct }}
-              className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-black/70 border border-red-500/30 shadow-[0_4px_12px_rgba(0,0,0,0.85)]"
-            >
-              {memberClanName && (
-                <ClanEmblemIcon
-                  emblemId={memberClanEmblem}
-                  className={
-                    anchor.isCenterLeader
-                      ? 'w-5 h-5 sm:w-6 sm:h-6 shrink-0'
-                      : 'w-4 h-4 sm:w-5 sm:h-5 shrink-0'
-                  }
-                />
-              )}
-              <div className="leading-none">
-                {memberClanName && (
-                  <div className="font-display font-bold text-[8px] sm:text-[9px] text-[#ff4242] tracking-wide">
-                    {memberClanName}
-                  </div>
-                )}
-                <div className="flex items-center gap-0.5">
-                  <span
-                    className={`font-display font-black tracking-wide text-white ${
-                      anchor.isCenterLeader
-                        ? 'text-[10px] sm:text-xs uppercase'
-                        : 'text-[9px] sm:text-[11px]'
-                    }`}
-                  >
-                    {callsign}
-                  </span>
-                  {isSlotLeader ? (
-                    <span className="text-amber-400 text-[9px] sm:text-[10px] leading-none">
-                      ♛
-                    </span>
-                  ) : (
-                    <span
-                      className={`text-[8px] sm:text-[9px] leading-none ${anchor.badgeColor}`}
-                    >
-                      {anchor.badgeSymbol}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* 3. MINIMALIST CORNER-ANCHORED HUD OVERLAY (NO OVERLAPS ON MOBILE LANDSCAPE) */}
+      {/* 3. MINIMALIST CORNER-ANCHORED HUD OVERLAY (CENTER 100% CLEAN OVER 3D OPERATOR) */}
       <div className="relative z-20 w-full h-full flex flex-col justify-between p-1.5 sm:p-2.5 lg:p-3.5 pointer-events-none">
-        {/* TOP BAR: COMPACT LEFT BACK/TITLE + COMPACT CENTER RANK BADGE + RIGHT SPACER */}
+        {/* TOP BAR: TOP-LEFT BACK/TITLE + TOP-RIGHT RANK BADGE (CENTER COMPLETELY CLEAR) */}
         <div className="flex items-center justify-between gap-2 shrink-0">
           {/* Top-Left Corner: Minimalist Back Button + Room Title & Mode */}
           <div className="flex items-center gap-1.5 sm:gap-2 pointer-events-auto">
@@ -589,9 +465,9 @@ export const SquadReadyRoomModal: React.FC<SquadReadyRoomModalProps> = ({
             </div>
           </div>
 
-          {/* Top-Center: Minimalist Rank Plaque */}
+          {/* Top-Right Corner: Compact Rank Plaque (kept away from center 3D operator face) */}
           <div className="relative pointer-events-auto">
-            <div className="px-2.5 sm:px-3.5 py-1 rounded-lg bg-[#14110e]/90 border border-amber-400/45 shadow-md flex items-center gap-2">
+            <div className="px-2.5 sm:px-3 py-1 rounded-lg bg-[#14110e]/90 border border-amber-400/45 shadow-md flex items-center gap-2">
               <WarfaceRankIcon
                 level={localPlayer?.rankLevel || profile.rankLevel || 4}
                 className="w-4 h-4 sm:w-5 sm:h-5 shrink-0"
@@ -618,7 +494,7 @@ export const SquadReadyRoomModal: React.FC<SquadReadyRoomModalProps> = ({
             </div>
 
             {showRoomInfoPopover && (
-              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 w-56 p-2.5 rounded-lg bg-[#0d111a]/98 border border-amber-400/50 shadow-2xl text-[10px] font-mono text-slate-200 z-40">
+              <div className="absolute top-full right-0 mt-1.5 w-56 p-2.5 rounded-lg bg-[#0d111a]/98 border border-amber-400/50 shadow-2xl text-[10px] font-mono text-slate-200 z-40">
                 <div className="flex items-center justify-between pb-1 mb-1 border-b border-white/10">
                   <span className="text-amber-300 font-bold">CÓDIGO DA SALA</span>
                   <span className="font-black text-white tracking-widest">
@@ -638,81 +514,100 @@ export const SquadReadyRoomModal: React.FC<SquadReadyRoomModalProps> = ({
               </div>
             )}
           </div>
-
-          {/* Right balance spacer */}
-          <div className="hidden sm:block w-[160px] lg:w-[190px]" />
         </div>
 
         {/* MIDDLE AREA: LEFT (COMPACT CLAN + LIVE CHAT BOX) & RIGHT (COMPACT FRIENDS LIST) */}
         <div className="flex-1 min-h-0 flex items-stretch justify-between gap-2 my-1 overflow-hidden">
           {/* LEFT CORNER COLUMN: COMPACT CLAN BAR + LIVE VISIBLE CHAT DA SALA (REPLACES REMOVED MAP PHOTO) */}
           <div className="w-[155px] sm:w-[190px] lg:w-[215px] flex flex-col justify-between gap-1.5 pointer-events-auto min-h-0">
-            {/* 1. Compact Clan Badge & Quick 4-Button Micro-Grid */}
-            <div className="rounded-lg border border-red-500/35 bg-gradient-to-b from-[#240a0f]/90 to-[#0e0b10]/90 p-1.5 sm:p-2 shadow-lg shrink-0">
-              <div className="flex items-center justify-between gap-1.5">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <ClanEmblemIcon
-                    emblemId={displayClanEmblem}
-                    className="w-7 h-7 sm:w-8 sm:h-8 shrink-0"
-                  />
-                  <div className="min-w-0 leading-tight">
-                    <div className="font-display font-black text-[10px] sm:text-xs text-white uppercase truncate">
-                      {displayClanName}
-                    </div>
-                    <div className="text-[8px] font-mono text-amber-300">
-                      CLÃ NV. {clanLevelInfo.level} · {displayClanMembersCount}/{MAX_CLAN_MEMBERS}
+            {/* 1. Real Clan Badge (only shows a clan if player genuinely created/joined one) */}
+            {activeClan && clanLevelInfo ? (
+              <div className="rounded-lg border border-red-500/35 bg-gradient-to-b from-[#240a0f]/90 to-[#0e0b10]/90 p-1.5 sm:p-2 shadow-lg shrink-0">
+                <div className="flex items-center justify-between gap-1.5">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <ClanEmblemIcon
+                      emblemId={activeClan.emblemId}
+                      className="w-7 h-7 sm:w-8 sm:h-8 shrink-0"
+                    />
+                    <div className="min-w-0 leading-tight">
+                      <div className="font-display font-black text-[10px] sm:text-xs text-white uppercase truncate">
+                        {activeClan.name}
+                      </div>
+                      <div className="text-[8px] font-mono text-amber-300">
+                        CLÃ NV. {clanLevelInfo.level} · {displayClanMembersCount}/{MAX_CLAN_MEMBERS}
+                      </div>
                     </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenClanTab('OVERVIEW')}
+                    className="px-1.5 py-0.5 rounded bg-red-500/20 hover:bg-red-500/35 border border-red-400/40 text-[8px] font-display font-black text-red-200 uppercase shrink-0 cursor-pointer"
+                  >
+                    CLÃ
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleOpenClanTab('OVERVIEW')}
-                  className="px-1.5 py-0.5 rounded bg-red-500/20 hover:bg-red-500/35 border border-red-400/40 text-[8px] font-display font-black text-red-200 uppercase shrink-0 cursor-pointer"
-                >
-                  {activeClan ? 'CLÃ' : 'CRIAR'}
-                </button>
-              </div>
 
-              {/* Thin Clan XP bar */}
-              <div className="w-full h-1 rounded-full bg-black/70 overflow-hidden mt-1">
-                <div
-                  className="h-full bg-gradient-to-r from-amber-500 to-yellow-300"
-                  style={{ width: `${clanLevelInfo.progressPct}%` }}
-                />
-              </div>
+                {/* Thin Clan XP bar */}
+                <div className="w-full h-1 rounded-full bg-black/70 overflow-hidden mt-1">
+                  <div
+                    className="h-full bg-gradient-to-r from-amber-500 to-yellow-300"
+                    style={{ width: `${clanLevelInfo.progressPct}%` }}
+                  />
+                </div>
 
-              {/* 4 Compact Clan Quick Buttons in a 2x2 grid */}
-              <div className="grid grid-cols-2 gap-1 mt-1.5">
-                <button
-                  type="button"
-                  onClick={() => handleOpenClanTab('MISSIONS')}
-                  className="px-1.5 py-1 rounded bg-black/50 hover:bg-white/10 border border-white/10 text-[8px] sm:text-[9px] font-display font-bold text-slate-200 hover:text-amber-300 truncate text-left cursor-pointer"
-                >
-                  🏆 Desafios
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleOpenClanTab('RANK')}
-                  className="px-1.5 py-1 rounded bg-black/50 hover:bg-white/10 border border-white/10 text-[8px] sm:text-[9px] font-display font-bold text-slate-200 hover:text-amber-300 truncate text-left cursor-pointer"
-                >
-                  📊 Rank
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleOpenClanTab('MEMBERS')}
-                  className="px-1.5 py-1 rounded bg-black/50 hover:bg-white/10 border border-white/10 text-[8px] sm:text-[9px] font-display font-bold text-slate-200 hover:text-amber-300 truncate text-left cursor-pointer"
-                >
-                  👥 Membros
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleOpenClanTab('STORE')}
-                  className="px-1.5 py-1 rounded bg-black/50 hover:bg-white/10 border border-white/10 text-[8px] sm:text-[9px] font-display font-bold text-slate-200 hover:text-amber-300 truncate text-left cursor-pointer"
-                >
-                  🛒 Loja
-                </button>
+                {/* 4 Compact Clan Quick Buttons in a 2x2 grid */}
+                <div className="grid grid-cols-2 gap-1 mt-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenClanTab('MISSIONS')}
+                    className="px-1.5 py-1 rounded bg-black/50 hover:bg-white/10 border border-white/10 text-[8px] sm:text-[9px] font-display font-bold text-slate-200 hover:text-amber-300 truncate text-left cursor-pointer"
+                  >
+                    🏆 Desafios
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenClanTab('RANK')}
+                    className="px-1.5 py-1 rounded bg-black/50 hover:bg-white/10 border border-white/10 text-[8px] sm:text-[9px] font-display font-bold text-slate-200 hover:text-amber-300 truncate text-left cursor-pointer"
+                  >
+                    📊 Rank
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenClanTab('MEMBERS')}
+                    className="px-1.5 py-1 rounded bg-black/50 hover:bg-white/10 border border-white/10 text-[8px] sm:text-[9px] font-display font-bold text-slate-200 hover:text-amber-300 truncate text-left cursor-pointer"
+                  >
+                    👥 Membros
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenClanTab('STORE')}
+                    className="px-1.5 py-1 rounded bg-black/50 hover:bg-white/10 border border-white/10 text-[8px] sm:text-[9px] font-display font-bold text-slate-200 hover:text-amber-300 truncate text-left cursor-pointer"
+                  >
+                    🛒 Loja
+                  </button>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="rounded-lg border border-white/15 bg-[#0e121b]/90 p-2 shadow-lg shrink-0">
+                <div className="flex items-center justify-between gap-1.5">
+                  <div className="min-w-0 leading-tight">
+                    <div className="font-display font-black text-[10px] sm:text-xs text-white uppercase tracking-wide">
+                      SEM CLÃ ATIVO
+                    </div>
+                    <div className="text-[8px] font-mono text-slate-400 truncate mt-0.5">
+                      Funde seu clã (máx. {MAX_CLAN_MEMBERS})
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenClanTab('OVERVIEW')}
+                    className="px-2 py-1 rounded bg-gradient-to-r from-red-600 to-amber-500 hover:brightness-110 text-white font-display font-black text-[8px] uppercase tracking-wider shrink-0 cursor-pointer shadow"
+                  >
+                    CRIAR / ENTRAR
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* 2. Map Rule Strip: ONLY Private Rooms can pick a map; Ranked & Classic draw automatically */}
             {room.isPrivate ? (
