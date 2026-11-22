@@ -134,6 +134,11 @@ import {
 import { PlayerDeathThirdPersonController } from './playerDeathThirdPerson';
 import { PostMatchShowcase3D } from './postMatchShowcase3D';
 import {
+  BulletCamGameMode,
+  BulletCamHitZone,
+  XRayBulletCamManager,
+} from './XRayBulletCamManager';
+import {
   buildStanderTiroLevel,
   loadStanderTiroMapGeometry,
   STANDER_TIRO_SPAWN,
@@ -142,6 +147,7 @@ import {
 } from './standerTiroBuilder';
 import { TacticalSkySystem } from './skySystem';
 import {
+  countOtherHumanPlayersInRoom,
   getActiveOnlineRoom,
   getLocalOnlinePlayerState,
   isOnlineMatchActive,
@@ -413,6 +419,7 @@ export class TacticalFPSEngine {
   private deathOnFinish: (() => void) | null = null;
   private playerDeathTp!: PlayerDeathThirdPersonController;
   private postMatchShowcase!: PostMatchShowcase3D;
+  public bulletCamManager!: XRayBulletCamManager;
 
   // Reload State Machine
   private reloadTimer = 0;
@@ -514,6 +521,10 @@ export class TacticalFPSEngine {
     hitMarkerAlpha: 0,
     hitMarkerIsCrit: false,
     hitMarkerIsKill: false,
+    bulletCamActive: false,
+    bulletCamVignetteAlpha: 0,
+    bulletCamDistanceM: 0,
+    bulletCamIsHeadshot: false,
     killConfirmAlpha: 0,
     killConfirmLabel: '',
     damageFlashAlpha: 0,
@@ -716,6 +727,11 @@ export class TacticalFPSEngine {
     this.postMatchShowcase = new PostMatchShowcase3D(
       this.scene,
       this.isSoftwareGl
+    );
+    this.bulletCamManager = new XRayBulletCamManager(
+      this.scene,
+      this.camera,
+      this.weaponRig.root
     );
 
     const standerData = buildStanderTiroLevel(this.isSoftwareGl);
@@ -1166,12 +1182,106 @@ export class TacticalFPSEngine {
 
   public pauseGame(): void {
     if (this.state.screen === 'PLAYING') {
+      if (this.bulletCamManager?.isActive()) {
+        this.bulletCamManager.skip(true);
+        this.syncBulletCamHudState();
+      }
       this.state.screen = 'PAUSED';
       if (document.pointerLockElement) {
         document.exitPointerLock();
       }
       this.emitHud();
     }
+  }
+
+  private resolveBulletCamGameMode(): BulletCamGameMode {
+    if (isOnlineMatchActive()) {
+      // Ativa exclusivamente em sala privada com bots sem oponentes humanos PvP;
+      // 100% desativada em PvP online, ranqueada e campeonato de clãs.
+      if (
+        isPrivateRoomWithBotsActive() &&
+        countOtherHumanPlayersInRoom() === 0
+      ) {
+        return 'PRIVATE_BOTS';
+      }
+      return 'ONLINE_PVP';
+    }
+    if (this.state.drillMode === 'FREE_RANGE') {
+      return 'TRAINING';
+    }
+    return 'PRIVATE_BOTS';
+  }
+
+  private syncBulletCamHudState(): void {
+    if (!this.bulletCamManager) return;
+    const snap = this.bulletCamManager.getHudSnapshot();
+    this.state.bulletCamActive = snap.active;
+    this.state.bulletCamVignetteAlpha = snap.vignetteAlpha;
+    this.state.bulletCamDistanceM = snap.distanceMeters;
+    this.state.bulletCamIsHeadshot = snap.isHeadshot;
+  }
+
+  public tryTriggerSniperBulletCam(params: {
+    weaponId: WeaponId;
+    isPredictedKill: boolean;
+    isHeadshot: boolean;
+    hitZone: BulletCamHitZone;
+    isRemoteHumanTarget: boolean;
+    distanceMeters: number;
+    startPos: THREE.Vector3;
+    impactPos: THREE.Vector3;
+    impactNormal: THREE.Vector3;
+    targetRoot?: THREE.Object3D | null;
+    targetHeightMeters?: number;
+    onImpact: () => void;
+  }): boolean {
+    if (
+      !this.bulletCamManager ||
+      this.isPlayerDying ||
+      this.playerDeathTp?.isActive() ||
+      this.postMatchShowcase?.isActive()
+    ) {
+      return false;
+    }
+
+    const triggered = this.bulletCamManager.tryTriggerBulletCam({
+      ...params,
+      gameMode: this.resolveBulletCamGameMode(),
+      yawObject: this.yawObject,
+      pitchObject: this.pitchObject,
+      baseFov: 72,
+      onComplete: () => {
+        this.syncBulletCamHudState();
+        this.emitHud();
+      },
+    });
+
+    if (triggered) {
+      // Trava inputs pendentes de movimento e disparo para evitar tiros duplicados ou deriva de câmera
+      this.touchMoveX = 0;
+      this.touchMoveY = 0;
+      this.touchSprinting = false;
+      this.touchFireHeld = false;
+      this.burstRemaining = 0;
+      this.mouseButtonsHeld.clear();
+      this.syncBulletCamHudState();
+      this.emitHud();
+    }
+    return triggered;
+  }
+
+  public skipBulletCam(): boolean {
+    if (!this.bulletCamManager?.isActive()) return false;
+    const skipped = this.bulletCamManager.skip(false);
+    if (skipped) {
+      this.syncBulletCamHudState();
+      this.emitHud();
+    }
+    return skipped;
+  }
+
+  public isBulletCamActive(): boolean {
+    return Boolean(this.bulletCamManager?.isActive());
   }
 
   private clearEnemyAimOutline(): void {
@@ -1184,6 +1294,8 @@ export class TacticalFPSEngine {
 
   public returnToMainMenu(): void {
     stopMatchEndFanfare();
+    this.bulletCamManager?.reset();
+    this.syncBulletCamHudState();
     this.clearEnemyAimOutline();
     this.clearTacticalStreaks(true);
     if (isOnlineMatchActive()) {
@@ -2579,12 +2691,19 @@ export class TacticalFPSEngine {
   }
 
   public setTouchMovement(moveX: number, moveY: number, sprinting: boolean): void {
+    if (this.bulletCamManager?.isActive()) {
+      this.touchMoveX = 0;
+      this.touchMoveY = 0;
+      this.touchSprinting = false;
+      return;
+    }
     this.touchMoveX = THREE.MathUtils.clamp(moveX, -1, 1);
     this.touchMoveY = THREE.MathUtils.clamp(moveY, -1, 1);
     this.touchSprinting = sprinting;
   }
 
   public applyTouchLookDelta(dx: number, dy: number): void {
+    if (this.bulletCamManager?.isActive()) return;
     const assistTargets = (this.targets || []).map((t) => ({
       position: t.root.position,
       isDown: t.isDown,
@@ -2622,6 +2741,13 @@ export class TacticalFPSEngine {
   }
 
   public setTouchFireHeld(held: boolean): void {
+    if (this.bulletCamManager?.isActive()) {
+      this.touchFireHeld = false;
+      if (held) {
+        this.skipBulletCam();
+      }
+      return;
+    }
     if (this.state.screen !== 'PLAYING') {
       this.touchFireHeld = false;
       return;
@@ -2637,7 +2763,7 @@ export class TacticalFPSEngine {
   }
 
   public toggleAds(): void {
-    if (this.state.screen !== 'PLAYING') return;
+    if (this.state.screen !== 'PLAYING' || this.bulletCamManager?.isActive()) return;
     if (this.state.equippedGrenade !== null) {
       this.grenadeSystem?.unequipFromHand();
       this.state.equippedGrenade = null;
@@ -2658,7 +2784,7 @@ export class TacticalFPSEngine {
   }
 
   public triggerJump(): void {
-    if (this.state.screen !== 'PLAYING') return;
+    if (this.state.screen !== 'PLAYING' || this.bulletCamManager?.isActive()) return;
     this.state.isCrouchingToggled = false;
     this.state.isProneToggled = false;
     this.slideTimer = 0;
@@ -2667,7 +2793,7 @@ export class TacticalFPSEngine {
   }
 
   public triggerProne(): void {
-    if (this.state.screen !== 'PLAYING') return;
+    if (this.state.screen !== 'PLAYING' || this.bulletCamManager?.isActive()) return;
     this.slideTimer = 0;
     this.state.isProneToggled = !this.state.isProneToggled;
     if (this.state.isProneToggled) {
@@ -2678,7 +2804,7 @@ export class TacticalFPSEngine {
   }
 
   public toggleCrouchOrSlide(): void {
-    if (this.state.screen !== 'PLAYING') return;
+    if (this.state.screen !== 'PLAYING' || this.bulletCamManager?.isActive()) return;
 
     // Mid-slide crouch tap = slide cancel into crouch (COD).
     if (this.slideTimer > 0) {
@@ -2895,6 +3021,8 @@ export class TacticalFPSEngine {
       /* optional */
     }
     this.state.stamina = 100;
+    this.bulletCamManager?.reset();
+    this.syncBulletCamHudState();
     this.clearEnemyAimOutline();
     this.state.hitMarkerAlpha = 0;
     this.state.hitMarkerIsCrit = false;
@@ -3377,6 +3505,12 @@ export class TacticalFPSEngine {
 
     if (e.code === 'Escape') {
       if (this.state.screen === 'PLAYING') {
+        if (this.bulletCamManager?.isActive()) {
+          this.bulletCamManager.skip(true);
+          this.syncBulletCamHudState();
+          this.emitHud();
+          return;
+        }
         this.pauseGame();
       } else if (this.state.screen === 'PAUSED') {
         this.resumeGame();
@@ -3385,6 +3519,20 @@ export class TacticalFPSEngine {
     }
 
     if (this.state.screen !== 'PLAYING') return;
+
+    // Durante Sniper Bullet Cam: trava todos os inputs de gameplay e permite Skip rápido
+    if (this.bulletCamManager?.isActive()) {
+      if (
+        e.code === 'Space' ||
+        e.code === 'Enter' ||
+        e.code === 'KeyE' ||
+        e.code === 'KeyF'
+      ) {
+        e.preventDefault();
+        this.skipBulletCam();
+      }
+      return;
+    }
 
     if (this.playerDeathTp?.isSpectating()) {
       if (e.code === 'KeyQ' || e.code === 'ArrowLeft' || e.code === 'KeyA') {
@@ -3561,6 +3709,12 @@ export class TacticalFPSEngine {
     // Ignore clicks on DOM UI controls (like the bottom dock)
     if (e.target !== this.renderer.domElement) return;
 
+    // Clique durante Sniper Bullet Cam cancela (Skip) sem gerar disparo duplicado
+    if (this.bulletCamManager?.isActive()) {
+      this.skipBulletCam();
+      return;
+    }
+
     if (!this.state.pointerLocked) {
       this.requestPointerLock();
     }
@@ -3591,7 +3745,13 @@ export class TacticalFPSEngine {
   };
 
   private onMouseMove = (e: MouseEvent) => {
-    if (this.state.screen !== 'PLAYING' || this.isPlayerDying) return;
+    if (
+      this.state.screen !== 'PLAYING' ||
+      this.isPlayerDying ||
+      this.bulletCamManager?.isActive()
+    ) {
+      return;
+    }
     if (!this.state.pointerLocked && !this.mouseButtonsHeld.has(0) && !this.mouseButtonsHeld.has(2)) {
       return;
     }
@@ -3673,6 +3833,10 @@ export class TacticalFPSEngine {
 
   private onCanvasTouchStart = (e: TouchEvent) => {
     if (this.state.screen !== 'PLAYING') return;
+    if (this.bulletCamManager?.isActive()) {
+      this.skipBulletCam();
+      return;
+    }
     if (this.canvasTouchLookId !== null) return;
     const t = e.changedTouches[0];
     if (!t) return;
@@ -3682,7 +3846,13 @@ export class TacticalFPSEngine {
   };
 
   private onCanvasTouchMove = (e: TouchEvent) => {
-    if (this.state.screen !== 'PLAYING' || this.canvasTouchLookId === null) return;
+    if (
+      this.state.screen !== 'PLAYING' ||
+      this.canvasTouchLookId === null ||
+      this.bulletCamManager?.isActive()
+    ) {
+      return;
+    }
     for (let i = 0; i < e.changedTouches.length; i++) {
       const t = e.changedTouches[i];
       if (t.identifier === this.canvasTouchLookId) {
@@ -4221,7 +4391,27 @@ export class TacticalFPSEngine {
   // =========================================================================
   // ACTIVE FIRST-PERSON COMBAT & RANGE SIMULATION
   // =========================================================================
-  private updatePlayingSimulation(dt: number): void {
+  private updatePlayingSimulation(rawDt: number): void {
+    // 0. X-Ray Sniper Bullet Cam: atualiza câmera/projétil/esqueleto em 60 FPS reais (rawDt)
+    // e mantém os pools de estilhaços de osso + sangue ativos acompanhando o timeScale
+    if (this.bulletCamManager) {
+      const wasActive = this.bulletCamManager.isActive();
+      this.bulletCamManager.update(
+        rawDt,
+        this.getActiveGlbCollider(),
+        (x, y, z) => this.getCurrentGroundHeight(x, y, z)
+      );
+      if (wasActive || this.bulletCamManager.isActive()) {
+        this.syncBulletCamHudState();
+      }
+    }
+
+    const bulletCamActive = Boolean(this.bulletCamManager?.isActive());
+    const timeScale = this.bulletCamManager
+      ? this.bulletCamManager.getTimeScale()
+      : 1.0;
+    const dt = rawDt * timeScale;
+
     // 1. Course Timer & Decay Timers
     if (
       this.state.drillMode === 'KILLHOUSE_BLITZ' ||
@@ -4394,19 +4584,19 @@ export class TacticalFPSEngine {
 
     if (this.state.hitMarkerAlpha > 0) {
       const decayRate = this.state.hitMarkerIsKill ? 2.5 : 3.8;
-      this.state.hitMarkerAlpha = Math.max(0, this.state.hitMarkerAlpha - dt * decayRate);
+      this.state.hitMarkerAlpha = Math.max(0, this.state.hitMarkerAlpha - rawDt * decayRate);
       if (this.state.hitMarkerAlpha <= 0) {
         this.state.hitMarkerIsKill = false;
       }
     }
     if (this.state.killConfirmAlpha > 0) {
-      this.state.killConfirmAlpha = Math.max(0, this.state.killConfirmAlpha - dt * 1.05);
+      this.state.killConfirmAlpha = Math.max(0, this.state.killConfirmAlpha - rawDt * 1.05);
       if (this.state.killConfirmAlpha <= 0) {
         this.state.killConfirmLabel = '';
       }
     }
     if (this.state.damageFlashAlpha > 0) {
-      this.state.damageFlashAlpha = Math.max(0, this.state.damageFlashAlpha - dt * 2.5);
+      this.state.damageFlashAlpha = Math.max(0, this.state.damageFlashAlpha - rawDt * 2.5);
     }
     if (this.streakBannerTimer > 0) {
       this.streakBannerTimer -= dt;
@@ -4506,11 +4696,11 @@ export class TacticalFPSEngine {
       }
     }
 
-    // 2. Continuous Fire / Burst Fire Handling
+    // 2. Continuous Fire / Burst Fire Handling (bloqueado durante Sniper Bullet Cam)
     if (this.fireCooldown > 0) {
       this.fireCooldown -= dt;
     }
-    if (this.fireCooldown <= 0) {
+    if (!bulletCamActive && this.fireCooldown <= 0) {
       if (this.burstRemaining > 0) {
         if (this.state.chambered === 0 && this.state.activeWeapon !== 'KNIFE_TACTICAL') {
           this.burstRemaining = 0;
@@ -4543,22 +4733,26 @@ export class TacticalFPSEngine {
     }
 
     // 3. Update Multi-Stage Reload State Machine & Hand Kinematics
-    this.updateReloadStateMachine(dt);
+    if (!bulletCamActive) {
+      this.updateReloadStateMachine(dt);
 
-    // 3b. Late collider bake: keep feet on walkable floor (new GLB maps).
-    this.applyPendingFloorSnap();
+      // 3b. Late collider bake: keep feet on walkable floor (new GLB maps).
+      this.applyPendingFloorSnap();
 
-    // 4. Player Movement, Stance (Stand/Crouch/Sprint/Slide) & Q/E Leaning
-    this.updatePlayerMovementAndCollision(dt);
+      // 4. Player Movement, Stance (Stand/Crouch/Sprint/Slide) & Q/E Leaning
+      this.updatePlayerMovementAndCollision(dt);
 
-    // 5. Weapon ADS Alignment, Respiratory Breath Hold, Recoil & Wall-Tuck
-    this.updateWeaponKinematicsAndOptics(dt);
+      // 5. Weapon ADS Alignment, Respiratory Breath Hold, Recoil & Wall-Tuck
+      this.updateWeaponKinematicsAndOptics(dt);
+    }
 
-    // 6. Reactive Targets & Killhouse Combat Bot AI
+    // 6. Reactive Targets & Killhouse Combat Bot AI (roda em slow-motion `dt = rawDt * 0.2`)
     this.updateTargetsAndCombatAI(dt);
 
     // 6b. Warface class support (ammo / heal+revive / armor) + medic markers
-    updateClassSupport(this as any, dt);
+    if (!bulletCamActive) {
+      updateClassSupport(this as any, dt);
+    }
     this.playerGesture?.update(dt);
     this.classKitProps?.update(dt);
     const planting =
@@ -4576,6 +4770,7 @@ export class TacticalFPSEngine {
     // 6c. Red outline highlight when aiming directly at a living enemy operator
     this.enemyOutlineTimer += dt;
     const isPlayerAliveForOutline =
+      !bulletCamActive &&
       this.state.health > 0 &&
       !this.isPlayerDying &&
       !this.playerDeathTp?.isActive();
@@ -4635,9 +4830,10 @@ export class TacticalFPSEngine {
     this.state.isThrowingGrenade = this.grenadeSystem.isThrowing();
     this.state.equippedGrenade = this.grenadeSystem.getHeldGrenade();
 
-    // 8. Throttled HUD Sync (11Hz smooth telemetry without React main-thread saturation)
-    this.hudSyncTimer += dt;
-    if (this.hudSyncTimer >= 0.09) {
+    // 8. Throttled HUD Sync (30Hz durante fade da vinheta da Bullet Cam, 11Hz em combate normal)
+    this.hudSyncTimer += rawDt;
+    const hudInterval = bulletCamActive ? 0.033 : 0.09;
+    if (this.hudSyncTimer >= hudInterval) {
       this.hudSyncTimer = 0;
       this.emitHud();
     }
@@ -4792,6 +4988,7 @@ export class TacticalFPSEngine {
     );
 
     runtimeTelemetry.flush(true);
+    this.bulletCamManager?.dispose();
     this.weaponRig?.dispose();
     this.fxPool?.dispose?.();
     (

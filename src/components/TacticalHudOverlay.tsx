@@ -38,6 +38,7 @@ interface TacticalHudOverlayProps {
   onReturnToMenu?: () => void;
   onReturnToSquadRoom?: () => void;
   onCycleSpectator?: (dir: -1 | 1) => void;
+  onSkipBulletCam?: () => void;
 }
 
 export const TacticalHudOverlay: React.FC<TacticalHudOverlayProps> = ({
@@ -63,9 +64,15 @@ export const TacticalHudOverlay: React.FC<TacticalHudOverlayProps> = ({
   onReturnToMenu,
   onReturnToSquadRoom,
   onCycleSpectator,
+  onSkipBulletCam,
 }) => {
   const isSpectating = Boolean(hud.yardBomb?.isSpectating);
   const isMatchOver = hud.yardBomb?.roundState === 'MATCH_OVER';
+  const isBulletCamActive = Boolean(hud.bulletCamActive);
+  const bulletCamVignetteAlpha = Math.max(
+    0,
+    Math.min(1, hud.bulletCamVignetteAlpha || 0)
+  );
   const hasTeamScoreboard = Boolean(
     hud.yardBomb &&
       (hud.drillMode === 'YARD_BOMB_5V5' ||
@@ -121,12 +128,13 @@ export const TacticalHudOverlay: React.FC<TacticalHudOverlayProps> = ({
   const isSniperScopeActive =
     !isSpectating &&
     !isMatchOver &&
+    !isBulletCamActive &&
     hasOpticalSniperScope &&
     !hud.cantedActive &&
     hud.adsAlpha > 0.78;
 
   const hipCrosshairOpacity =
-    isSniperScopeActive || isSpectating || isMatchOver
+    isSniperScopeActive || isSpectating || isMatchOver || isBulletCamActive
       ? 0
       : Math.max(
           0,
@@ -136,8 +144,48 @@ export const TacticalHudOverlay: React.FC<TacticalHudOverlayProps> = ({
   return (
     <>
       {/* SPAWNDBG moved to App.tsx (z-200 lime bar) — was easy to miss in HUD */}
+      {/* SNIPER BULLET CAM: Vinheta Cinematográfica CSS Leve (sem backdrop-filter) + Botão de Pular */}
+      {isBulletCamActive && (
+        <div
+          role="button"
+          tabIndex={-1}
+          aria-label="Pular câmera da bala"
+          onPointerDown={() => onSkipBulletCam?.()}
+          className="fixed inset-0 z-30 select-none cursor-pointer transition-opacity duration-75"
+          style={{
+            opacity: bulletCamVignetteAlpha,
+            background:
+              'radial-gradient(ellipse at center, transparent 48%, rgba(2, 6, 23, 0.78) 100%)',
+            boxShadow:
+              'inset 0 0 110px rgba(0, 0, 0, 0.92), inset 0 0 220px rgba(2, 6, 23, 0.6)',
+          }}
+        >
+          {/* Barras cinematográficas sutis no topo e base */}
+          <div className="pointer-events-none absolute top-0 left-0 right-0 h-[5vh] max-h-10 bg-gradient-to-b from-black/85 to-transparent" />
+          <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-[7vh] max-h-14 bg-gradient-to-t from-black/90 to-transparent" />
+
+          {/* Indicação tática discreta de distância e botão de Skip */}
+          <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5">
+            {hud.bulletCamDistanceM != null && hud.bulletCamDistanceM >= 1 && (
+              <div className="flex items-center gap-2 text-[11px] font-bold tracking-[0.22em] uppercase text-amber-300/90 drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
+                <span>
+                  {hud.bulletCamIsHeadshot ? 'HEADSHOT LETAL' : 'TIRO LETAL'}
+                </span>
+                <span className="text-slate-400">·</span>
+                <span className="font-mono text-white">
+                  {Math.round(hud.bulletCamDistanceM)}M
+                </span>
+              </div>
+            )}
+            <div className="px-3.5 py-1 border border-white/20 bg-black/65 text-[10px] font-semibold tracking-[0.18em] uppercase text-slate-200">
+              TOQUE NA TELA OU [ESPAÇO] PARA PULAR
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Damage Vignette Flash & Critical Low Health Pulsing Blood Fringe */}
-      {!isSpectating && (hud.damageFlashAlpha > 0.01 || (hud.health > 0 && hud.health < 35)) && (
+      {!isSpectating && !isBulletCamActive && (hud.damageFlashAlpha > 0.01 || (hud.health > 0 && hud.health < 35)) && (
         <div
           className={`fixed inset-0 pointer-events-none z-15 transition-opacity ${
             hud.health < 35 ? 'animate-pulse bg-[radial-gradient(ellipse_at_center,transparent_55%,rgba(220,38,38,0.38)_100%)]' : ''

@@ -268,6 +268,10 @@ export interface HudState {
   hitMarkerAlpha: number;
   hitMarkerIsCrit: boolean;
   hitMarkerIsKill: boolean;
+  bulletCamActive?: boolean;
+  bulletCamVignetteAlpha?: number;
+  bulletCamDistanceM?: number;
+  bulletCamIsHeadshot?: boolean;
   killConfirmAlpha: number;
   killConfirmLabel: string;
   damageFlashAlpha: number;

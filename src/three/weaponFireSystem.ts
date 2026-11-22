@@ -5,7 +5,10 @@ import {
   playMaterialImpact3D,
   playShellCasingDrop3D,
 } from '../audio/tacticalImmersionAudio';
-import { getWeaponBallistics } from '../data/weaponBallistics';
+import {
+  computeBallisticDamage,
+  getWeaponBallistics,
+} from '../data/weaponBallistics';
 import { getSprayOffset, getWeaponFeel } from '../data/weaponFeel';
 import { mobileHardware } from '../mobile/nativeHardware';
 import { samplePeerPoseAt } from '../multiplayer/peerSnapshotBuffer';
@@ -25,6 +28,8 @@ import {
 } from './engineMathTemps';
 
 const _baseShotDir = new THREE.Vector3();
+const _pendingBulletCamImpactPoint = new THREE.Vector3();
+const _pendingBulletCamImpactNormal = new THREE.Vector3();
 let lastShellAudioMs = 0;
 let lastAutoHudEmitMs = 0;
 
@@ -79,6 +84,7 @@ function withRewoundOnlinePeers<T>(engine: any, rewindMs: number, fn: () => T): 
 /** Extracted from TacticalFPSEngine.attemptFireWeapon — behavior preserved. */
 export function attemptFireWeapon(engine: any): void {
     if (engine.isPlayerDying || engine.state.health <= 0) return;
+    if (engine.bulletCamManager?.isActive()) return;
     if (engine.state.yardBomb?.roundState === 'EQUIP') return;
     // If the player is holding a grenade in hand, pressing Fire pulls the pin & throws the grenade!
     if (
@@ -481,7 +487,79 @@ export function executeSingleShot(engine: any): void {
           const dist = hit.distance;
           _hitNormal.copy(hit.normal);
 
-          if (p < 3) {
+          const targetId = hitMesh?.userData?.targetId as string | undefined;
+          const hitZone = hitMesh?.userData?.hitZone as
+            | 'HEAD'
+            | 'TORSO_A'
+            | 'ARMOR'
+            | 'STEEL_GONG'
+            | undefined;
+
+          let triggeredBulletCam = false;
+          if (
+            isSniper &&
+            p === 0 &&
+            targetId &&
+            hitZone &&
+            hitZone !== 'STEEL_GONG' &&
+            typeof engine.tryTriggerSniperBulletCam === 'function'
+          ) {
+            const target = engine.targetMap?.get(targetId);
+            if (
+              target &&
+              target.type === 'COMBAT_BOT' &&
+              !target.isDown &&
+              !target.isAlly &&
+              !target.root?.userData?.remotePlayerUid
+            ) {
+              const weaponId = engine.state.activeWeapon as WeaponId;
+              const effectiveDist = dist / Math.max(0.75, gunsmith.rangeMult);
+              const predicted = computeBallisticDamage(
+                weaponId,
+                effectiveDist,
+                hitZone,
+                Boolean(engine.state.suppressorAttached)
+              );
+              const blockedByArmor =
+                hitZone === 'ARMOR' &&
+                target.armorHealth > 0 &&
+                !predicted.armorPiercing;
+              const isPredictedKill =
+                !blockedByArmor && target.health - predicted.damage <= 0;
+
+              if (isPredictedKill) {
+                _pendingBulletCamImpactPoint.copy(hit.point);
+                _pendingBulletCamImpactNormal.copy(_hitNormal);
+                triggeredBulletCam = engine.tryTriggerSniperBulletCam({
+                  weaponId,
+                  isPredictedKill,
+                  isHeadshot: hitZone === 'HEAD',
+                  hitZone,
+                  isRemoteHumanTarget: Boolean(
+                    target.root?.userData?.remotePlayerUid
+                  ),
+                  distanceMeters: dist,
+                  startPos: _worldPos2,
+                  impactPos: _pendingBulletCamImpactPoint,
+                  impactNormal: _pendingBulletCamImpactNormal,
+                  targetRoot: target.root,
+                  onImpact: () => {
+                    engine.handleTargetHit(
+                      targetId,
+                      hitZone,
+                      dist,
+                      _pendingBulletCamImpactPoint,
+                      _pendingBulletCamImpactNormal,
+                      false
+                    );
+                    engine.emitHud();
+                  },
+                });
+              }
+            }
+          }
+
+          if (!triggeredBulletCam && p < 3) {
             engine.fxPool.spawnTracer(_worldPos2, hit.point);
           }
 
@@ -501,23 +579,17 @@ export function executeSingleShot(engine: any): void {
             break;
           }
 
-          const targetId = hitMesh?.userData?.targetId as string | undefined;
-          const hitZone = hitMesh?.userData?.hitZone as
-            | 'HEAD'
-            | 'TORSO_A'
-            | 'ARMOR'
-            | 'STEEL_GONG'
-            | undefined;
-
           if (targetId && hitZone) {
-            engine.handleTargetHit(
-              targetId,
-              hitZone,
-              dist,
-              hit.point,
-              _hitNormal,
-              isShotgun
-            );
+            if (!triggeredBulletCam) {
+              engine.handleTargetHit(
+                targetId,
+                hitZone,
+                dist,
+                hit.point,
+                _hitNormal,
+                isShotgun
+              );
+            }
           } else {
             const surfMat = hitMesh
               ? detectSurfaceMaterialFromMesh(hitMesh, hit.point)

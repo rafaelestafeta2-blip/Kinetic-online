@@ -236,7 +236,13 @@ export function updateTargetsAndCombatAI(engine: any, dt: number): void {
           engine.fxPool,
           engine.grenadeSystem,
           (dmg, isHeadshot, bot) => {
-            if (engine.isPlayerDying || engine.playerDeathTp?.isActive()) return;
+            if (
+              engine.isPlayerDying ||
+              engine.playerDeathTp?.isActive() ||
+              engine.bulletCamManager?.isActive()
+            ) {
+              return;
+            }
             if (isHeadshot) {
               soundEngine.playImpact('HEADSHOT');
             } else {

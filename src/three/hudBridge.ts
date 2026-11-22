@@ -119,6 +119,8 @@ export function buildHudFingerprint(state: HudState, yaw: number): string {
     state.laserActive ? 1 : 0,
     Math.round(state.hitMarkerAlpha * 12),
     state.hitMarkerIsKill ? 1 : 0,
+    state.bulletCamActive ? 1 : 0,
+    Math.round((state.bulletCamVignetteAlpha || 0) * 16),
     Math.round(state.killConfirmAlpha * 10),
     state.killConfirmLabel || '-',
     Math.round(state.damageFlashAlpha * 12),

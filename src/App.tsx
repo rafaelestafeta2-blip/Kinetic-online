@@ -417,7 +417,8 @@ export default function App() {
         <>
           {!hud.yardBomb?.isSpectating &&
             hud.yardBomb?.roundState !== 'MATCH_OVER' &&
-            hud.yardBomb?.roundState !== 'EQUIP' && (
+            hud.yardBomb?.roundState !== 'EQUIP' &&
+            !hud.bulletCamActive && (
               <MobileTouchControls
               hud={hud}
               controlSettings={controlSettings}
@@ -462,6 +463,7 @@ export default function App() {
             onPlantBomb={() => engineRef.current?.triggerPlantBomb()}
             onActivateStreak={() => engineRef.current?.activateReadyStreak()}
             onCycleSpectator={(dir) => engineRef.current?.cycleSpectator(dir)}
+            onSkipBulletCam={() => engineRef.current?.skipBulletCam()}
             onReturnToMenu={handleExitMatchToMenu}
             onReturnToSquadRoom={() => {
               void handleReturnToSquadRoom();
