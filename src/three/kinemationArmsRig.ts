@@ -89,7 +89,7 @@ export const KINEMATION_WEAPON_REGISTRY: Partial<
     clipPrefix: 'MPS5',
     modelAlign: {
       scale: 0.92,
-      pos: [-0.0285, -0.065, 0.25],
+      pos: [0, -0.065, 0.25],
       rot: [0, Math.PI, 0],
     },
     builtInOpticMatSubstrings: ['v18_scope', 'scope_reticle_emi'],
@@ -371,9 +371,9 @@ const _tmpQuat = new THREE.Quaternion();
 const _tmpScale = new THREE.Vector3();
 const _restIkPos = new THREE.Vector3();
 const _restIkQuat = new THREE.Quaternion();
-// Rotação ideal de ik_hand_gun em rigRoot para que socketGroup (+PI/2 em X) aponte o cano 100% reto em -Z e o trilho em +Y
+// Rotação ideal de ik_hand_gun em rigRoot (-PI/2 em X, PI em Z) para que socketGroup (+PI/2 em X) aponte o cano 100% reto em -Z e o trilho em +Y
 const _idealIkRestQuat = new THREE.Quaternion().setFromEuler(
-  new THREE.Euler(Math.PI / 2, 0, Math.PI, 'XYZ')
+  new THREE.Euler(-Math.PI / 2, 0, Math.PI, 'XYZ')
 );
 const _slashQuat = new THREE.Quaternion();
 const _slashEuler = new THREE.Euler();
