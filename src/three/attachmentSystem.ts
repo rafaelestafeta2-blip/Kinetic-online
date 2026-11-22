@@ -130,91 +130,92 @@ export const WEAPON_MUZZLE_OFFSETS: Record<WeaponId, WeaponMuzzleTransform> = {
 
 /**
  * Weapon charm attachment positions calibrated flush against each weapon's
- * left receiver wall / forward side rail (`ReceiverLeftWallX - 3mm`).
+ * rear-mid left receiver wall (`ReceiverLeftWallX - 3mm`), safely behind the
+ * support-hand glove (`hand_l`) so charms swing freely without ever clipping.
  */
 export const WEAPON_CHARM_OFFSETS: Record<WeaponId, WeaponCharmTransform> = {
   P50_PISTOL: {
-    position: new THREE.Vector3(-0.024, 0.008, -0.035),
-    scale: 1.18,
+    position: new THREE.Vector3(-0.0185, 0.006, -0.065),
+    scale: 1.16,
     rotation: new THREE.Euler(0, 0, 0),
   },
   M1911_PISTOL: {
-    position: new THREE.Vector3(-0.0145, 0.004, -0.028),
+    position: new THREE.Vector3(-0.0145, -0.001, -0.055),
     scale: 1.12,
     rotation: new THREE.Euler(0, 0, 0),
   },
   SMG_45: {
-    position: new THREE.Vector3(-0.0185, 0.044, -0.055),
+    position: new THREE.Vector3(-0.039, 0.056, 0.04),
     scale: 1.38,
     rotation: new THREE.Euler(0, 0, 0),
   },
   SMG_MP5: {
-    position: new THREE.Vector3(-0.0235, 0.025, -0.045),
+    position: new THREE.Vector3(-0.0205, 0.026, 0.035),
     scale: 1.38,
     rotation: new THREE.Euler(0, 0, 0),
   },
   SHOTGUN_12: {
-    position: new THREE.Vector3(-0.0175, 0.011, -0.045),
+    position: new THREE.Vector3(-0.0175, 0.011, 0.045),
     scale: 1.42,
     rotation: new THREE.Euler(0, 0, 0),
   },
   SHOTGUN_SPAS: {
-    position: new THREE.Vector3(-0.027, 0.058, -0.055),
+    position: new THREE.Vector3(-0.0295, 0.058, 0.05),
     scale: 1.45,
     rotation: new THREE.Euler(0, 0, 0),
   },
   M4_CARBINE: {
-    position: new THREE.Vector3(-0.0245, 0.006, -0.045),
+    position: new THREE.Vector3(-0.0245, 0.003, 0.045),
     scale: 1.48,
     rotation: new THREE.Euler(0, 0, 0),
   },
   CARBINE_AR: {
-    position: new THREE.Vector3(-0.0265, 0.028, -0.045),
+    position: new THREE.Vector3(-0.027, 0.033, 0.045),
     scale: 1.48,
     rotation: new THREE.Euler(0, 0, 0),
   },
   AK47_RIFLE: {
-    position: new THREE.Vector3(-0.0165, 0.026, -0.045),
+    position: new THREE.Vector3(-0.016, 0.015, 0.055),
     scale: 1.45,
     rotation: new THREE.Euler(0, 0, 0),
   },
   AK12_RIFLE: {
-    position: new THREE.Vector3(-0.0215, 0.035, -0.045),
+    position: new THREE.Vector3(-0.0215, 0.032, 0.055),
     scale: 1.45,
     rotation: new THREE.Euler(0, 0, 0),
   },
   S_MILITARY: {
-    position: new THREE.Vector3(-0.0245, 0.014, -0.055),
+    position: new THREE.Vector3(-0.0245, 0.018, 0.045),
     scale: 1.48,
     rotation: new THREE.Euler(0, 0, 0),
   },
   L49_LMG: {
-    position: new THREE.Vector3(-0.025, 0.054, -0.055),
+    position: new THREE.Vector3(-0.0245, 0.042, 0.04),
     scale: 1.5,
     rotation: new THREE.Euler(0, 0, 0),
   },
   SNIPER_BOLT: {
-    position: new THREE.Vector3(-0.0215, 0.009, -0.05),
+    position: new THREE.Vector3(-0.0215, 0.004, 0.04),
     scale: 1.42,
     rotation: new THREE.Euler(0, 0, 0),
   },
   SNIPER_TACTICAL: {
-    position: new THREE.Vector3(-0.0295, 0.011, -0.055),
+    position: new THREE.Vector3(-0.0375, 0.009, 0.055),
     scale: 1.45,
     rotation: new THREE.Euler(0, 0, 0),
   },
   SNIPER_AWP: {
-    position: new THREE.Vector3(-0.0255, 0.046, -0.055),
+    position: new THREE.Vector3(-0.0215, 0.058, 0.045),
     scale: 1.48,
     rotation: new THREE.Euler(0, 0, 0),
   },
   SNIPER_HEAVY: {
-    position: new THREE.Vector3(-0.0225, 0.04, -0.06),
+    position: new THREE.Vector3(-0.0205, 0.026, 0.05),
     scale: 1.48,
     rotation: new THREE.Euler(0, 0, 0),
   },
   RPG7_LAUNCHER: {
-    position: new THREE.Vector3(-0.0165, 0.078, -0.05),
+    position: new THREE.Vector3(-0.043, 0.082, 0.02),
     scale: 1.48,
     rotation: new THREE.Euler(0, 0, 0),
   },

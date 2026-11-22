@@ -70,7 +70,7 @@ export const KINEMATION_WEAPON_REGISTRY: Partial<
     muzzlePos: [0, 0.003, -0.203],
     ejectionPos: [0.018, 0.015, -0.04],
     laserPos: [0, -0.014, -0.14],
-    railMountPos: [0, 0.022, -0.01],
+    railMountPos: [0, 0.0198, -0.01],
     railMountScale: 0.68,
   },
   M1911_PISTOL: {
@@ -80,7 +80,7 @@ export const KINEMATION_WEAPON_REGISTRY: Partial<
     muzzlePos: [0, -0.004, -0.132],
     ejectionPos: [0.016, 0.01, -0.02],
     laserPos: [0, -0.014, -0.1],
-    railMountPos: [0, 0.016, 0.0],
+    railMountPos: [0, 0.0126, 0.0],
     railMountScale: 0.65,
   },
   SMG_45: {
@@ -97,7 +97,7 @@ export const KINEMATION_WEAPON_REGISTRY: Partial<
     muzzlePos: [0, 0.015, -0.581],
     ejectionPos: [0.022, 0.022, -0.06],
     laserPos: [0.024, 0.012, -0.22],
-    railMountPos: [0, 0.058, -0.04],
+    railMountPos: [0, 0.0702, -0.04],
     railMountScale: 0.78,
   },
   SMG_MP5: {
@@ -134,7 +134,7 @@ export const KINEMATION_WEAPON_REGISTRY: Partial<
     muzzlePos: [0, 0.011, -0.568],
     ejectionPos: [0.024, 0.008, -0.04],
     laserPos: [0.028, 0.008, -0.28],
-    railMountPos: [0, 0.04, -0.01],
+    railMountPos: [0, 0.0472, -0.01],
     railMountScale: 0.88,
   },
   S_MILITARY: {
@@ -152,7 +152,7 @@ export const KINEMATION_WEAPON_REGISTRY: Partial<
     muzzlePos: [0, 0.001, -0.613],
     ejectionPos: [0.024, -0.004, -0.05],
     laserPos: [-0.036, -0.005, -0.32],
-    railMountPos: [0, 0.024, -0.02],
+    railMountPos: [0, 0.0352, -0.04],
     railMountScale: 0.9,
   },
   AK47_RIFLE: {
@@ -168,7 +168,7 @@ export const KINEMATION_WEAPON_REGISTRY: Partial<
     muzzlePos: [0, -0.009, -0.516],
     ejectionPos: [0.024, 0.01, -0.04],
     laserPos: [0.026, 0.008, -0.24],
-    railMountPos: [0, 0.038, -0.02],
+    railMountPos: [0, 0.0282, 0.015],
     railMountScale: 0.86,
   },
   AK12_RIFLE: {
@@ -188,7 +188,7 @@ export const KINEMATION_WEAPON_REGISTRY: Partial<
     muzzlePos: [0, 0.01, -0.716],
     ejectionPos: [0.018, 0.016, 0.01],
     laserPos: [0.02, -0.012, -0.4],
-    railMountPos: [0, 0.021, 0.0],
+    railMountPos: [0, 0.0193, 0.0],
     railMountScale: 0.82,
     reloadUsesFullClipOnce: true,
   },
@@ -228,7 +228,7 @@ export const KINEMATION_WEAPON_REGISTRY: Partial<
     muzzlePos: [0, 0.021, -0.737],
     ejectionPos: [0.028, 0.012, -0.06],
     laserPos: [0.032, 0.006, -0.32],
-    railMountPos: [0, 0.068, -0.03],
+    railMountPos: [0, 0.058, -0.045],
     railMountScale: 0.88,
   },
   SNIPER_BOLT: {
@@ -238,7 +238,7 @@ export const KINEMATION_WEAPON_REGISTRY: Partial<
     muzzlePos: [0, -0.002, -0.713],
     ejectionPos: [0.022, 0.01, -0.04],
     laserPos: [0.022, -0.006, -0.36],
-    railMountPos: [0, 0.02, -0.02],
+    railMountPos: [0, 0.0142, -0.02],
     railMountScale: 0.88,
     hasBoltActionFireClip: true,
   },
@@ -305,9 +305,9 @@ export const KINEMATION_WEAPON_REGISTRY: Partial<
     attachToHandR: true,
     isMeleeKnife: true,
     modelAlign: {
-      scale: 0.0078,
-      pos: [-0.1401, -0.0063, 0.0366],
-      rot: [1.134, 0.2829, 1.4476],
+      scale: 0.0096,
+      pos: [-0.1033, -0.0194, 0.0508],
+      rot: [-0.4492, 1.105, -2.6114],
     },
     weaponFreezeIdlePose: true,
     hiddenNodeSubstrings: ['armmesh'],
@@ -334,7 +334,7 @@ export const KINEMATION_EXTRA_WEAPON_TEMPLATES: Record<
     muzzlePos: [0, -0.004, -0.132],
     ejectionPos: [0.016, 0.01, -0.02],
     laserPos: [0, -0.014, -0.1],
-    railMountPos: [0, 0.016, 0.0],
+    railMountPos: [0, 0.0126, 0.0],
     railMountScale: 0.65,
   },
   RPG7: {
@@ -374,6 +374,9 @@ const _restIkQuat = new THREE.Quaternion();
 // Rotação ideal de ik_hand_gun em rigRoot (-PI/2 em X, PI em Z) para que socketGroup (+PI/2 em X) aponte o cano 100% reto em -Z e o trilho em +Y
 const _idealIkRestQuat = new THREE.Quaternion().setFromEuler(
   new THREE.Euler(-Math.PI / 2, 0, Math.PI, 'XYZ')
+);
+const _knifePoseQuat = new THREE.Quaternion().setFromEuler(
+  new THREE.Euler(0.6, 0.38, 0.04, 'XYZ')
 );
 const _slashQuat = new THREE.Quaternion();
 const _slashEuler = new THREE.Euler();
@@ -861,6 +864,8 @@ export function createKinemationArmsRig(params: {
       inst.poseArmsCenterQuat
         .copy(_idealIkRestQuat)
         .multiply(_restIkQuat.invert());
+    } else if (inst.spec.isMeleeKnife) {
+      inst.poseArmsCenterQuat.copy(_knifePoseQuat);
     } else {
       inst.poseArmsCenterQuat.identity();
     }
@@ -872,9 +877,9 @@ export function createKinemationArmsRig(params: {
     // Centraliza o receptor/mão da pose inicial em (0, 0, 0) de rigRoot
     inst.poseArmsCenterOffset.copy(_restIkPos).negate();
     if (inst.spec.isMeleeKnife) {
-      inst.poseArmsCenterOffset.x += 0.085;
-      inst.poseArmsCenterOffset.y -= 0.115;
-      inst.poseArmsCenterOffset.z -= 0.035;
+      inst.poseArmsCenterOffset.x += 0.11;
+      inst.poseArmsCenterOffset.y -= 0.11;
+      inst.poseArmsCenterOffset.z -= 0.05;
     }
     armsCenterGroup.position.copy(inst.poseArmsCenterOffset);
 
@@ -1176,11 +1181,11 @@ export function createKinemationArmsRig(params: {
                   (mesh as THREE.SkinnedMesh).applyBoneTransform(ii, vTmp);
                 }
                 vTmp.applyMatrix4(toModelSceneMat);
-                // Em modelScene da mx16a4: Y_gun = -vTmp.z, Z_gun = -vTmp.y
-                cy += -vTmp.z / 3;
-                cz += -vTmp.y / 3;
+                // Em modelScene da mx16a4: Y_gun = +vTmp.y, Z_gun = -vTmp.z
+                cy += vTmp.y / 3;
+                cz += -vTmp.z / 3;
               }
-              if (cy > 0.0168 && cz > -0.05 && cz < 0.135) {
+              if (cy > 0.0165 && cz > -0.052 && cz < 0.145) {
                 sightIndices.push(i0, i1, i2);
               } else {
                 baseIndices.push(i0, i1, i2);
@@ -1968,10 +1973,11 @@ export function prepareStandaloneWeaponSceneForInspection(
             (mesh as THREE.SkinnedMesh).applyBoneTransform(ii, vTmp);
           }
           vTmp.applyMatrix4(toModelSceneMat);
-          cy += -vTmp.z / 3;
-          cz += -vTmp.y / 3;
+          // Em modelScene da mx16a4: Y_gun = +vTmp.y, Z_gun = -vTmp.z
+          cy += vTmp.y / 3;
+          cz += -vTmp.z / 3;
         }
-        if (cy > 0.0168 && cz > -0.05 && cz < 0.135) {
+        if (cy > 0.0165 && cz > -0.052 && cz < 0.145) {
           sightIndices.push(i0, i1, i2);
         } else {
           baseIndices.push(i0, i1, i2);
