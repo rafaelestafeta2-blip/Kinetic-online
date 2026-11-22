@@ -29,7 +29,62 @@ interface ChampionshipHubModalProps {
   onLaunchChampionshipMatch?: (roomCode: string, arenaMode: DrillMode) => void;
 }
 
-export const ChampionshipHubModal: React.FC<ChampionshipHubModalProps> = ({
+interface ErrorBoundaryState {
+  hasError: boolean;
+  message: string;
+}
+
+class ChampionshipModalErrorBoundary extends React.Component<
+  { onClose: () => void; children: React.ReactNode },
+  ErrorBoundaryState
+> {
+  state: ErrorBoundaryState = { hasError: false, message: '' };
+
+  static getDerivedStateFromError(error: unknown): ErrorBoundaryState {
+    return {
+      hasError: true,
+      message: error instanceof Error ? error.message : 'Erro inesperado na tela do campeonato.',
+    };
+  }
+
+  componentDidCatch(error: unknown): void {
+    console.error('[ChampionshipHubModal] Render error caught:', error);
+  }
+
+  render(): React.ReactNode {
+    if (this.state.hasError) {
+      return (
+        <div className="fixed inset-0 z-50 bg-[#050914]/95 flex items-center justify-center p-4 text-white">
+          <div className="max-w-md w-full border border-rose-500/50 bg-[#0B1325] p-5 space-y-4">
+            <h2 className="text-sm font-display font-black uppercase tracking-wider text-rose-300">
+              ERRO AO ABRIR O CAMPEONATO
+            </h2>
+            <p className="text-xs text-slate-300 leading-relaxed">{this.state.message}</p>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => this.setState({ hasError: false, message: '' })}
+                className="px-3.5 py-2 border border-cyan-500/50 text-cyan-300 font-mono text-xs uppercase cursor-pointer"
+              >
+                TENTAR NOVAMENTE
+              </button>
+              <button
+                type="button"
+                onClick={this.props.onClose}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white font-display font-bold text-xs uppercase cursor-pointer"
+              >
+                FECHAR
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const ChampionshipHubModalInner: React.FC<ChampionshipHubModalProps> = ({
   isOpen,
   onClose,
   onOpenClanCenter,
@@ -216,7 +271,7 @@ export const ChampionshipHubModal: React.FC<ChampionshipHubModalProps> = ({
               <h1 className="text-sm sm:text-base font-display font-black uppercase tracking-wider text-white truncate">
                 CAMPEONATO DE CLÃS · KINETIC
               </h1>
-              {data && (
+              {data?.championship && (
                 <span
                   className={`hidden sm:inline-block px-2 py-0.5 text-[10px] font-mono uppercase border ${getChampionshipStatusColor(
                     data.championship.status
@@ -314,7 +369,7 @@ export const ChampionshipHubModal: React.FC<ChampionshipHubModalProps> = ({
             </div>
           )}
 
-          {data && activeTab === 'OVERVIEW' && (
+          {data?.championship && activeTab === 'OVERVIEW' && (
             <ChampionshipOverviewTab
               data={data}
               serverNowMs={syncedNowMs}
@@ -332,7 +387,7 @@ export const ChampionshipHubModal: React.FC<ChampionshipHubModalProps> = ({
             />
           )}
 
-          {data && activeTab === 'SCHEDULE' && (
+          {data?.championship && activeTab === 'SCHEDULE' && (
             <ChampionshipScheduleTab
               matches={data.matches}
               myRegistration={data.myRegistration}
@@ -342,7 +397,7 @@ export const ChampionshipHubModal: React.FC<ChampionshipHubModalProps> = ({
             />
           )}
 
-          {data && activeTab === 'STANDINGS' && (
+          {data?.championship && activeTab === 'STANDINGS' && (
             <ChampionshipStandingsTab
               standings={data.standings}
               playoffSize={data.championship.playoffSize}
@@ -350,7 +405,7 @@ export const ChampionshipHubModal: React.FC<ChampionshipHubModalProps> = ({
             />
           )}
 
-          {data && activeTab === 'REGISTRATION' && (
+          {data?.championship && activeTab === 'REGISTRATION' && (
             <ChampionshipRegistrationTab
               data={data}
               currentUid={currentUid}
@@ -362,11 +417,20 @@ export const ChampionshipHubModal: React.FC<ChampionshipHubModalProps> = ({
             />
           )}
 
-          {data && data.isAdmin && activeTab === 'ADMIN' && (
+          {data?.championship && data.isAdmin && activeTab === 'ADMIN' && (
             <ChampionshipAdminTab data={data} onRefresh={loadData} />
           )}
         </div>
       </div>
     </div>
+  );
+};
+
+export const ChampionshipHubModal: React.FC<ChampionshipHubModalProps> = (props) => {
+  if (!props.isOpen) return null;
+  return (
+    <ChampionshipModalErrorBoundary onClose={props.onClose}>
+      <ChampionshipHubModalInner {...props} />
+    </ChampionshipModalErrorBoundary>
   );
 };

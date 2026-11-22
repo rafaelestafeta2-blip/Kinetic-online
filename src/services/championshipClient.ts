@@ -48,11 +48,95 @@ export interface ChampionshipOverviewData {
   standings: StandingRecord[];
 }
 
-const API_BASE = '/api/championships';
+const REQUEST_TIMEOUT_MS = 10_000;
+
+function isNativeCapacitorRuntime(): boolean {
+  if (typeof window === 'undefined') return false;
+  const cap = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
+  if (cap && typeof cap.isNativePlatform === 'function') {
+    try {
+      if (cap.isNativePlatform()) return true;
+    } catch {
+      // ignore
+    }
+  }
+  return window.location.protocol === 'capacitor:' || window.location.protocol === 'file:';
+}
+
+function getEnvString(key: string): string {
+  try {
+    const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
+    return (env?.[key] || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Resolves the Championship API base URL for both Web (same-origin `/api/championships`)
+ * and Capacitor Android APK (`VITE_API_SERVER_URL` or origin derived from `VITE_WS_SERVER_URL`).
+ */
+export function resolveChampionshipApiBase(): string {
+  const explicitApiUrl = getEnvString('VITE_API_SERVER_URL');
+  if (explicitApiUrl && /^https?:\/\//i.test(explicitApiUrl)) {
+    const clean = explicitApiUrl.replace(/\/+$/, '');
+    return clean.endsWith('/api/championships') ? clean : `${clean}/api/championships`;
+  }
+
+  const wsUrl = getEnvString('VITE_WS_SERVER_URL');
+  const isLocalOrNative =
+    isNativeCapacitorRuntime() ||
+    (typeof window !== 'undefined' &&
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'));
+
+  if (wsUrl && /^wss?:\/\//i.test(wsUrl)) {
+    try {
+      const parsed = new URL(wsUrl.replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:'));
+      if (isLocalOrNative) {
+        return `${parsed.origin}/api/championships`;
+      }
+    } catch {
+      // ignore malformed URL
+    }
+  }
+
+  if (isNativeCapacitorRuntime()) {
+    throw new Error(
+      'Este APK não possui endereço do servidor do Campeonato configurado. Defina VITE_WS_SERVER_URL ou VITE_API_SERVER_URL apontando para o servidor online do KINETIC antes de compilar o APK.'
+    );
+  }
+
+  return '/api/championships';
+}
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs = REQUEST_TIMEOUT_MS
+): Promise<Response> {
+  if (typeof AbortController === 'undefined') {
+    return fetch(url, init);
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('Tempo esgotado ao conectar com o servidor do campeonato. Verifique sua internet.');
+    }
+    throw new Error(
+      'Não foi possível conectar ao servidor do campeonato. Verifique sua conexão ou o endereço do servidor.'
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 async function getAuthHeaders(required = false): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    Accept: 'application/json',
   };
   const user = auth.currentUser;
   if (user) {
@@ -73,35 +157,58 @@ async function getAuthHeaders(required = false): Promise<Record<string, string>>
 }
 
 async function parseJsonResponse<T>(res: Response): Promise<T> {
-  let data: Record<string, unknown> = {};
-  try {
-    data = (await res.json()) as Record<string, unknown>;
-  } catch {
-    // ignore
+  const contentType = (res.headers.get('content-type') || '').toLowerCase();
+  const rawText = await res.text();
+
+  let data: Record<string, unknown> | null = null;
+  if (rawText) {
+    try {
+      const parsed: unknown = JSON.parse(rawText);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        data = parsed as Record<string, unknown>;
+      }
+    } catch {
+      // Non-JSON payload (e.g. SPA index.html served by Capacitor local asset server)
+    }
   }
+
   if (!res.ok) {
     const errMsg =
-      typeof data.error === 'string' && data.error.trim().length > 0
+      data && typeof data.error === 'string' && data.error.trim().length > 0
         ? data.error
         : `Erro HTTP ${res.status} na comunicação com o servidor do campeonato.`;
     throw new Error(errMsg);
   }
+
+  if (!data || (!contentType.includes('application/json') && rawText.trim().startsWith('<'))) {
+    throw new Error(
+      'O servidor do Campeonato não respondeu em JSON válido. No APK Android, configure VITE_WS_SERVER_URL ou VITE_API_SERVER_URL apontando para a URL HTTPS do servidor KINETIC.'
+    );
+  }
+
   return data as T;
 }
 
 export async function fetchActiveChampionship(): Promise<ChampionshipOverviewData> {
+  const apiBase = resolveChampionshipApiBase();
   const headers = await getAuthHeaders(false);
   const reqStartPerf = typeof performance !== 'undefined' ? performance.now() : 0;
-  const res = await fetch(`${API_BASE}/active`, {
+  const res = await fetchWithTimeout(`${apiBase}/active`, {
     method: 'GET',
     headers,
     cache: 'no-store',
   });
   const data = await parseJsonResponse<ChampionshipOverviewData>(res);
+  if (!data.championship || typeof data.championship.id !== 'number') {
+    throw new Error('Resposta incompleta do servidor do campeonato. Tente atualizar novamente.');
+  }
   const reqEndPerf = typeof performance !== 'undefined' ? performance.now() : reqStartPerf;
   const rttMs = Math.max(0, Math.min(4000, Math.round(reqEndPerf - reqStartPerf)));
   return {
     ...data,
+    registrations: Array.isArray(data.registrations) ? data.registrations : [],
+    matches: Array.isArray(data.matches) ? data.matches : [],
+    standings: Array.isArray(data.standings) ? data.standings : [],
     measuredRttMs: rttMs,
   };
 }
@@ -114,8 +221,9 @@ export async function registerClanInChampionship(
     reserveUids: string[];
   }
 ): Promise<{ ok: true; registration: RegistrationRecord }> {
+  const apiBase = resolveChampionshipApiBase();
   const headers = await getAuthHeaders(true);
-  const res = await fetch(`${API_BASE}/${championshipId}/register`, {
+  const res = await fetchWithTimeout(`${apiBase}/${championshipId}/register`, {
     method: 'POST',
     headers,
     body: JSON.stringify(payload),
@@ -126,8 +234,9 @@ export async function registerClanInChampionship(
 export async function createChampionshipCheckout(
   championshipId: number
 ): Promise<{ ok: true; checkoutUrl: string; sessionId: string }> {
+  const apiBase = resolveChampionshipApiBase();
   const headers = await getAuthHeaders(true);
-  const res = await fetch(`${API_BASE}/${championshipId}/checkout`, {
+  const res = await fetchWithTimeout(`${apiBase}/${championshipId}/checkout`, {
     method: 'POST',
     headers,
     body: JSON.stringify({}),
@@ -141,8 +250,9 @@ export async function requestMatchLobbyToken(matchId: number): Promise<{
   expiresInSec: number;
   lobby: ChampionshipLobbySnapshot;
 }> {
+  const apiBase = resolveChampionshipApiBase();
   const headers = await getAuthHeaders(true);
-  const res = await fetch(`${API_BASE}/matches/${matchId}/join-token`, {
+  const res = await fetchWithTimeout(`${apiBase}/matches/${matchId}/join-token`, {
     method: 'POST',
     headers,
     body: JSON.stringify({}),
@@ -155,8 +265,9 @@ export async function substituteChampionshipStarter(
   starterOutUid: string,
   reserveInUid: string
 ): Promise<{ ok: true; lobby: ChampionshipLobbySnapshot }> {
+  const apiBase = resolveChampionshipApiBase();
   const headers = await getAuthHeaders(true);
-  const res = await fetch(`${API_BASE}/matches/${matchId}/substitute`, {
+  const res = await fetchWithTimeout(`${apiBase}/matches/${matchId}/substitute`, {
     method: 'POST',
     headers,
     body: JSON.stringify({ starterOutUid, reserveInUid }),
@@ -171,22 +282,27 @@ export async function fetchRosterLockStatus(): Promise<{
   clanName?: string;
 }> {
   try {
+    const apiBase = resolveChampionshipApiBase();
     const headers = await getAuthHeaders(false);
     if (!headers.Authorization) {
       return { ok: true, locked: false };
     }
-    const res = await fetch(`${API_BASE}/roster-lock-status`, {
-      method: 'GET',
-      headers,
-      cache: 'no-store',
-    });
+    const res = await fetchWithTimeout(
+      `${apiBase}/roster-lock-status`,
+      {
+        method: 'GET',
+        headers,
+        cache: 'no-store',
+      },
+      5000
+    );
     if (!res.ok) return { ok: false, locked: false };
-    return (await res.json()) as {
+    return await parseJsonResponse<{
       ok: boolean;
       locked: boolean;
       championshipTitle?: string;
       clanName?: string;
-    };
+    }>(res);
   } catch {
     return { ok: false, locked: false };
   }
@@ -211,8 +327,9 @@ export async function adminSaveChampionship(payload: {
   rulesSummary: string;
   status?: ChampionshipStatus;
 }): Promise<{ ok: true; championship: ChampionshipRecord }> {
+  const apiBase = resolveChampionshipApiBase();
   const headers = await getAuthHeaders(true);
-  const res = await fetch(`${API_BASE}/admin/championship`, {
+  const res = await fetchWithTimeout(`${apiBase}/admin/championship`, {
     method: 'POST',
     headers,
     body: JSON.stringify(payload),
@@ -224,9 +341,10 @@ export async function adminConfirmClanPayment(
   championshipId: number,
   registrationId: number
 ): Promise<{ ok: true; registration: RegistrationRecord }> {
+  const apiBase = resolveChampionshipApiBase();
   const headers = await getAuthHeaders(true);
-  const res = await fetch(
-    `${API_BASE}/admin/${championshipId}/confirm-payment/${registrationId}`,
+  const res = await fetchWithTimeout(
+    `${apiBase}/admin/${championshipId}/confirm-payment/${registrationId}`,
     {
       method: 'POST',
       headers,
@@ -239,8 +357,9 @@ export async function adminConfirmClanPayment(
 export async function adminExecuteRosterLock(
   championshipId: number
 ): Promise<{ ok: true; matchesGenerated: number; confirmedClans: number }> {
+  const apiBase = resolveChampionshipApiBase();
   const headers = await getAuthHeaders(true);
-  const res = await fetch(`${API_BASE}/admin/${championshipId}/roster-lock`, {
+  const res = await fetchWithTimeout(`${apiBase}/admin/${championshipId}/roster-lock`, {
     method: 'POST',
     headers,
     body: JSON.stringify({}),
@@ -251,8 +370,9 @@ export async function adminExecuteRosterLock(
 export async function adminOpenMatchRoom(
   matchId: number
 ): Promise<{ ok: true; match: MatchRecord }> {
+  const apiBase = resolveChampionshipApiBase();
   const headers = await getAuthHeaders(true);
-  const res = await fetch(`${API_BASE}/admin/matches/${matchId}/open-room`, {
+  const res = await fetchWithTimeout(`${apiBase}/admin/matches/${matchId}/open-room`, {
     method: 'POST',
     headers,
     body: JSON.stringify({}),
@@ -270,8 +390,9 @@ export async function adminRecordMatchResult(
     woClanRegId?: number | null;
   }
 ): Promise<{ ok: true; match: MatchRecord }> {
+  const apiBase = resolveChampionshipApiBase();
   const headers = await getAuthHeaders(true);
-  const res = await fetch(`${API_BASE}/admin/matches/${matchId}/result`, {
+  const res = await fetchWithTimeout(`${apiBase}/admin/matches/${matchId}/result`, {
     method: 'POST',
     headers,
     body: JSON.stringify(payload),
@@ -282,8 +403,9 @@ export async function adminRecordMatchResult(
 export async function adminFetchAuditLogs(
   championshipId: number
 ): Promise<{ ok: true; logs: AuditLogRecord[] }> {
+  const apiBase = resolveChampionshipApiBase();
   const headers = await getAuthHeaders(true);
-  const res = await fetch(`${API_BASE}/admin/${championshipId}/audit-logs`, {
+  const res = await fetchWithTimeout(`${apiBase}/admin/${championshipId}/audit-logs`, {
     method: 'GET',
     headers,
     cache: 'no-store',
@@ -300,8 +422,9 @@ export async function adminRunSchedulerNow(): Promise<{
     woAppliedMatchIds: number[];
   };
 }> {
+  const apiBase = resolveChampionshipApiBase();
   const headers = await getAuthHeaders(true);
-  const res = await fetch(`${API_BASE}/admin/run-scheduler`, {
+  const res = await fetchWithTimeout(`${apiBase}/admin/run-scheduler`, {
     method: 'POST',
     headers,
     body: JSON.stringify({}),
@@ -334,9 +457,19 @@ export interface ChampionshipLobbyWsHandle {
 }
 
 function resolveChampionshipWsUrl(): string {
-  const custom = (import.meta.env.VITE_WS_SERVER_URL as string | undefined)?.trim();
-  if (custom) {
-    return custom.endsWith('/ws') ? custom : `${custom.replace(/\/$/, '')}/ws`;
+  const customWs = getEnvString('VITE_WS_SERVER_URL');
+  if (customWs && /^wss?:\/\//i.test(customWs)) {
+    return customWs.endsWith('/ws') ? customWs : `${customWs.replace(/\/+$/, '')}/ws`;
+  }
+  const customApi = getEnvString('VITE_API_SERVER_URL');
+  if (customApi && /^https?:\/\//i.test(customApi)) {
+    try {
+      const parsed = new URL(customApi);
+      const wsProto = parsed.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${wsProto}//${parsed.host}/ws`;
+    } catch {
+      // ignore
+    }
   }
   if (typeof window === 'undefined') return 'ws://localhost:3000/ws';
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
