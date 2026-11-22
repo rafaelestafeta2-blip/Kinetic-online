@@ -45,10 +45,35 @@ export interface OnlineBombEvent {
   ts: number;
 }
 
+export interface OnlineGrenadeVictimVerdict {
+  targetUid: string;
+  zone: 'LETHAL_R1' | 'CONCUSSION_R2';
+  distanceMeters: number;
+  damage: number;
+  lethal: boolean;
+  isShellshocked: boolean;
+  shellshockIntensity: number;
+  shellshockDurationSec: number;
+  impulseVel: [number, number, number];
+}
+
+export interface OnlineGrenadeDetonatedEvent {
+  eventId: string;
+  attackerUid: string;
+  attackerCallsign: string;
+  attackerTeam: OnlineTeam;
+  grenadePos: [number, number, number];
+  lethalRadiusM: number;
+  concussionRadiusM: number;
+  victims: OnlineGrenadeVictimVerdict[];
+  ts: number;
+}
+
 type RoomSubscriber = (room: OnlineRoomState | null) => void;
 type SquadChatSubscriber = (messages: SquadChatMessage[]) => void;
 type HitSubscriber = (hit: OnlineHitEvent) => void;
 type GrenadeSubscriber = (evt: OnlineGrenadeEvent) => void;
+type GrenadeDetonatedSubscriber = (evt: OnlineGrenadeDetonatedEvent) => void;
 type ScorestreakSubscriber = (evt: OnlineScorestreakEvent) => void;
 type ClassSupportSubscriber = (evt: ClassSupportPacket) => void;
 type BombSubscriber = (evt: OnlineBombEvent) => void;
@@ -58,12 +83,14 @@ const roomSubscribers = new Set<RoomSubscriber>();
 const squadChatSubscribers = new Set<SquadChatSubscriber>();
 const hitSubscribers = new Set<HitSubscriber>();
 const grenadeSubscribers = new Set<GrenadeSubscriber>();
+const grenadeDetonatedSubscribers = new Set<GrenadeDetonatedSubscriber>();
 const scorestreakSubscribers = new Set<ScorestreakSubscriber>();
 const classSupportSubscribers = new Set<ClassSupportSubscriber>();
 const bombSubscribers = new Set<BombSubscriber>();
 const roundSubscribers = new Set<RoundSubscriber>();
 const processedHitIds = new Set<string>();
 const processedGrenadeIds = new Set<string>();
+const processedGrenadeDetonatedIds = new Set<string>();
 const processedScorestreakIds = new Set<string>();
 const processedClassSupportIds = new Set<string>();
 const processedRoundEventIds = new Set<string>();
@@ -123,6 +150,15 @@ function rememberGrenadeEventId(eventId: string): void {
   if (processedGrenadeIds.size > 150) {
     const first = processedGrenadeIds.values().next().value;
     if (first) processedGrenadeIds.delete(first);
+  }
+}
+
+function rememberGrenadeDetonatedId(eventId: string): void {
+  if (!eventId) return;
+  processedGrenadeDetonatedIds.add(eventId);
+  if (processedGrenadeDetonatedIds.size > 150) {
+    const first = processedGrenadeDetonatedIds.values().next().value;
+    if (first) processedGrenadeDetonatedIds.delete(first);
   }
 }
 
@@ -719,6 +755,32 @@ function connectWebSocketForRoom(room: OnlineRoomState, player: OnlinePlayerStat
           ) {
             rememberGrenadeEventId(evt.eventId);
             grenadeSubscribers.forEach((fn) => fn(evt));
+          }
+        } else if (msg.type === 'ON_GRENADE_DETONATED') {
+          const detMsg = msg as unknown as {
+            detonation?: OnlineGrenadeDetonatedEvent;
+            senderUid?: string;
+          };
+          const evt = detMsg.detonation;
+          if (evt && evt.eventId && !processedGrenadeDetonatedIds.has(evt.eventId)) {
+            rememberGrenadeDetonatedId(evt.eventId);
+            for (const v of evt.victims || []) {
+              const victim = activeRoom.players[v.targetUid];
+              if (victim && !victim.isDown) {
+                const nextHp = v.lethal ? 0 : Math.max(1, victim.health - v.damage);
+                victim.health = nextHp;
+                victim.isDown = v.lethal || nextHp <= 0;
+                victim.updatedAtMs = evt.ts || Date.now();
+                if (victim.isDown) {
+                  victim.deaths = (victim.deaths || 0) + 1;
+                  const atk = activeRoom.players[evt.attackerUid];
+                  if (atk && evt.attackerUid !== v.targetUid) {
+                    atk.kills = (atk.kills || 0) + 1;
+                  }
+                }
+              }
+            }
+            grenadeDetonatedSubscribers.forEach((fn) => fn(evt));
           }
         } else if (msg.type === 'SCORESTREAK_EVENT') {
           const streakMsg = msg as unknown as {
@@ -1584,6 +1646,36 @@ export function publishGrenadeThrow(
   }
 }
 
+export function publishGrenadeDetonation(
+  grenadePos: [number, number, number],
+  occludedTargetUids: string[] = []
+): void {
+  if (!activeRoom) return;
+  const uid = getEffectiveLocalUid();
+  if (!uid || !activeRoom.players[uid]) return;
+  const nowMs = Date.now();
+  const eventId = `grndet_${uid}_${nowMs}_${Math.random().toString(36).slice(2, 6)}`;
+  if (wsClient && wsClient.readyState === WebSocket.OPEN) {
+    wsClient.send(
+      JSON.stringify({
+        type: 'GRENADE_DETONATE',
+        roomId: activeRoom.roomId,
+        detonation: {
+          eventId,
+          grenadePos: [
+            Number(grenadePos[0].toFixed(2)),
+            Number(grenadePos[1].toFixed(2)),
+            Number(grenadePos[2].toFixed(2)),
+          ],
+          occludedTargetUids,
+          ts: nowMs,
+        },
+        ts: nowMs,
+      })
+    );
+  }
+}
+
 export function publishScorestreakEvent(
   streak: 'UAV' | 'ADVANCED_UAV',
   durationSec: number
@@ -1881,6 +1973,13 @@ export function subscribeOnlineHitEvents(fn: HitSubscriber): () => void {
 export function subscribeOnlineGrenadeEvents(fn: GrenadeSubscriber): () => void {
   grenadeSubscribers.add(fn);
   return () => grenadeSubscribers.delete(fn);
+}
+
+export function subscribeOnlineGrenadeDetonations(
+  fn: GrenadeDetonatedSubscriber
+): () => void {
+  grenadeDetonatedSubscribers.add(fn);
+  return () => grenadeDetonatedSubscribers.delete(fn);
 }
 
 export function subscribeOnlineScorestreakEvents(

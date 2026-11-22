@@ -298,6 +298,290 @@ export function issueMatchRewardReceipt(params: {
   };
 }
 
+export const SERVER_GRENADE_LETHAL_RADIUS_M = 5.0;
+export const SERVER_GRENADE_CONCUSSION_RADIUS_M = 11.0;
+export const SERVER_GRENADE_SHELLSHOCK_DURATION_SEC = 4.0;
+export const SERVER_GRENADE_CONCUSSION_MAX_DAMAGE = 75;
+export const SERVER_GRENADE_CONCUSSION_MIN_DAMAGE = 20;
+
+export interface ServerGrenadeVictimVerdict {
+  uid: string;
+  callsign: string;
+  team: 'VANGUARD' | 'BLACKTHORN';
+  distanceMeters: number;
+  zone: 'LETHAL_R1' | 'CONCUSSION_R2' | 'OUTSIDE';
+  isBehindCover: boolean;
+  lethal: boolean;
+  damageApplied: number;
+  isShellshocked: boolean;
+  shellshockDurationSec: number;
+  shellshockIntensity: number;
+  impulseVel: [number, number, number];
+}
+
+export interface ServerGrenadeDetonatedEvent {
+  eventId: string;
+  roomId: string;
+  attackerUid: string;
+  attackerCallsign: string;
+  attackerTeam: 'VANGUARD' | 'BLACKTHORN';
+  grenadePos: [number, number, number];
+  lethalRadius: number;
+  concussionRadius: number;
+  victims: ServerGrenadeVictimVerdict[];
+  ts: number;
+}
+
+export interface RoomMemberSnapshotLike {
+  uid?: string;
+  callsign?: string;
+  team?: 'VANGUARD' | 'BLACKTHORN' | string;
+  x?: number;
+  y?: number;
+  z?: number;
+  health?: number;
+  isDown?: boolean;
+}
+
+/**
+ * Avalia de forma autoritativa no servidor a detonação de uma granada FRAG com Dois Raios:
+ * - Raio 1 (0m a 5.0m exposto): Dano fatal (100% / eliminação imediata) + vetor de arremesso forte.
+ * - Raio 2 (5.0m a 11.0m ou cobertura parcial): Dano escalonado linearmente (75 em 5.0m até 20 em 11.0m)
+ *   + flag `isShellshocked = true` por 4.0 segundos + recuo na câmera.
+ * - Fora do Raio (> 11.0m): Zero impacto.
+ */
+export function evaluateServerGrenadeDetonation(params: {
+  roomId: string;
+  senderUid: string | null;
+  eventId?: string;
+  attackerUid?: string;
+  attackerCallsign?: string;
+  attackerTeam?: string;
+  grenadePos?: [number, number, number] | number[];
+  occludedTargetUids?: string[];
+  members: Iterable<[string, RoomMemberSnapshotLike]>;
+  ts?: number;
+}): {
+  ok: boolean;
+  reason?: string;
+  detonation?: ServerGrenadeDetonatedEvent;
+} {
+  const { roomId, senderUid } = params;
+  const attackerUid = String(params.attackerUid || senderUid || '');
+  if (!roomId || !attackerUid) {
+    return { ok: false, reason: 'missing_attacker' };
+  }
+  if (senderUid && attackerUid !== senderUid) {
+    return { ok: false, reason: 'attacker_mismatch' };
+  }
+
+  const rawPos = params.grenadePos;
+  if (!Array.isArray(rawPos) || rawPos.length < 3) {
+    return { ok: false, reason: 'invalid_grenade_pos' };
+  }
+  const gx = Number(rawPos[0]);
+  const gy = Number(rawPos[1]);
+  const gz = Number(rawPos[2]);
+  if (!Number.isFinite(gx) || !Number.isFinite(gy) || !Number.isFinite(gz)) {
+    return { ok: false, reason: 'nan_grenade_pos' };
+  }
+
+  const now = Date.now();
+  const eventId = String(
+    params.eventId || `gdet_${attackerUid}_${now}`
+  ).slice(0, 72);
+  if (seenEventIds.has(eventId)) {
+    return { ok: false, reason: 'duplicate' };
+  }
+
+  const detTs =
+    typeof params.ts === 'number' && Math.abs(now - params.ts) <= MAX_LAG_COMP_SKEW_MS
+      ? params.ts
+      : now;
+
+  // Valida distância plausível entre o lançador e o ponto de detonação (<= 52m)
+  const roomPoses = poseByRoom.get(roomId);
+  const atkPose = findClosestPose(roomPoses?.get(attackerUid), detTs);
+  if (atkPose) {
+    const throwDist = Math.hypot(
+      atkPose.x - gx,
+      atkPose.y - gy,
+      atkPose.z - gz
+    );
+    if (throwDist > 52) {
+      return { ok: false, reason: 'grenade_out_of_range' };
+    }
+  }
+
+  seenEventIds.add(eventId);
+  if (seenEventIds.size > 1000) {
+    const first = seenEventIds.values().next().value;
+    if (first) seenEventIds.delete(first);
+  }
+
+  const occludedSet = new Set<string>(
+    Array.isArray(params.occludedTargetUids)
+      ? params.occludedTargetUids.map((u) => String(u))
+      : []
+  );
+
+  const attackerTeam: 'VANGUARD' | 'BLACKTHORN' =
+    params.attackerTeam === 'BLACKTHORN' ? 'BLACKTHORN' : 'VANGUARD';
+  const attackerCallsign = String(params.attackerCallsign || 'OPERADOR').slice(
+    0,
+    24
+  );
+
+  const victims: ServerGrenadeVictimVerdict[] = [];
+  const ledger = getOrCreateLedgerEntry(roomId, attackerUid);
+
+  for (const [memberUid, member] of params.members) {
+    if (!memberUid || member.isDown || (typeof member.health === 'number' && member.health <= 0)) {
+      continue;
+    }
+
+    const memberTeam: 'VANGUARD' | 'BLACKTHORN' =
+      member.team === 'BLACKTHORN' ? 'BLACKTHORN' : 'VANGUARD';
+    // Fogo amigo desativado para aliados (exceto o próprio lançador caso se exploda perto da granada)
+    if (memberUid !== attackerUid && memberTeam === attackerTeam) {
+      continue;
+    }
+
+    const poseSample = findClosestPose(roomPoses?.get(memberUid), detTs);
+    const px = poseSample ? poseSample.x : Number(member.x ?? 0);
+    const py = poseSample ? poseSample.y : Number(member.y ?? 0);
+    const pz = poseSample ? poseSample.z : Number(member.z ?? 0);
+    if (!Number.isFinite(px) || !Number.isFinite(py) || !Number.isFinite(pz)) {
+      continue;
+    }
+
+    const dx = px - gx;
+    const dy = py + 0.9 - (gy + 0.15);
+    const dz = pz - gz;
+    const dist = Math.hypot(dx, dy, dz);
+
+    // Fora do Raio 2 (> 11.0m): Zero impacto
+    if (dist > SERVER_GRENADE_CONCUSSION_RADIUS_M) {
+      continue;
+    }
+
+    const isBehindCover = occludedSet.has(memberUid);
+    const horizLen = Math.hypot(dx, dz);
+    const dirX = horizLen > 0.001 ? dx / horizLen : 0;
+    const dirZ = horizLen > 0.001 ? dz / horizLen : 1;
+
+    // RAIO 1 — Zona Fatal (0m a 5.0m exposto)
+    if (dist <= SERVER_GRENADE_LETHAL_RADIUS_M && !isBehindCover) {
+      const prox = Math.max(
+        0,
+        Math.min(1, 1 - dist / SERVER_GRENADE_LETHAL_RADIUS_M)
+      );
+      const launchHorizSpeed = 8.4 + prox * 4.4;
+      const launchUpwardVy = 3.9 + prox * 1.9;
+      const damageApplied = 195;
+
+      victims.push({
+        uid: memberUid,
+        callsign: String(member.callsign || 'OPERADOR').slice(0, 24),
+        team: memberTeam,
+        distanceMeters: Number(dist.toFixed(2)),
+        zone: 'LETHAL_R1',
+        isBehindCover: false,
+        lethal: true,
+        damageApplied,
+        isShellshocked: false,
+        shellshockDurationSec: 0,
+        shellshockIntensity: 1.0,
+        impulseVel: [
+          Number((dirX * launchHorizSpeed).toFixed(2)),
+          Number(launchUpwardVy.toFixed(2)),
+          Number((dirZ * launchHorizSpeed).toFixed(2)),
+        ],
+      });
+
+      if (memberUid !== attackerUid) {
+        ledger.hitsLanded += 1;
+        ledger.damageDealt += 100;
+        ledger.kills += 1;
+      }
+      continue;
+    }
+
+    // RAIO 2 — Zona de Concussão / Shellshock (5.0m a 11.0m ou cobertura parcial)
+    const span =
+      SERVER_GRENADE_CONCUSSION_RADIUS_M - SERVER_GRENADE_LETHAL_RADIUS_M; // 6.0m
+    const distFromLethal = Math.max(0, dist - SERVER_GRENADE_LETHAL_RADIUS_M);
+    const linearT = Math.max(0, Math.min(1, distFromLethal / span));
+
+    let rawDamage = Math.round(
+      SERVER_GRENADE_CONCUSSION_MAX_DAMAGE -
+        linearT *
+          (SERVER_GRENADE_CONCUSSION_MAX_DAMAGE -
+            SERVER_GRENADE_CONCUSSION_MIN_DAMAGE)
+    );
+    if (isBehindCover) {
+      rawDamage = Math.max(
+        SERVER_GRENADE_CONCUSSION_MIN_DAMAGE,
+        Math.round(rawDamage * 0.72)
+      );
+    }
+
+    // No Raio 2 o jogador sobrevive com concussão (a menos que já estivesse com HP crítico e sem cobertura)
+    const currentHp =
+      typeof member.health === 'number' && member.health > 0
+        ? member.health
+        : 100;
+    const damageApplied = Math.min(Math.max(1, currentHp - 1), rawDamage);
+    const peakIntensity = Number((1.0 - linearT * 0.62).toFixed(3));
+    const pushHorizSpeed = 3.6 - linearT * 2.25;
+    const pushUpwardVy = 1.15 - linearT * 0.8;
+
+    victims.push({
+      uid: memberUid,
+      callsign: String(member.callsign || 'OPERADOR').slice(0, 24),
+      team: memberTeam,
+      distanceMeters: Number(dist.toFixed(2)),
+      zone: 'CONCUSSION_R2',
+      isBehindCover,
+      lethal: false,
+      damageApplied,
+      isShellshocked: true,
+      shellshockDurationSec: SERVER_GRENADE_SHELLSHOCK_DURATION_SEC,
+      shellshockIntensity: peakIntensity,
+      impulseVel: [
+        Number((dirX * pushHorizSpeed).toFixed(2)),
+        Number(pushUpwardVy.toFixed(2)),
+        Number((dirZ * pushHorizSpeed).toFixed(2)),
+      ],
+    });
+
+    if (memberUid !== attackerUid) {
+      ledger.hitsLanded += 1;
+      ledger.damageDealt += damageApplied;
+    }
+  }
+
+  return {
+    ok: true,
+    detonation: {
+      eventId,
+      roomId,
+      attackerUid,
+      attackerCallsign,
+      attackerTeam,
+      grenadePos: [
+        Number(gx.toFixed(2)),
+        Number(gy.toFixed(2)),
+        Number(gz.toFixed(2)),
+      ],
+      lethalRadius: SERVER_GRENADE_LETHAL_RADIUS_M,
+      concussionRadius: SERVER_GRENADE_CONCUSSION_RADIUS_M,
+      victims,
+      ts: detTs,
+    },
+  };
+}
+
 export function clearRoomCombatAuthority(roomId: string): void {
   poseByRoom.delete(roomId);
   ledgerByRoom.delete(roomId);

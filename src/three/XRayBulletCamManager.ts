@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { soundEngine } from '../audio/soundEngine';
 import { WeaponId } from '../types/game';
 import { resolveAssetUrl } from '../utils/assetUrl';
 import { Dust2TriangleCollider } from './dust2Collider';
@@ -55,9 +56,15 @@ export interface XRayBulletCamConfig {
   minDistanceMeters: number;
   /** Distância do alvo (m) em que o modo Raio-X é ativado revelando o esqueleto. */
   xrayRevealDistanceMeters: number;
-  /** Escala global de tempo durante voo e impacto (0.2 = 20% da velocidade). */
+  /** Fase A (Voo até o alvo): escala global de tempo (~0.30 = 30% da velocidade). */
+  flightTimeScale: number;
+  /** Fase B (Momento do impacto no osso/esqueleto): ultra-câmera lenta (0.06 a 0.10). */
+  impactUltraSlowMoTimeScale: number;
+  /** Duração real (s) da janela de ultra-câmera lenta durante a travessia óssea. */
+  ultraSlowMoDurationSec: number;
+  /** Compatibilidade legada: escala de tempo pós-fratura durante a reação de queda. */
   slowMoTimeScale: number;
-  /** Tempo real (s) focado na reação de queda do bot após o impacto. */
+  /** Tempo real (s) total focado na travessia óssea + reação de queda do bot. */
   impactHoldSec: number;
   /** Tempo real (s) de retorno suave à câmera 1P. */
   returnDurationSec: number;
@@ -69,15 +76,30 @@ export interface XRayBulletCamConfig {
 
 const DEFAULT_CONFIG: XRayBulletCamConfig = {
   minDistanceMeters: 20,
-  xrayRevealDistanceMeters: 1.2,
-  slowMoTimeScale: 0.2,
-  impactHoldSec: 0.6,
+  xrayRevealDistanceMeters: 1.25,
+  flightTimeScale: 0.3,
+  impactUltraSlowMoTimeScale: 0.07,
+  ultraSlowMoDurationSec: 0.46,
+  slowMoTimeScale: 0.26,
+  impactHoldSec: 0.86,
   returnDurationSec: 0.24,
   skipGraceSec: 0.18,
   defaultBotHeightMeters: 1.78,
 };
 
 const SKELETON_GLB_URL = resolveAssetUrl('/models/characters/skeleton.glb');
+export const BULLET_CAM_TRAIL_LOCAL_URL = resolveAssetUrl(
+  '/sounds/bullet_cam_trail.wav'
+);
+export const BULLET_CAM_TRAIL_GITHUB_RAW_URL =
+  'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/421d862b7cd36af242c9f3edaeb2484d686198de/Sound/456266__soundfxstudio__grad-bm-21-mlrs.wav';
+
+export const BULLET_CAM_BONE_CRACK_LOCAL_URL = resolveAssetUrl(
+  '/sounds/bullet_cam_bone_crack.wav'
+);
+export const BULLET_CAM_BONE_CRACK_GITHUB_RAW_URL =
+  'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/421d862b7cd36af242c9f3edaeb2484d686198de/Sound/369602__evanboyerman__bone-crunchcrack-3-mixed.wav';
+
 const BONE_SHARD_POOL_SIZE = 10;
 const BLOOD_PARTICLE_POOL_SIZE = 25;
 
@@ -127,6 +149,10 @@ interface SkeletonRegionMesh {
   region: 'HEAD' | 'TORSO' | 'LIMB';
 }
 
+interface ActiveFlightAudioHandle {
+  stop: () => void;
+}
+
 // Vetores e matrizes pré-alocados no escopo de módulo (ZERO-GC no loop 60 FPS)
 const _worldUp = new THREE.Vector3(0, 1, 0);
 const _altUp = new THREE.Vector3(1, 0, 0);
@@ -140,6 +166,7 @@ const _lookTarget = new THREE.Vector3();
 const _focusPos = new THREE.Vector3();
 const _rayDir = new THREE.Vector3();
 const _tmpBox = new THREE.Box3();
+const _regionBox = new THREE.Box3();
 const _tmpSize = new THREE.Vector3();
 const _tmpCenter = new THREE.Vector3();
 const _tmpColor = new THREE.Color();
@@ -153,14 +180,17 @@ const _hiddenMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
  * otimizado para WebGL / Android Mobile (Capacitor) a 60 FPS estáveis:
  *
  * 1. Exclusivo para `gameMode === 'PRIVATE_BOTS'` (100% bloqueado em PvP/Ranked/Campeonato).
- * 2. Object Pooling de 1 única instância de `skeleton.glb` carregada sob demanda/boot,
- *    com auto-normalização de escala via `THREE.Box3` para casar exatamente com a altura do bot.
- * 3. A 1.2m do impacto, revela o esqueleto por dentro tornando a carcaça do bot
- *    semitransparente escura/azulada (`opacity: 0.22, depthWrite: false`) e acende o osso atingido.
- * 4. Pool de 10 estilhaços de osso (`InstancedMesh`) + pool de 25 partículas de sangue procedural
- *    (`InstancedMesh`) no ponto de entrada e saída nas costas do bot.
- * 5. Rastro da bala muda de branco/ciano (pré-impacto) para vermelho escuro ao sair pelas costas.
- * 6. Zero alocação em `update(rawDt)` + retorno suave de `timeScale` (0.2 -> 1.0) e FOV.
+ * 2. Precisão Cirúrgica do Impacto:
+ *    - Captura e trava no instante do disparo a posição/rotação do bot alvo (`bulletCamTargetLocked = true`)
+ *      e o ponto exato de impacto (`impactPos`), impedindo que o bot continue andando e que a bala
+ *      acerte outra parte do corpo no fim do trajeto.
+ *    - Alinha e trava o `skeleton.glb` diretamente ao ponto de impacto anatômico (`HEAD` crânio ou
+ *      `TORSO` costelas/esterno/coluna) e congela a locomoção/animação do bot durante a cena.
+ * 3. Duas Fases de Câmera Lenta + Áudio Modular de Rastro e Fratura:
+ *    - Fase A (Voo): `timeScale = 0.30` com rastro branco/ciano visível e som contínuo de voo/assobio da bala.
+ *    - Fase B (Impacto no Esqueleto): reduz `timeScale` para `0.07` (ultra-câmera lenta) enquanto a bala
+ *      atravessa o osso, os 10 estilhaços de osso se abrem e as 25 partículas de sangue explodem na entrada
+ *      e saída com som sincronizado de fratura óssea e penetração.
  */
 export class XRayBulletCamManager {
   private readonly scene: THREE.Scene;
@@ -189,6 +219,12 @@ export class XRayBulletCamManager {
   private skeletonLoading = false;
   private skeletonLoaded = false;
   private skeletonRegionMeshes: SkeletonRegionMesh[] = [];
+  /** Alturas anatômicas normalizadas (em relação à base 0..1.78m do skeleton.glb). */
+  private skeletonHeadCenterY = 1.56;
+  private skeletonTorsoMinY = 0.96;
+  private skeletonTorsoMaxY = 1.36;
+  private skeletonTorsoCenterY = 1.18;
+
   private readonly xrayBotShellMaterial: THREE.MeshStandardMaterial;
   private readonly savedBotMaterials: SavedBotMaterialEntry[] = [];
   private xrayApplied = false;
@@ -207,7 +243,7 @@ export class XRayBulletCamManager {
   private readonly pooledMaterials: THREE.Material[] = [];
 
   // -------------------------------------------------------------------------
-  // 4. Máquina de Estados & Snapshots Pré-Alocados (Zero-GC)
+  // 4. Máquina de Estados, Travamento Anatômico do Alvo & Áudio Modular
   // -------------------------------------------------------------------------
   private phase: BulletCamPhase = 'IDLE';
   private phaseElapsed = 0;
@@ -223,6 +259,14 @@ export class XRayBulletCamManager {
   private impactTriggered = false;
   private exitBulletElapsed = 0;
   private impactShake = 0;
+  private activeFlightAudio: ActiveFlightAudioHandle | null = null;
+  private trailRawBytes: ArrayBuffer | null = null;
+  private boneCrackRawBytes: ArrayBuffer | null = null;
+  private boneCrackFromGithubFallback = false;
+  private trailAudioBuffer: AudioBuffer | null = null;
+  private boneCrackAudioBuffer: AudioBuffer | null = null;
+  private audioPreloadStarted = false;
+  private audioDecodeInFlight = false;
 
   private activeYawObject: THREE.Object3D | null = null;
   private activePitchObject: THREE.Object3D | null = null;
@@ -233,6 +277,12 @@ export class XRayBulletCamManager {
   private readonly startPos = new THREE.Vector3();
   private readonly impactPos = new THREE.Vector3();
   private readonly impactNormal = new THREE.Vector3();
+  /** Posição e rotação travadas do bot no exato instante do raycast letal. */
+  private readonly lockedTargetPos = new THREE.Vector3();
+  private lockedTargetYaw = 0;
+  /** Âncora 3D exata do esqueleto alinhada ao ponto de impacto capturado. */
+  private readonly lockedSkeletonAnchorPos = new THREE.Vector3();
+
   private readonly currentCamPos = new THREE.Vector3();
   private readonly returnStartCamPos = new THREE.Vector3();
   private readonly savedYawPos = new THREE.Vector3();
@@ -444,7 +494,6 @@ export class XRayBulletCamManager {
     // C. Pool de 10 Estilhaços de Osso (InstancedMesh, branco-amarelado irregular)
     // =======================================================================
     const boneShardGeo = new THREE.DodecahedronGeometry(0.024, 0);
-    // Deforma vértices uma única vez para perfil angular de lasca de osso
     const bonePosAttr = boneShardGeo.attributes.position;
     for (let i = 0; i < bonePosAttr.count; i++) {
       const vx = bonePosAttr.getX(i);
@@ -535,13 +584,102 @@ export class XRayBulletCamManager {
     this.bloodMesh.instanceMatrix.needsUpdate = true;
     this.scene.add(this.bloodMesh);
 
-    // Pré-carrega em background a ÚNICA instância do esqueleto (Object Pooling)
+    // Pré-carrega em background a ÚNICA instância do esqueleto (Object Pooling) e os 2 efeitos sonoros (.wav)
     this.preloadSkeleton();
+    this.preloadBulletCamAudio();
   }
 
   /**
-   * Carrega UMA ÚNICA instância de `skeleton.glb` na memória e normaliza automaticamente
-   * sua escala (`skeleton.scale.set(...)`) e pivô via `THREE.Box3` para a altura dos bots (1.78m).
+   * Pré-carrega em memória os arquivos `.wav` reais do rastro da bala
+   * (`456266__soundfxstudio__grad-bm-21-mlrs.wav`) e dos ossos quebrando no impacto
+   * (`369602__evanboyerman__bone-crunchcrack-3-mixed.wav`).
+   */
+  public preloadBulletCamAudio(): void {
+    if (this.audioPreloadStarted) return;
+    this.audioPreloadStarted = true;
+
+    const fetchWithFallback = async (
+      localUrl: string,
+      githubRawUrl: string
+    ): Promise<{ bytes: ArrayBuffer; isFallback: boolean } | null> => {
+      try {
+        const res = await fetch(localUrl);
+        if (res.ok) {
+          const buf = await res.arrayBuffer();
+          if (buf.byteLength > 256) {
+            return { bytes: buf, isFallback: false };
+          }
+        }
+      } catch {
+        /* fallback to GitHub Raw */
+      }
+      try {
+        const res = await fetch(githubRawUrl);
+        if (res.ok) {
+          const buf = await res.arrayBuffer();
+          if (buf.byteLength > 256) {
+            return { bytes: buf, isFallback: true };
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+      return null;
+    };
+
+    void Promise.all([
+      fetchWithFallback(
+        BULLET_CAM_TRAIL_LOCAL_URL,
+        BULLET_CAM_TRAIL_GITHUB_RAW_URL
+      ),
+      fetchWithFallback(
+        BULLET_CAM_BONE_CRACK_LOCAL_URL,
+        BULLET_CAM_BONE_CRACK_GITHUB_RAW_URL
+      ),
+    ]).then(([trailRes, boneRes]) => {
+      if (trailRes) {
+        this.trailRawBytes = trailRes.bytes;
+      }
+      if (boneRes) {
+        this.boneCrackRawBytes = boneRes.bytes;
+        this.boneCrackFromGithubFallback = boneRes.isFallback;
+      }
+      const state = soundEngine.getSpatialAudioState();
+      if (state.ctx) {
+        void this.ensureAudioBuffersDecoded(state.ctx);
+      }
+    });
+  }
+
+  private async ensureAudioBuffersDecoded(ctx: AudioContext): Promise<void> {
+    if (this.audioDecodeInFlight) return;
+    if (
+      (!this.trailRawBytes || this.trailAudioBuffer) &&
+      (!this.boneCrackRawBytes || this.boneCrackAudioBuffer)
+    ) {
+      return;
+    }
+    this.audioDecodeInFlight = true;
+    try {
+      if (this.trailRawBytes && !this.trailAudioBuffer) {
+        const copy = this.trailRawBytes.slice(0);
+        this.trailAudioBuffer = await ctx.decodeAudioData(copy);
+      }
+      if (this.boneCrackRawBytes && !this.boneCrackAudioBuffer) {
+        const copy = this.boneCrackRawBytes.slice(0);
+        this.boneCrackAudioBuffer = await ctx.decodeAudioData(copy);
+      }
+    } catch {
+      /* fallback procedural permanece disponível se decode falhar */
+    } finally {
+      this.audioDecodeInFlight = false;
+    }
+  }
+
+  /**
+   * Carrega UMA ÚNICA instância de `skeleton.glb` na memória, normaliza sua escala
+   * via `THREE.Box3` para a altura dos bots (1.78m) e mede as cotas anatômicas exatas
+   * do crânio (`HEAD`) e caixa torácica (`TORSO`) para alinhamento cirúrgico no impacto.
    */
   public preloadSkeleton(): void {
     if (this.skeletonLoaded || this.skeletonLoading) return;
@@ -557,13 +695,13 @@ export class XRayBulletCamManager {
         const model = gltf.scene;
         model.name = 'LowPolySkeletonPooledModel';
 
-        // 1. Mede o bounding box bruto do GLB (ex.: ~15.3m de altura e deslocado em X)
+        // 1. Mede o bounding box bruto do GLB
         model.updateMatrixWorld(true);
         _tmpBox.setFromObject(model);
         _tmpBox.getSize(_tmpSize);
         _tmpBox.getCenter(_tmpCenter);
 
-        // 2. Ajusta escala uniforme automaticamente para casar exatamente com a altura do bot
+        // 2. Ajusta escala uniforme automaticamente para casar com a altura padrão do bot (1.78m)
         const rawHeight = Math.max(0.01, _tmpSize.y);
         const normalizedScale = this.config.defaultBotHeightMeters / rawHeight;
         model.scale.set(normalizedScale, normalizedScale, normalizedScale);
@@ -574,9 +712,15 @@ export class XRayBulletCamManager {
           -_tmpBox.min.y * normalizedScale,
           -_tmpCenter.z * normalizedScale
         );
+        model.updateMatrixWorld(true);
 
-        // 4. Prepara materiais dedicados por região anatômica para brilho emissivo no impacto
+        // 4. Prepara materiais por região anatômica e mede cotas Y reais de crânio e costelas
         this.skeletonRegionMeshes.length = 0;
+        let headMinY = Infinity;
+        let headMaxY = -Infinity;
+        let torsoMinY = Infinity;
+        let torsoMaxY = -Infinity;
+
         model.traverse((node) => {
           if (!(node instanceof THREE.Mesh)) return;
           node.castShadow = false;
@@ -603,6 +747,21 @@ export class XRayBulletCamManager {
             region = 'TORSO';
           }
 
+          _regionBox.setFromObject(node);
+          if (!_regionBox.isEmpty()) {
+            if (region === 'HEAD') {
+              headMinY = Math.min(headMinY, _regionBox.min.y);
+              headMaxY = Math.max(headMaxY, _regionBox.max.y);
+            } else if (
+              region === 'TORSO' &&
+              !nameLower.includes('ilium') &&
+              !nameLower.includes('pelvis')
+            ) {
+              torsoMinY = Math.min(torsoMinY, _regionBox.min.y);
+              torsoMaxY = Math.max(torsoMaxY, _regionBox.max.y);
+            }
+          }
+
           const boneMat = new THREE.MeshStandardMaterial({
             color: 0xebe3cf,
             emissive: BONE_BASE_EMISSIVE.clone(),
@@ -610,7 +769,6 @@ export class XRayBulletCamManager {
             roughness: 0.52,
             metalness: 0.08,
           });
-          // Descarta material original do GLB que será substituído
           if (Array.isArray(node.material)) {
             node.material.forEach((m) => m.dispose());
           } else if (node.material) {
@@ -620,6 +778,15 @@ export class XRayBulletCamManager {
           this.pooledMaterials.push(boneMat);
           this.skeletonRegionMeshes.push({ mesh: node, material: boneMat, region });
         });
+
+        if (Number.isFinite(headMinY) && Number.isFinite(headMaxY)) {
+          this.skeletonHeadCenterY = (headMinY + headMaxY) * 0.5;
+        }
+        if (Number.isFinite(torsoMinY) && Number.isFinite(torsoMaxY)) {
+          this.skeletonTorsoMinY = torsoMinY;
+          this.skeletonTorsoMaxY = torsoMaxY;
+          this.skeletonTorsoCenterY = (torsoMinY + torsoMaxY) * 0.5;
+        }
 
         this.skeletonModel = model;
         this.skeletonRoot.add(model);
@@ -650,8 +817,8 @@ export class XRayBulletCamManager {
   }
 
   /**
-   * Valida regras críticas e inicia a X-Ray Sniper Bullet Cam se elegível.
-   * Retorna `true` quando a câmera assume controle (o dano real roda no callback `onImpact`).
+   * Valida regras críticas, trava o ponto exato de impacto e a pose do bot alvo,
+   * e inicia a X-Ray Sniper Bullet Cam com som de voo e câmera lenta em 2 fases.
    */
   public tryTriggerBulletCam(params: XRayBulletCamTriggerParams): boolean {
     // 1. REGRA CRÍTICA: ativa EXCLUSIVAMENTE em PRIVATE_BOTS
@@ -679,13 +846,12 @@ export class XRayBulletCamManager {
       return false;
     }
 
-    // Garante pré-carregamento do esqueleto caso ainda não tenha finalizado
     if (!this.skeletonLoaded && !this.skeletonLoading) {
       this.preloadSkeleton();
     }
 
     // -----------------------------------------------------------------------
-    // Inicializa sequência cinematográfica (Zero-GC)
+    // 1. CAPTURA E TRAVAMENTO CIRÚRGICO DO PONTO DE IMPACTO E DO BOT ALVO
     // -----------------------------------------------------------------------
     this.activeYawObject = params.yawObject;
     this.activePitchObject = params.pitchObject;
@@ -693,7 +859,6 @@ export class XRayBulletCamManager {
     this.onImpactCallback = params.onImpact;
     this.onCompleteCallback = params.onComplete || null;
 
-    // Salva pose original da câmera 1P
     this.savedYawPos.copy(params.yawObject.position);
     this.savedYaw = params.yawObject.rotation.y;
     this.savedPitch = params.pitchObject.rotation.x;
@@ -713,6 +878,28 @@ export class XRayBulletCamManager {
         ? params.targetHeightMeters
         : this.config.defaultBotHeightMeters;
 
+    // Direção unitária exata da trajetória da bala até o ponto travado
+    _flightDir.subVectors(this.impactPos, this.startPos).normalize();
+
+    if (this.activeTargetRoot) {
+      this.lockedTargetPos.copy(this.activeTargetRoot.position);
+      this.lockedTargetYaw = this.activeTargetRoot.rotation.y;
+      // Trava imediatamente a navegação e a locomoção do bot alvo para não sair do lugar!
+      this.activeTargetRoot.userData = this.activeTargetRoot.userData || {};
+      this.activeTargetRoot.userData.bulletCamTargetLocked = true;
+      this.activeTargetRoot.userData.bulletCamPenetrationFreeze = false;
+    } else {
+      this.lockedTargetPos.set(
+        this.impactPos.x,
+        Math.max(0, this.impactPos.y - (this.activeIsHeadshot ? 1.56 : 1.18)),
+        this.impactPos.z
+      );
+      this.lockedTargetYaw = Math.atan2(-_flightDir.x, -_flightDir.z);
+    }
+
+    // Calcula a âncora 3D exata do `skeleton.glb` alinhada ao ponto de impacto capturado
+    this.computeLockedSkeletonAnchor();
+
     this.impactTriggered = false;
     this.xrayApplied = false;
     this.xrayImpactGlow = 0;
@@ -730,7 +917,8 @@ export class XRayBulletCamManager {
     this.phase = 'FLIGHT';
     this.phaseElapsed = 0;
     this.totalElapsed = 0;
-    this.timeScale = this.config.slowMoTimeScale;
+    // Fase A (Voo até o alvo): timeScale em ~0.30
+    this.timeScale = this.config.flightTimeScale;
     this.vignetteAlpha = 0.25;
 
     // Oculta arma 1P durante o voo
@@ -739,7 +927,7 @@ export class XRayBulletCamManager {
     // Configura cores iniciais do rastro da bala: BRANCO / CIANO antes do impacto
     this.setTracerColors(false);
 
-    // Posiciona projétil 3D na boca do cano
+    // Posiciona projétil 3D na boca do cano apontando para o impactPos travado
     this.bulletRoot.position.copy(this.startPos);
     this.bulletRoot.lookAt(this.impactPos);
     this.projectileSpinGroup.visible = true;
@@ -750,7 +938,68 @@ export class XRayBulletCamManager {
     this.bulletRoot.visible = true;
 
     this.currentCamPos.copy(this.savedYawPos);
+
+    // Inicia som modular de rastro/assobio do projétil em câmera lenta
+    this.startFlightTrailSound(this.flightDuration);
     return true;
+  }
+
+  /**
+   * Alinha cirurgicamente a raiz do `skeleton.glb` ao ponto de impacto (`this.impactPos`)
+   * para que a bala SEMPRE atinja o osso exato mirado (crânio em Headshot ou costela/esterno/coluna
+   * em tiro no tronco), mesmo que o bot estivesse agachado ou inclinado no instante do disparo.
+   */
+  private computeLockedSkeletonAnchor(): void {
+    const heightRatio =
+      this.activeBotHeight / this.config.defaultBotHeightMeters;
+
+    // Profundidade média entre a superfície frontal do hitbox e o centro do osso
+    const boneDepthFromEntry =
+      this.activeIsHeadshot || this.activeHitZone === 'HEAD' ? 0.085 : 0.125;
+
+    // Preserva o deslocamento lateral (esquerda/direita na costela ou crânio) limitado à largura óssea
+    const upRef = Math.abs(_flightDir.y) > 0.94 ? _altUp : _worldUp;
+    _flightRight.crossVectors(_flightDir, upRef).normalize();
+
+    const rawCenterX = this.impactPos.x + _flightDir.x * boneDepthFromEntry;
+    const rawCenterZ = this.impactPos.z + _flightDir.z * boneDepthFromEntry;
+    const dxFromBot = rawCenterX - this.lockedTargetPos.x;
+    const dzFromBot = rawCenterZ - this.lockedTargetPos.z;
+    const lateralOffset = THREE.MathUtils.clamp(
+      dxFromBot * _flightRight.x + dzFromBot * _flightRight.z,
+      -0.11,
+      0.11
+    );
+
+    // Posiciona X/Z do esqueleto exatamente na linha de impacto da bala (com offset lateral da costela)
+    this.lockedSkeletonAnchorPos.x = rawCenterX - _flightRight.x * (lateralOffset * 0.45);
+    this.lockedSkeletonAnchorPos.z = rawCenterZ - _flightRight.z * (lateralOffset * 0.45);
+
+    // Calcula a altura (Y) do osso alvo no modelo normalizado do esqueleto
+    const localHitY = this.impactPos.y - this.lockedTargetPos.y;
+    let targetBoneHeightOnSkeleton: number;
+
+    if (this.activeIsHeadshot || this.activeHitZone === 'HEAD') {
+      targetBoneHeightOnSkeleton = this.skeletonHeadCenterY * heightRatio;
+    } else {
+      // Mapeia o ponto atingido no torso diretamente para a faixa da caixa torácica (costelas/esterno)
+      // garantindo que nunca desça para a bacia/pernas mesmo se o bot estava agachado!
+      const minRibY = this.skeletonTorsoMinY * heightRatio;
+      const maxRibY = this.skeletonTorsoMaxY * heightRatio;
+      const defaultRibY = this.skeletonTorsoCenterY * heightRatio;
+      targetBoneHeightOnSkeleton = THREE.MathUtils.clamp(
+        localHitY,
+        minRibY + 0.04,
+        maxRibY - 0.03
+      );
+      if (!Number.isFinite(targetBoneHeightOnSkeleton)) {
+        targetBoneHeightOnSkeleton = defaultRibY;
+      }
+    }
+
+    // Trava o Y do esqueleto de forma que `lockedSkeletonAnchorPos.y + targetBoneHeightOnSkeleton === impactPos.y`
+    this.lockedSkeletonAnchorPos.y =
+      this.impactPos.y - targetBoneHeightOnSkeleton;
   }
 
   public isActive(): boolean {
@@ -787,6 +1036,8 @@ export class XRayBulletCamManager {
       return false;
     }
 
+    this.stopFlightTrailSound();
+
     if (!this.impactTriggered && this.onImpactCallback) {
       this.impactTriggered = true;
       const impactCb = this.onImpactCallback;
@@ -802,6 +1053,7 @@ export class XRayBulletCamManager {
    * Reset seguro em troca de rodada, morte ou saída para o menu.
    */
   public reset(): void {
+    this.stopFlightTrailSound();
     this.clearParticles();
     this.restoreBotXRayState();
     if (this.phase === 'IDLE') {
@@ -827,9 +1079,15 @@ export class XRayBulletCamManager {
   ): void {
     const dt = Math.min(Math.max(rawDt, 0.001), 0.05);
 
-    // Atualiza partículas procedurais (estilhaços de osso + sangue) mesmo após retorno se ainda vivas
+    // Atualiza partículas procedurais (estilhaços de osso + sangue) respeitando o timeScale da fase atual
     if (this.particlesActiveCount > 0) {
-      this.updateProceduralParticles(dt * this.timeScale);
+      // Durante a ultra-câmera lenta (0.07), mantém fluidez suave dos estilhaços se abrindo
+      const particleTimeScale =
+        this.phase === 'IMPACT_HOLD' &&
+        this.phaseElapsed < this.config.ultraSlowMoDurationSec
+          ? Math.max(0.14, this.timeScale * 2.1)
+          : this.timeScale;
+      this.updateProceduralParticles(dt * particleTimeScale);
     }
 
     if (this.phase === 'IDLE' || !this.activeYawObject || !this.activePitchObject) {
@@ -838,6 +1096,17 @@ export class XRayBulletCamManager {
 
     this.phaseElapsed += dt;
     this.totalElapsed += dt;
+
+    // Mantém o bot alvo travado na posição/rotação exata capturada no disparo até o fim da travessia óssea
+    if (
+      this.activeTargetRoot &&
+      (!this.impactTriggered ||
+        (this.phase === 'IMPACT_HOLD' &&
+          this.phaseElapsed < this.config.ultraSlowMoDurationSec))
+    ) {
+      this.activeTargetRoot.position.copy(this.lockedTargetPos);
+      this.activeTargetRoot.rotation.y = this.lockedTargetYaw;
+    }
 
     // Base ortonormal da trajetória da bala
     _flightDir.subVectors(this.impactPos, this.startPos);
@@ -855,19 +1124,21 @@ export class XRayBulletCamManager {
 
     if (this.phase === 'FLIGHT') {
       const linearT = Math.min(1, this.phaseElapsed / this.flightDuration);
-      // Curva cinematográfica com leve compressão temporal perto do alvo para destacar o Raio-X
+      // Curva cinematográfica com desaceleração progressiva ao entrar na janela de Raio-X
       const flightT =
         linearT < 0.72
-          ? (linearT / 0.72) * 0.8
-          : 0.8 + ((linearT - 0.72) / 0.28) * 0.2;
+          ? (linearT / 0.72) * 0.82
+          : 0.82 + ((linearT - 0.72) / 0.28) * 0.18;
 
       _bulletPos.lerpVectors(this.startPos, this.impactPos, flightT);
-      const dropArc = Math.sin(flightT * Math.PI) * Math.min(0.16, totalDist * 0.0028);
+      // Arco balístico zera suavemente nos metros finais para cravar 100% no impactPos mirado
+      const arcEnvelope = Math.sin(flightT * Math.PI) * (1 - flightT * flightT);
+      const dropArc = arcEnvelope * Math.min(0.14, totalDist * 0.0024);
       _bulletPos.y += dropArc;
 
       const remainingDistToImpact = _bulletPos.distanceTo(this.impactPos);
 
-      // TRANSIÇÃO RAIO-X: ativa exatamente quando a bala chega a <= 1.2m do bot alvo
+      // TRANSIÇÃO RAIO-X: ativa exatamente quando a bala chega a <= 1.25m do ponto de impacto travado
       if (!this.xrayApplied && remainingDistToImpact <= this.config.xrayRevealDistanceMeters) {
         this.activateBotXRayMode();
       }
@@ -886,13 +1157,13 @@ export class XRayBulletCamManager {
       this.shockCollarMesh.rotation.z -= dt * 18.0;
       this.shockCollarMat.opacity = 0.18 * (1 - linearT * 0.3);
 
-      // Posição lateral/orbital suave da câmera que se fecha no close-up do esqueleto a 1.2m
+      // Posição lateral/orbital suave da câmera que fecha no close-up do esqueleto a 1.25m
       const xrayZoomBlend = this.xrayApplied ? 1 : 0;
-      const orbitalSweep = Math.sin(linearT * Math.PI * 0.95) * 0.45;
-      const backOffset = THREE.MathUtils.lerp(0.95, 1.32, linearT);
+      const orbitalSweep = Math.sin(linearT * Math.PI * 0.95) * 0.42;
+      const backOffset = THREE.MathUtils.lerp(0.92, 1.18, linearT);
       const sideOffset =
-        this.sideSign * (0.44 + orbitalSweep + xrayZoomBlend * 0.14);
-      const upOffset = THREE.MathUtils.lerp(0.16, 0.24, linearT);
+        this.sideSign * (0.42 + orbitalSweep + xrayZoomBlend * 0.16);
+      const upOffset = THREE.MathUtils.lerp(0.14, 0.2, linearT);
 
       _desiredCamPos
         .copy(_bulletPos)
@@ -911,9 +1182,9 @@ export class XRayBulletCamManager {
       const camAlpha = 1 - Math.exp(-camLambda * dt);
       this.currentCamPos.lerp(_desiredCamPos, camAlpha);
 
-      const focusBlend = THREE.MathUtils.smoothstep(linearT, 0.52, 0.94);
+      const focusBlend = THREE.MathUtils.smoothstep(linearT, 0.5, 0.94);
       _lookTarget.lerpVectors(_bulletPos, this.impactPos, focusBlend);
-      _lookTarget.addScaledVector(_flightDir, (1 - focusBlend) * 0.4);
+      _lookTarget.addScaledVector(_flightDir, (1 - focusBlend) * 0.35);
 
       this.applyCameraTransform(
         this.currentCamPos,
@@ -921,25 +1192,39 @@ export class XRayBulletCamManager {
         this.sideSign * (0.048 * (1 - linearT * 0.45))
       );
 
-      // FOV dinâmico: leve abertura de velocidade no trajeto -> close-up telefoto no Raio-X
       const targetFov =
         linearT < 0.25
           ? THREE.MathUtils.lerp(this.savedBaseFov, this.savedBaseFov - 6, linearT / 0.25)
-          : linearT < 0.76
+          : linearT < 0.74
             ? THREE.MathUtils.lerp(
                 this.savedBaseFov - 6,
-                this.savedBaseFov + 10,
-                (linearT - 0.25) / 0.51
+                this.savedBaseFov + 9,
+                (linearT - 0.25) / 0.49
               )
             : THREE.MathUtils.lerp(
-                this.savedBaseFov + 10,
-                this.savedBaseFov - 12,
-                (linearT - 0.76) / 0.24
+                this.savedBaseFov + 9,
+                this.savedBaseFov - 13,
+                (linearT - 0.74) / 0.26
               );
       this.setCameraFovSmooth(targetFov, 10, dt);
 
       this.vignetteAlpha = THREE.MathUtils.damp(this.vignetteAlpha, 1.0, 9.5, dt);
-      this.timeScale = this.config.slowMoTimeScale;
+
+      // Fase A (Voo até o alvo): timeScale em ~0.30, reduzindo suavemente para 0.12 nos últimos centímetros antes do osso
+      if (this.xrayApplied) {
+        const approachFactor = THREE.MathUtils.clamp(
+          remainingDistToImpact / this.config.xrayRevealDistanceMeters,
+          0,
+          1
+        );
+        this.timeScale = THREE.MathUtils.lerp(
+          0.11,
+          this.config.flightTimeScale,
+          approachFactor
+        );
+      } else {
+        this.timeScale = this.config.flightTimeScale;
+      }
 
       if (linearT >= 1) {
         this.triggerImpactPhase();
@@ -949,24 +1234,51 @@ export class XRayBulletCamManager {
 
     if (this.phase === 'IMPACT_HOLD') {
       const holdT = Math.min(1, this.phaseElapsed / this.config.impactHoldSec);
+      const ultraWindow = this.config.ultraSlowMoDurationSec;
+      const inUltraSlowMo = this.phaseElapsed < ultraWindow;
 
-      // Bala atravessa o esqueleto e sai pelas costas com RASTRO VERMELHO ESCURO!
+      // Fase B (Momento do impacto no esqueleto): ultra-câmera lenta (0.07) durante a travessia óssea,
+      // subindo gradualmente para ~0.26 após a bala sair pelas costas para exibir o colapso do bot
+      if (inUltraSlowMo) {
+        this.timeScale = this.config.impactUltraSlowMoTimeScale;
+      } else {
+        const postUltraT = Math.min(
+          1,
+          (this.phaseElapsed - ultraWindow) /
+            Math.max(0.1, this.config.impactHoldSec - ultraWindow)
+        );
+        this.timeScale = THREE.MathUtils.lerp(
+          this.config.impactUltraSlowMoTimeScale,
+          this.config.slowMoTimeScale,
+          postUltraT
+        );
+        if (this.activeTargetRoot?.userData) {
+          this.activeTargetRoot.userData.bulletCamPenetrationFreeze = false;
+        }
+      }
+
+      // Bala atravessa o esqueleto bem devagar durante a janela de ultra-câmera lenta e sai pelas costas com RASTRO VERMELHO ESCURO!
       this.exitBulletElapsed += dt;
       if (this.bulletRoot.visible) {
-        const exitDuration = 0.26;
+        const exitDuration = ultraWindow * 0.96;
         const exitT = Math.min(1, this.exitBulletElapsed / exitDuration);
-        const throughDist = 2.6;
-        _bulletPos.copy(this.impactPos).addScaledVector(_flightDir, exitT * throughDist);
+        // Primeiros 45% do tempo atravessa o osso (0 -> 0.36m) bem devagar; depois acelera ao sair pelas costas (0.36m -> 2.1m)
+        const throughDist =
+          exitT < 0.45
+            ? (exitT / 0.45) * 0.36
+            : 0.36 + ((exitT - 0.45) / 0.55) * 1.75;
+
+        _bulletPos.copy(this.impactPos).addScaledVector(_flightDir, throughDist);
         this.bulletRoot.position.copy(_bulletPos);
-        this.projectileSpinGroup.rotation.z += dt * 42.0;
+        this.projectileSpinGroup.rotation.z += dt * (exitT < 0.45 ? 22.0 : 38.0);
 
         // Rastro vermelho escuro alonga na saída pelas costas e dissolve suavemente
-        const fade = Math.max(0, 1 - exitT);
-        this.outerTrailMesh.scale.set(1.15, 1.15, THREE.MathUtils.lerp(1.4, 2.8, exitT));
-        this.innerTrailMesh.scale.set(1.2, 1.2, THREE.MathUtils.lerp(1.2, 2.4, exitT));
-        this.outerTrailMat.opacity = 0.42 * fade;
-        this.innerTrailMat.opacity = 0.62 * fade;
-        this.shockCollarMat.opacity = 0.28 * fade;
+        const fade = Math.max(0, 1 - Math.max(0, (exitT - 0.25) / 0.75));
+        this.outerTrailMesh.scale.set(1.15, 1.15, THREE.MathUtils.lerp(0.8, 2.5, exitT));
+        this.innerTrailMesh.scale.set(1.2, 1.2, THREE.MathUtils.lerp(0.7, 2.2, exitT));
+        this.outerTrailMat.opacity = 0.46 * fade;
+        this.innerTrailMat.opacity = 0.66 * fade;
+        this.shockCollarMat.opacity = 0.3 * fade;
 
         if (exitT >= 1) {
           this.bulletRoot.visible = false;
@@ -975,22 +1287,30 @@ export class XRayBulletCamManager {
         }
       }
 
-      // Foca na reação de impacto + queda do bot em câmera lenta por 0.6s
-      if (this.activeTargetRoot) {
-        _focusPos.set(
-          this.activeTargetRoot.position.x,
-          this.activeTargetRoot.position.y +
-            THREE.MathUtils.lerp(this.activeIsHeadshot ? 1.5 : 1.16, 0.78, holdT),
-          this.activeTargetRoot.position.z
-        );
+      // Durante a ultra-câmera lenta, mantém o foco cravado no ponto exato da fratura óssea (`impactPos`);
+      // após a bala atravessar, acompanha suavemente a reação de queda do bot
+      if (inUltraSlowMo) {
+        const boneFollowT = Math.min(1, this.phaseElapsed / ultraWindow);
+        _focusPos
+          .copy(this.impactPos)
+          .addScaledVector(_flightDir, boneFollowT * 0.16);
       } else {
+        const collapseT =
+          (this.phaseElapsed - ultraWindow) /
+          Math.max(0.1, this.config.impactHoldSec - ultraWindow);
         _focusPos.copy(this.impactPos);
-        _focusPos.y -= holdT * 0.28;
+        _focusPos.y -= collapseT * 0.24;
       }
 
-      const holdBack = THREE.MathUtils.lerp(1.48, 2.18, holdT);
-      const holdSide = this.sideSign * THREE.MathUtils.lerp(0.76, 1.18, holdT);
-      const holdUp = THREE.MathUtils.lerp(0.24, 0.5, holdT);
+      const holdBack = inUltraSlowMo
+        ? THREE.MathUtils.lerp(0.95, 1.22, this.phaseElapsed / ultraWindow)
+        : THREE.MathUtils.lerp(1.22, 1.95, holdT);
+      const holdSide =
+        this.sideSign *
+        (inUltraSlowMo
+          ? THREE.MathUtils.lerp(0.68, 0.84, this.phaseElapsed / ultraWindow)
+          : THREE.MathUtils.lerp(0.84, 1.15, holdT));
+      const holdUp = THREE.MathUtils.lerp(0.12, 0.38, holdT);
 
       _desiredCamPos
         .copy(_focusPos)
@@ -1005,26 +1325,28 @@ export class XRayBulletCamManager {
         getGroundHeight
       );
 
-      // Micro-tremor (`cameraShake`) tátil no impacto com o esqueleto
       if (this.impactShake > 0.001) {
-        this.impactShake = Math.max(0, this.impactShake - dt * 0.28);
+        this.impactShake = Math.max(0, this.impactShake - dt * 0.24);
         _desiredCamPos.x += (Math.random() - 0.5) * this.impactShake;
         _desiredCamPos.y += (Math.random() - 0.5) * this.impactShake;
         _desiredCamPos.z += (Math.random() - 0.5) * this.impactShake * 0.6;
       }
 
-      const camAlpha = 1 - Math.exp(-9.0 * dt);
+      const camAlpha = 1 - Math.exp(-10.0 * dt);
       this.currentCamPos.lerp(_desiredCamPos, camAlpha);
 
       this.applyCameraTransform(
         this.currentCamPos,
         _focusPos,
-        this.sideSign * THREE.MathUtils.lerp(0.036, 0.0, holdT)
+        this.sideSign * THREE.MathUtils.lerp(0.038, 0.0, holdT)
       );
 
-      this.setCameraFovSmooth(this.savedBaseFov - 8, 6.5, dt);
-      this.vignetteAlpha = THREE.MathUtils.damp(this.vignetteAlpha, 0.9, 6, dt);
-      this.timeScale = this.config.slowMoTimeScale;
+      this.setCameraFovSmooth(
+        inUltraSlowMo ? this.savedBaseFov - 14 : this.savedBaseFov - 8,
+        7.5,
+        dt
+      );
+      this.vignetteAlpha = THREE.MathUtils.damp(this.vignetteAlpha, 0.92, 6, dt);
 
       if (holdT >= 1) {
         this.beginReturnPhase();
@@ -1036,7 +1358,6 @@ export class XRayBulletCamManager {
       const retT = Math.min(1, this.phaseElapsed / this.config.returnDurationSec);
       const ease = retT * retT * (3 - 2 * retT);
 
-      // Remove o Raio-X assim que começa o retorno à 1P
       if (this.xrayApplied && retT >= 0.25) {
         this.restoreBotXRayState();
       }
@@ -1091,15 +1412,17 @@ export class XRayBulletCamManager {
   }
 
   // =========================================================================
-  // TRANSIÇÃO RAIO-X: Esqueleto 3D + Carcaça Semitransparente + Brilho Ósseo
+  // TRANSIÇÃO RAIO-X: Esqueleto 3D Travado no Ponto de Impacto + Carcaça X-Ray
   // =========================================================================
   private activateBotXRayMode(): void {
     this.xrayApplied = true;
     this.xrayImpactGlow = 0;
 
+    this.playXRayActivateSound();
+
     if (!this.activeTargetRoot) return;
 
-    // 1. Posiciona e escala o esqueleto único exatamente sobre o bot atingido
+    // 1. Posiciona e trava o esqueleto único exatamente na âncora calculada para o ponto de impacto
     this.syncSkeletonPoseToTarget(0);
     if (this.skeletonModel) {
       const heightRatio =
@@ -1112,12 +1435,14 @@ export class XRayBulletCamManager {
     this.savedBotMaterials.length = 0;
     this.activeTargetRoot.traverse((node) => {
       if (!(node instanceof THREE.Mesh)) return;
-      // Ignora hitboxes invisíveis (headMesh / torsoMesh / armorMesh invisíveis do raycast)
       if (node.userData?.hitZone) return;
       if (!node.visible) return;
       const mat = node.material;
       if (!mat) return;
-      if (!Array.isArray(mat) && (mat.visible === false || (mat.transparent && mat.opacity <= 0.01))) {
+      if (
+        !Array.isArray(mat) &&
+        (mat.visible === false || (mat.transparent && mat.opacity <= 0.01))
+      ) {
         return;
       }
 
@@ -1130,35 +1455,43 @@ export class XRayBulletCamManager {
   }
 
   private syncSkeletonPoseToTarget(fallProgress: number): void {
-    if (!this.activeTargetRoot) return;
-    this.skeletonRoot.position.copy(this.activeTargetRoot.position);
-    this.skeletonRoot.rotation.set(
-      0,
-      this.activeTargetRoot.rotation.y,
-      0
-    );
+    // Mantém o esqueleto alinhado e travado na âncora exata do ponto de impacto capturado
+    this.skeletonRoot.position.copy(this.lockedSkeletonAnchorPos);
+    this.skeletonRoot.rotation.set(0, this.lockedTargetYaw, 0);
 
-    // Após o impacto, inclina o esqueleto acompanhando o recuo/queda na direção da bala
+    // Somente após a janela de ultra-câmera lenta de travessia óssea, inclina o esqueleto na direção do impacto
     if (fallProgress > 0) {
       const easeFall = 1 - Math.pow(1 - fallProgress, 2.2);
-      const localBackX = -Math.sin(this.activeTargetRoot.rotation.y);
-      const localBackZ = -Math.cos(this.activeTargetRoot.rotation.y);
+      const localBackX = -Math.sin(this.lockedTargetYaw);
+      const localBackZ = -Math.cos(this.lockedTargetYaw);
       const hitDot = _flightDir.x * localBackX + _flightDir.z * localBackZ;
       const fallDirSign = hitDot >= 0 ? -1 : 1;
-      this.skeletonRoot.rotation.x = fallDirSign * easeFall * 0.42;
-      this.skeletonRoot.position.y -= easeFall * 0.14;
+      this.skeletonRoot.rotation.x = fallDirSign * easeFall * 0.36;
+      this.skeletonRoot.position.y -= easeFall * 0.11;
     }
   }
 
   private updateSkeletonXRayVisuals(dt: number): void {
-    const holdProgress =
-      this.phase === 'IMPACT_HOLD'
-        ? Math.min(1, this.phaseElapsed / this.config.impactHoldSec)
-        : 0;
-    this.syncSkeletonPoseToTarget(holdProgress);
+    // Durante a janela de ultra-câmera lenta (travessia da bala pelo osso), fallProgress = 0
+    // para que o esqueleto fique 100% firme no ponto exato onde a bala está perfurando!
+    let fallProgress = 0;
+    if (
+      this.phase === 'IMPACT_HOLD' &&
+      this.phaseElapsed > this.config.ultraSlowMoDurationSec
+    ) {
+      fallProgress = Math.min(
+        1,
+        (this.phaseElapsed - this.config.ultraSlowMoDurationSec) /
+          Math.max(
+            0.1,
+            this.config.impactHoldSec - this.config.ultraSlowMoDurationSec
+          )
+      );
+    }
+    this.syncSkeletonPoseToTarget(fallProgress);
 
     if (this.xrayImpactGlow > 0) {
-      this.xrayImpactGlow = Math.max(0, this.xrayImpactGlow - dt * 1.45);
+      this.xrayImpactGlow = Math.max(0, this.xrayImpactGlow - dt * 1.15);
     }
 
     const hitRegion: 'HEAD' | 'TORSO' =
@@ -1167,11 +1500,10 @@ export class XRayBulletCamManager {
     for (let i = 0; i < this.skeletonRegionMeshes.length; i++) {
       const entry = this.skeletonRegionMeshes[i];
       if (entry.region === hitRegion && this.xrayImpactGlow > 0.01) {
-        // Pulso inicial branco-incandescente que decai para vermelho-vivo de fratura
-        const flashWhite = Math.pow(this.xrayImpactGlow, 2.2);
-        _tmpColor.copy(BONE_HIT_RED).lerp(BONE_HIT_WHITE, flashWhite * 0.78);
+        const flashWhite = Math.pow(this.xrayImpactGlow, 2.0);
+        _tmpColor.copy(BONE_HIT_RED).lerp(BONE_HIT_WHITE, flashWhite * 0.82);
         entry.material.emissive.copy(_tmpColor);
-        entry.material.emissiveIntensity = 0.7 + this.xrayImpactGlow * 2.8;
+        entry.material.emissiveIntensity = 0.75 + this.xrayImpactGlow * 3.1;
       } else {
         entry.material.emissive.copy(BONE_BASE_EMISSIVE);
         entry.material.emissiveIntensity = 0.45;
@@ -1180,6 +1512,10 @@ export class XRayBulletCamManager {
   }
 
   private restoreBotXRayState(): void {
+    if (this.activeTargetRoot?.userData) {
+      this.activeTargetRoot.userData.bulletCamTargetLocked = false;
+      this.activeTargetRoot.userData.bulletCamPenetrationFreeze = false;
+    }
     for (let i = 0; i < this.savedBotMaterials.length; i++) {
       const saved = this.savedBotMaterials[i];
       saved.mesh.material = saved.originalMaterial;
@@ -1189,7 +1525,6 @@ export class XRayBulletCamManager {
     this.xrayApplied = false;
     this.xrayImpactGlow = 0;
 
-    // Reseta emissivo dos ossos do pool para o próximo uso
     for (let i = 0; i < this.skeletonRegionMeshes.length; i++) {
       const entry = this.skeletonRegionMeshes[i];
       entry.material.emissive.copy(BONE_BASE_EMISSIVE);
@@ -1198,17 +1533,27 @@ export class XRayBulletCamManager {
   }
 
   // =========================================================================
-  // IMPACTO: Estilhaços de Osso (10) + Sangue Entrada/Saída (25) + Rastro Vermelho
+  // IMPACTO: Ultra-Câmera Lenta (0.07) + Som de Fratura + Osso (10) + Sangue (25)
   // =========================================================================
   private triggerImpactPhase(): void {
     this.phase = 'IMPACT_HOLD';
     this.phaseElapsed = 0;
     this.exitBulletElapsed = 0;
-    this.impactShake = this.activeIsHeadshot ? 0.068 : 0.045;
+    this.impactShake = this.activeIsHeadshot ? 0.058 : 0.042;
 
-    // Garante que o Raio-X foi ativado mesmo em frame drop extremo
+    // Fase B: reduz timeScale imediatamente para ultra-câmera lenta (0.07) no contato com o osso
+    this.timeScale = this.config.impactUltraSlowMoTimeScale;
+
+    // Encerra o som contínuo de voo e dispara o som visceral de fratura óssea + impacto
+    this.stopFlightTrailSound();
+    this.playBoneFractureImpactSound(this.activeIsHeadshot);
+
     if (!this.xrayApplied) {
       this.activateBotXRayMode();
+    }
+
+    if (this.activeTargetRoot?.userData) {
+      this.activeTargetRoot.userData.bulletCamPenetrationFreeze = true;
     }
 
     // Brilho emissivo vermelho/branco máximo na região atingida do esqueleto
@@ -1217,20 +1562,268 @@ export class XRayBulletCamManager {
     // Rastro da bala muda para VERMELHO ESCURO ao atravessar o esqueleto e sair pelas costas
     this.setTracerColors(true);
 
-    // Calcula ponto de saída nas costas do bot (~20cm crânio / ~36cm tronco)
-    const bodyThickness = this.activeIsHeadshot ? 0.2 : 0.36;
+    // Calcula ponto de saída nas costas do bot (~20cm crânio / ~34cm tronco)
+    const bodyThickness = this.activeIsHeadshot ? 0.2 : 0.34;
     _exitPos.copy(this.impactPos).addScaledVector(_flightDir, bodyThickness);
 
     // Dispara pools de estilhaços de osso (10) e partículas de sangue entrada/saída (25)
     this.spawnBoneShards(this.impactPos, _exitPos);
     this.spawnBloodBurst(this.impactPos, _exitPos);
 
-    // Executa abate real no KINETIC (Hit Marker vermelho, som de impacto/headshot, queda do bot)
+    // Executa abate real no KINETIC (Hit Marker vermelho, killfeed, estado down)
     if (!this.impactTriggered && this.onImpactCallback) {
       this.impactTriggered = true;
       const impactCb = this.onImpactCallback;
       this.onImpactCallback = null;
       impactCb();
+    }
+  }
+
+  // =========================================================================
+  // ÁUDIO MODULAR DA BULLET CAM (.WAV REAIS DE RASTRO E OSSOS QUEBRANDO)
+  // =========================================================================
+  /**
+   * Reproduz o som real do rastro/voo do projétil (`456266__soundfxstudio__grad-bm-21-mlrs.wav`)
+   * durante a Fase A (`timeScale = 0.30`), interrompendo limpa e imediatamente ao atingir o osso
+   * ou se o jogador acionar Skip.
+   */
+  private startFlightTrailSound(flightDurationSec: number): void {
+    this.stopFlightTrailSound();
+    const state = soundEngine.getSpatialAudioState();
+    if (state.muted || !state.ctx) return;
+
+    const ctx = state.ctx;
+    if (!this.trailAudioBuffer || !this.boneCrackAudioBuffer) {
+      void this.ensureAudioBuffersDecoded(ctx);
+    }
+
+    const now = ctx.currentTime;
+    const dur = Math.max(0.45, Math.min(2.2, flightDurationSec));
+
+    try {
+      const masterGain = ctx.createGain();
+      masterGain.gain.setValueAtTime(0.001, now);
+      masterGain.gain.linearRampToValueAtTime(0.68, now + 0.045);
+      masterGain.gain.setValueAtTime(0.64, now + dur * 0.82);
+      masterGain.gain.exponentialRampToValueAtTime(0.001, now + dur + 0.08);
+      masterGain.connect(ctx.destination);
+
+      // Caso o buffer WAV real (`bullet_cam_trail.wav`) já esteja decodificado, toca o sample real
+      if (this.trailAudioBuffer) {
+        const src = ctx.createBufferSource();
+        src.buffer = this.trailAudioBuffer;
+        // Leve ajuste de pitch (0.94) para encorpar o rastro em câmera lenta (0.30x)
+        src.playbackRate.setValueAtTime(0.94, now);
+        src.connect(masterGain);
+        src.start(now, 0);
+        src.stop(now + dur + 0.1);
+
+        let stopped = false;
+        this.activeFlightAudio = {
+          stop: () => {
+            if (stopped) return;
+            stopped = true;
+            try {
+              const t = ctx.currentTime;
+              masterGain.gain.cancelScheduledValues(t);
+              masterGain.gain.setValueAtTime(
+                Math.max(0.001, masterGain.gain.value),
+                t
+              );
+              masterGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+              setTimeout(() => {
+                try {
+                  src.stop();
+                } catch {
+                  /* ignore */
+                }
+                try {
+                  masterGain.disconnect();
+                } catch {
+                  /* ignore */
+                }
+              }, 45);
+            } catch {
+              /* ignore */
+            }
+          },
+        };
+        return;
+      }
+
+      // Fallback procedural caso o sample ainda esteja decodificando no 1º disparo
+      const whistleOsc = ctx.createOscillator();
+      whistleOsc.type = 'triangle';
+      whistleOsc.frequency.setValueAtTime(540, now);
+      whistleOsc.frequency.linearRampToValueAtTime(980, now + dur * 0.68);
+      whistleOsc.frequency.exponentialRampToValueAtTime(410, now + dur);
+
+      const whistleGain = ctx.createGain();
+      whistleGain.gain.setValueAtTime(0.18, now);
+      whistleGain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+
+      whistleOsc.connect(whistleGain);
+      whistleGain.connect(masterGain);
+      whistleOsc.start(now);
+      whistleOsc.stop(now + dur + 0.04);
+
+      let noiseSrc: AudioBufferSourceNode | null = null;
+      if (state.noiseBuffer) {
+        noiseSrc = ctx.createBufferSource();
+        noiseSrc.buffer = state.noiseBuffer;
+        noiseSrc.loop = true;
+
+        const airFilter = ctx.createBiquadFilter();
+        airFilter.type = 'bandpass';
+        airFilter.frequency.setValueAtTime(780, now);
+        airFilter.frequency.linearRampToValueAtTime(1650, now + dur * 0.72);
+        airFilter.Q.setValueAtTime(1.5, now);
+
+        noiseSrc.connect(airFilter);
+        airFilter.connect(masterGain);
+        noiseSrc.start(now);
+        noiseSrc.stop(now + dur + 0.04);
+      }
+
+      let stopped = false;
+      this.activeFlightAudio = {
+        stop: () => {
+          if (stopped) return;
+          stopped = true;
+          try {
+            const t = ctx.currentTime;
+            masterGain.gain.cancelScheduledValues(t);
+            masterGain.gain.setValueAtTime(
+              Math.max(0.001, masterGain.gain.value),
+              t
+            );
+            masterGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.035);
+            setTimeout(() => {
+              try {
+                whistleOsc.stop();
+              } catch {
+                /* ignore */
+              }
+              try {
+                noiseSrc?.stop();
+              } catch {
+                /* ignore */
+              }
+              try {
+                masterGain.disconnect();
+              } catch {
+                /* ignore */
+              }
+            }, 45);
+          } catch {
+            /* ignore */
+          }
+        },
+      };
+    } catch {
+      /* ignore WebAudio errors on restricted devices */
+    }
+  }
+
+  private stopFlightTrailSound(): void {
+    if (this.activeFlightAudio) {
+      this.activeFlightAudio.stop();
+      this.activeFlightAudio = null;
+    }
+  }
+
+  /**
+   * Pulso sonoro sutil ao ativar a visão Raio-X a 1.25m do alvo.
+   */
+  private playXRayActivateSound(): void {
+    const state = soundEngine.getSpatialAudioState();
+    if (state.muted || !state.ctx) return;
+
+    const ctx = state.ctx;
+    const now = ctx.currentTime;
+
+    try {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(92, now);
+      osc.frequency.exponentialRampToValueAtTime(44, now + 0.16);
+
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.22, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.17);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.18);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  /**
+   * Reproduz o som real de ossos quebrando com o impacto da bala
+   * (`369602__evanboyerman__bone-crunchcrack-3-mixed.wav`) sincronizado no exato
+   * milissegundo em que o projétil atinge o esqueleto em ultra-câmera lenta (`timeScale = 0.07`).
+   */
+  private playBoneFractureImpactSound(isHeadshot: boolean): void {
+    const state = soundEngine.getSpatialAudioState();
+    if (state.muted || !state.ctx) return;
+
+    const ctx = state.ctx;
+    const now = ctx.currentTime;
+
+    try {
+      // 1. Sample WAV real de fratura óssea (`bullet_cam_bone_crack.wav`)
+      if (this.boneCrackAudioBuffer) {
+        const src = ctx.createBufferSource();
+        src.buffer = this.boneCrackAudioBuffer;
+        // Em Headshot (crânio), pitch levemente mais incisivo (1.04); em costelas/tronco, 0.96
+        src.playbackRate.setValueAtTime(isHeadshot ? 1.04 : 0.96, now);
+
+        const crackGain = ctx.createGain();
+        crackGain.gain.setValueAtTime(0.95, now);
+
+        src.connect(crackGain);
+        crackGain.connect(ctx.destination);
+
+        // O arquivo local já teve os 0.135s de silêncio inicial removidos; se vier do fallback bruto do GitHub, pula 0.135s
+        const startOffset = this.boneCrackFromGithubFallback ? 0.135 : 0;
+        src.start(now, startOffset);
+      } else if (state.noiseBuffer) {
+        // Fallback procedural imediato caso o buffer ainda não tenha decodificado
+        const crackSrc = ctx.createBufferSource();
+        crackSrc.buffer = state.noiseBuffer;
+        const crackFilter = ctx.createBiquadFilter();
+        crackFilter.type = 'bandpass';
+        crackFilter.frequency.setValueAtTime(isHeadshot ? 2900 : 2200, now);
+        crackFilter.Q.setValueAtTime(3.4, now);
+        const crackGain = ctx.createGain();
+        crackGain.gain.setValueAtTime(0.45, now);
+        crackGain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+        crackSrc.connect(crackFilter);
+        crackFilter.connect(crackGain);
+        crackGain.connect(ctx.destination);
+        crackSrc.start(now);
+        crackSrc.stop(now + 0.095);
+      }
+
+      // 2. Sub-impacto balístico grave para dar peso físico ao projétil entrando no osso
+      const thudOsc = ctx.createOscillator();
+      thudOsc.type = 'sine';
+      thudOsc.frequency.setValueAtTime(isHeadshot ? 104 : 86, now);
+      thudOsc.frequency.exponentialRampToValueAtTime(26, now + 0.22);
+
+      const thudGain = ctx.createGain();
+      thudGain.gain.setValueAtTime(0.38, now);
+      thudGain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+
+      thudOsc.connect(thudGain);
+      thudGain.connect(ctx.destination);
+      thudOsc.start(now);
+      thudOsc.stop(now + 0.25);
+    } catch {
+      /* ignore */
     }
   }
 
@@ -1257,21 +1850,19 @@ export class XRayBulletCamManager {
       const p = this.boneShards[i];
       p.active = true;
       p.age = 0;
-      p.maxAge = 0.75 + Math.random() * 0.55;
+      p.maxAge = 0.78 + Math.random() * 0.55;
 
-      // Parte sai do impacto ósseo interno e parte explode junto ao ponto de saída
       const fromExit = i >= 3;
       p.pos.copy(fromExit ? exitPos : entryPos);
-      p.pos.x += (Math.random() - 0.5) * 0.06;
-      p.pos.y += (Math.random() - 0.5) * 0.06;
-      p.pos.z += (Math.random() - 0.5) * 0.06;
+      p.pos.x += (Math.random() - 0.5) * 0.045;
+      p.pos.y += (Math.random() - 0.5) * 0.045;
+      p.pos.z += (Math.random() - 0.5) * 0.045;
 
-      // Vetor principal seguindo a direção da bala + espalhamento cônico aleatório
       const forwardSpeed = fromExit
-        ? 3.8 + Math.random() * 4.4
-        : 1.8 + Math.random() * 2.8;
-      const spreadRight = (Math.random() - 0.5) * 2.8;
-      const spreadUp = (Math.random() - 0.32) * 2.4;
+        ? 3.4 + Math.random() * 4.2
+        : 1.6 + Math.random() * 2.5;
+      const spreadRight = (Math.random() - 0.5) * 2.6;
+      const spreadUp = (Math.random() - 0.32) * 2.2;
 
       p.vel
         .copy(_flightDir)
@@ -1306,19 +1897,18 @@ export class XRayBulletCamManager {
       const p = this.bloodParticles[i];
       p.active = true;
       p.age = 0;
-      p.maxAge = 0.55 + Math.random() * 0.5;
+      p.maxAge = 0.58 + Math.random() * 0.5;
 
       const isEntry = i < entryCount;
       p.pos.copy(isEntry ? entryPos : exitPos);
-      p.pos.x += (Math.random() - 0.5) * 0.05;
-      p.pos.y += (Math.random() - 0.5) * 0.05;
-      p.pos.z += (Math.random() - 0.5) * 0.05;
+      p.pos.x += (Math.random() - 0.5) * 0.045;
+      p.pos.y += (Math.random() - 0.5) * 0.045;
+      p.pos.z += (Math.random() - 0.5) * 0.045;
 
       if (isEntry) {
-        // Respingo para trás/lados no ponto de entrada
         const backSpeed = -(0.8 + Math.random() * 1.9);
-        const spreadR = (Math.random() - 0.5) * 2.6;
-        const spreadU = (Math.random() - 0.25) * 2.2;
+        const spreadR = (Math.random() - 0.5) * 2.4;
+        const spreadU = (Math.random() - 0.25) * 2.0;
         p.vel
           .copy(_flightDir)
           .multiplyScalar(backSpeed)
@@ -1327,10 +1917,9 @@ export class XRayBulletCamManager {
         const s = 0.55 + Math.random() * 0.75;
         p.scale.set(s, s, s);
       } else {
-        // Cone de saída intenso nas costas do bot seguindo a direção da bala
-        const exitSpeed = 3.2 + Math.random() * 5.6;
-        const spreadR = (Math.random() - 0.5) * 3.0;
-        const spreadU = (Math.random() - 0.3) * 2.5;
+        const exitSpeed = 3.0 + Math.random() * 5.2;
+        const spreadR = (Math.random() - 0.5) * 2.8;
+        const spreadU = (Math.random() - 0.3) * 2.3;
         p.vel
           .copy(_flightDir)
           .multiplyScalar(exitSpeed)
@@ -1467,6 +2056,11 @@ export class XRayBulletCamManager {
     this.bulletRoot.visible = false;
     this.trailGroup.visible = false;
 
+    if (this.activeTargetRoot?.userData) {
+      this.activeTargetRoot.userData.bulletCamTargetLocked = false;
+      this.activeTargetRoot.userData.bulletCamPenetrationFreeze = false;
+    }
+
     if (this.activeYawObject && this.activePitchObject) {
       this.returnStartCamPos.copy(this.activeYawObject.position);
       this.returnStartYaw = this.activeYawObject.rotation.y;
@@ -1477,6 +2071,7 @@ export class XRayBulletCamManager {
   }
 
   private finishAndRestoreCamera(): void {
+    this.stopFlightTrailSound();
     this.restoreBotXRayState();
     this.phase = 'IDLE';
     this.phaseElapsed = 0;

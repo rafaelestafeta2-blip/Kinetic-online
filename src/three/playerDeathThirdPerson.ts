@@ -314,7 +314,10 @@ export class PlayerDeathThirdPersonController {
       return;
     }
 
-    // Câmera Cinematográfica em 3ª Pessoa focando no personagem caindo no chão
+    // Sincroniza a posição do corpo 3D caso o jogador esteja sendo arremessado por explosão (GrenadeKillCam)
+    this.rootGroup.position.copy(playerPos);
+
+    // Câmera Cinematográfica em 3ª Pessoa focando no personagem caindo/sendo arremessado no chão
     const zoomT = Math.min(1, elapsed / 0.65);
     const zoomEase = 1 - Math.pow(1 - zoomT, 3);
 
@@ -353,6 +356,11 @@ export class PlayerDeathThirdPersonController {
     yawObject.rotation.y = Math.atan2(-dx, -dz);
     pitchObject.rotation.x = Math.atan2(dy, horizDist);
     camera.rotation.z = THREE.MathUtils.lerp(0.12, 0.0, zoomEase);
+  }
+
+  public setAirborneBlastTumble(pitchRad: number, rollRad: number): void {
+    this.rootGroup.rotation.x = pitchRad;
+    this.rootGroup.rotation.z = rollRad;
   }
 
   private resolveCameraCollision(

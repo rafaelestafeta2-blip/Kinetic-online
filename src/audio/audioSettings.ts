@@ -2,6 +2,7 @@ import { GameSettings, loadGameSettings } from '../graphics/graphicsSettings';
 
 // Intercepta e gerencia o áudio sem modificar soundEngine.ts
 let masterGainNode: GainNode | null = null;
+let masterLowpassFilterNode: BiquadFilterNode | null = null;
 let dynamicsCompressorNode: DynamicsCompressorNode | null = null;
 let activeAudioContext: AudioContext | null = null;
 
@@ -103,6 +104,7 @@ export function initAudioSystem(initialSettings: GameSettings): void {
   if (NativeAudioContext) {
     class ManagedAudioContext extends NativeAudioContext {
       private localMasterGain: GainNode;
+      private localLowpassFilter: BiquadFilterNode;
       private localCompressor: DynamicsCompressorNode;
 
       constructor(options?: AudioContextOptions) {
@@ -137,16 +139,23 @@ export function initAudioSystem(initialSettings: GameSettings): void {
         this.localCompressor.attack.setValueAtTime(0.003, this.currentTime);
         this.localCompressor.release.setValueAtTime(0.15, this.currentTime);
 
+        this.localLowpassFilter = this.createBiquadFilter();
+        this.localLowpassFilter.type = 'lowpass';
+        this.localLowpassFilter.frequency.setValueAtTime(20000, this.currentTime);
+        this.localLowpassFilter.Q.setValueAtTime(0.707, this.currentTime);
+
         this.localMasterGain = this.createGain();
         this.localMasterGain.gain.setValueAtTime(
           getWebAudioMasterGainValue(currentSettings),
           this.currentTime
         );
 
-        this.localMasterGain.connect(this.localCompressor);
+        this.localMasterGain.connect(this.localLowpassFilter);
+        this.localLowpassFilter.connect(this.localCompressor);
         this.localCompressor.connect(super.destination);
 
         masterGainNode = this.localMasterGain;
+        masterLowpassFilterNode = this.localLowpassFilter;
         dynamicsCompressorNode = this.localCompressor;
       }
 
@@ -167,6 +176,43 @@ export function initAudioSystem(initialSettings: GameSettings): void {
   }
 
   interceptMediaElements();
+}
+
+/**
+ * Retorna o BiquadFilterNode ('lowpass') global do jogo para controle direto
+ * de abafamento acústico durante Concussão / Shellshock (400Hz -> 20000Hz).
+ */
+export function getMasterShellshockLowpassFilter(): BiquadFilterNode | null {
+  return masterLowpassFilterNode;
+}
+
+/**
+ * Retorna o nó de saída pós-filtro passa-baixa (DynamicsCompressorNode ou destino final),
+ * permitindo que o zumbido agudo procedural de Tinnitus (~3200Hz) soe nítido enquanto
+ * tiros e passos do jogo permanecem abafados em ~400Hz.
+ */
+export function getPostLowpassAudioDestination(ctx: AudioContext): AudioNode {
+  return dynamicsCompressorNode || ctx.destination;
+}
+
+/**
+ * Atualiza a frequência de corte do filtro BiquadFilterNode ('lowpass') global.
+ */
+export function setMasterShellshockLowpassHz(
+  cutoffHz: number,
+  rampTimeConstantSec = 0.04
+): void {
+  if (!masterLowpassFilterNode || !activeAudioContext) return;
+  const clamped = Math.max(320, Math.min(20000, cutoffHz));
+  try {
+    masterLowpassFilterNode.frequency.setTargetAtTime(
+      clamped,
+      activeAudioContext.currentTime,
+      Math.max(0.01, rampTimeConstantSec)
+    );
+  } catch {
+    masterLowpassFilterNode.frequency.value = clamped;
+  }
 }
 
 export function applyAudioSettings(settings: GameSettings): void {

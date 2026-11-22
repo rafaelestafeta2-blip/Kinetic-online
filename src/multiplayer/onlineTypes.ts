@@ -88,12 +88,31 @@ export interface OnlineScorestreakEvent {
 
 export interface OnlineRoundEvent {
   eventId: string;
-  kind: 'ROUND_OVER' | 'NEXT_ROUND';
+  kind: 'ROUND_OVER' | 'NEXT_ROUND' | 'ROUND_END_BOMB_EXPLODED';
   roundNumber: number;
   winner?: OnlineTeam;
   reason?: string;
   vanguardScore?: number;
   blackthornScore?: number;
+  blastPayload?: {
+    plantedSite: 'A' | 'B';
+    bombPos: [number, number, number];
+    lethalRadiusMeters: number;
+    victims: Array<{
+      id: string;
+      callsign: string;
+      team: OnlineTeam;
+      isLocalPlayer: boolean;
+      distanceMeters: number;
+      inBlastRadius: boolean;
+      isBehindCover: boolean;
+      lethal: boolean;
+      damageApplied: number;
+      impulseVel: [number, number, number];
+      angularVel: [number, number, number];
+    }>;
+    ts: number;
+  };
   ts: number;
 }
 

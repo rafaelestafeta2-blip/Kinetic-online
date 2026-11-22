@@ -136,6 +136,13 @@ export interface YardBombHudInfo {
   /** Warface Team Deathmatch (STATION_TDM_5V5) telemetry. */
   isTdmMode?: boolean;
   tdmTargetKills?: number;
+  /** Bomb Danger Zone (22m) & Blast Cinematic telemetry. */
+  dangerZoneInRadius?: boolean;
+  dangerZoneDistanceM?: number;
+  dangerZoneLethalRadiusM?: number;
+  dangerZoneBehindCover?: boolean;
+  dangerZoneCritical?: boolean;
+  blastCineActive?: boolean;
 }
 
 export interface BallisticShotTelemetry {
@@ -272,6 +279,12 @@ export interface HudState {
   bulletCamVignetteAlpha?: number;
   bulletCamDistanceM?: number;
   bulletCamIsHeadshot?: boolean;
+  /** Two-radius Grenade System (Raio 1 Lethal KillCam + Raio 2 Shellshock Concussion). */
+  isShellshocked?: boolean;
+  shellshockIntensity?: number;
+  grenadeKillCamActive?: boolean;
+  grenadeKillCamKiller?: string;
+  grenadeKillCamDistanceM?: number;
   killConfirmAlpha: number;
   killConfirmLabel: string;
   damageFlashAlpha: number;

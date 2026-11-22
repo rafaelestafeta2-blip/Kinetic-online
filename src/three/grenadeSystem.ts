@@ -23,6 +23,12 @@ const S13_SMOKE_GLB_LOCAL_URL = resolveAssetUrl('/models/s13_smoke_grenade.glb')
 const S13_SMOKE_GLB_GITHUB_URL =
   'https://raw.githubusercontent.com/rafaelestafeta2-blip/Gamesfps/cf32fb142ec4e96c6f4dfd7c2a07079868411bcc/Sound/Granada/s13_smoke_grenade.glb';
 
+export interface GrenadeThrowerInfo {
+  isBot?: boolean;
+  callsign?: string;
+  team?: 'VANGUARD' | 'BLACKTHORN';
+}
+
 interface ActiveProjectile {
   type: GrenadeType;
   group: THREE.Group;
@@ -35,6 +41,7 @@ interface ActiveProjectile {
   removeAge: number;
   bounces: number;
   isRemote?: boolean;
+  throwerInfo?: GrenadeThrowerInfo;
 }
 
 interface ExplosionInstance {
@@ -135,7 +142,8 @@ export class TacticalGrenadeSystem {
   private onFragDetonate: (
     blastCenter: THREE.Vector3,
     blastRadius: number,
-    isRemote?: boolean
+    isRemote?: boolean,
+    throwerInfo?: GrenadeThrowerInfo
   ) => void;
   private onGrenadeReleasedFromHand?: (
     type: GrenadeType,
@@ -149,7 +157,8 @@ export class TacticalGrenadeSystem {
     onFragDetonate: (
       blastCenter: THREE.Vector3,
       blastRadius: number,
-      isRemote?: boolean
+      isRemote?: boolean,
+      throwerInfo?: GrenadeThrowerInfo
     ) => void,
     onGrenadeReleasedFromHand?: (
       type: GrenadeType,
@@ -1137,7 +1146,8 @@ export class TacticalGrenadeSystem {
     origin: THREE.Vector3,
     velocity: THREE.Vector3,
     type: GrenadeType,
-    isRemotePlayer = false
+    isRemotePlayer = false,
+    throwerInfo?: GrenadeThrowerInfo
   ): void {
     const projGroup = new THREE.Group();
     if (type === 'FRAG') {
@@ -1180,10 +1190,15 @@ export class TacticalGrenadeSystem {
       removeAge: type === 'FRAG' ? 2.1 : 26.5,
       bounces: 0,
       isRemote: isRemotePlayer,
+      throwerInfo,
     });
   }
 
-  private spawnExplosion(pos: THREE.Vector3, isRemote = false): void {
+  private spawnExplosion(
+    pos: THREE.Vector3,
+    isRemote = false,
+    throwerInfo?: GrenadeThrowerInfo
+  ): void {
     soundEngine.playGrenadeExplosion();
 
     let exp = this.explosions.find((e) => !e.active);
@@ -1231,7 +1246,7 @@ export class TacticalGrenadeSystem {
       );
     }
 
-    this.onFragDetonate(pos, 9.0, isRemote);
+    this.onFragDetonate(pos, 11.0, isRemote, throwerInfo);
   }
 
   private spawnSmokeCloud(pos: THREE.Vector3): void {
@@ -1452,7 +1467,11 @@ export class TacticalGrenadeSystem {
           proj.detonated = true;
           if (proj.type === 'FRAG') {
             proj.group.visible = false;
-            this.spawnExplosion(proj.group.position, Boolean(proj.isRemote));
+            this.spawnExplosion(
+              proj.group.position,
+              Boolean(proj.isRemote),
+              proj.throwerInfo
+            );
           } else if (!proj.smokeCloudSpawned) {
             proj.smokeCloudSpawned = true;
             this.spawnSmokeCloud(proj.group.position);

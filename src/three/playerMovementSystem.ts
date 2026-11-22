@@ -514,8 +514,14 @@ export function updatePlayerMovementAndCollision(engine: any, dt: number): void 
             ? 1.10
             : 1.72;
 
-    const intendedX = engine.playerPos.x + engine.playerVel.x * dt;
-    const intendedZ = engine.playerPos.z + engine.playerVel.z * dt;
+    const shellshockTelem = engine.shellshockController?.isActive?.()
+      ? engine.shellshockController.getTelemetry()
+      : null;
+    const pushVelX = shellshockTelem ? shellshockTelem.pushVelocity.x : 0;
+    const pushVelZ = shellshockTelem ? shellshockTelem.pushVelocity.z : 0;
+
+    const intendedX = engine.playerPos.x + (engine.playerVel.x + pushVelX) * dt;
+    const intendedZ = engine.playerPos.z + (engine.playerVel.z + pushVelZ) * dt;
     engine.mantleWallBlocked = false;
 
     if (activeGlbCollider) {
@@ -703,6 +709,9 @@ export function updatePlayerMovementAndCollision(engine: any, dt: number): void 
     // Smooth harmonic camera trauma shake (no random white noise)
     const shakePitch = engine.cameraShake > 0.0001 ? Math.sin(engine.elapsedTime * 42) * engine.cameraShake : 0;
     const shakeYaw = engine.cameraShake > 0.0001 ? Math.cos(engine.elapsedTime * 34) * engine.cameraShake * 0.5 : 0;
+    const ssYaw = shellshockTelem ? shellshockTelem.swayYawOffset : 0;
+    const ssPitch = shellshockTelem ? shellshockTelem.swayPitchOffset : 0;
+    const ssRoll = shellshockTelem ? shellshockTelem.swayRollOffset : 0;
 
     // Mantle camera pitch kick (pull-up look).
     if (typeof engine.mantleCamPitch === 'number' && engine.mantleCamPitch !== 0) {
@@ -720,7 +729,7 @@ export function updatePlayerMovementAndCollision(engine: any, dt: number): void 
     // Stronger lean roll when ADS (reads as shoulder peek).
     const leanRollAmt =
       ((engine.state.adsAlpha ?? 0) > 0.35 ? 0.3 : 0.24) * engine.leanCurrent;
-    engine.cameraBaseRoll = -leanRollAmt + slideRoll;
+    engine.cameraBaseRoll = -leanRollAmt + slideRoll + ssRoll;
     engine.camera.rotation.z = engine.cameraBaseRoll;
 
     engine.yawObject.position.set(
@@ -728,9 +737,9 @@ export function updatePlayerMovementAndCollision(engine: any, dt: number): void 
       engine.playerPos.y + engine.currentEyeHeight + engine.landingDip,
       leanWorldZ
     );
-    engine.yawObject.rotation.y = engine.yaw + shakeYaw;
+    engine.yawObject.rotation.y = engine.yaw + shakeYaw + ssYaw;
     engine.pitchObject.rotation.x =
-      engine.pitch + shakePitch + (engine.mantleCamPitch || 0);
+      engine.pitch + shakePitch + (engine.mantleCamPitch || 0) + ssPitch;
 
     engine.cameraShake = THREE.MathUtils.damp(engine.cameraShake, 0, 24, dt);
     if (typeof engine.cameraFovPunch === 'number' && engine.cameraFovPunch > 0) {

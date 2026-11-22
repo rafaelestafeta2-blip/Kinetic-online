@@ -73,6 +73,14 @@ export const TacticalHudOverlay: React.FC<TacticalHudOverlayProps> = ({
     0,
     Math.min(1, hud.bulletCamVignetteAlpha || 0)
   );
+  const isShellshocked = Boolean(
+    hud.isShellshocked && (hud.shellshockIntensity || 0) > 0.01
+  );
+  const shellshockIntensity = Math.max(
+    0,
+    Math.min(1, hud.shellshockIntensity || 0)
+  );
+  const isGrenadeKillCamActive = Boolean(hud.grenadeKillCamActive);
   const hasTeamScoreboard = Boolean(
     hud.yardBomb &&
       (hud.drillMode === 'YARD_BOMB_5V5' ||
@@ -129,12 +137,17 @@ export const TacticalHudOverlay: React.FC<TacticalHudOverlayProps> = ({
     !isSpectating &&
     !isMatchOver &&
     !isBulletCamActive &&
+    !isGrenadeKillCamActive &&
     hasOpticalSniperScope &&
     !hud.cantedActive &&
     hud.adsAlpha > 0.78;
 
   const hipCrosshairOpacity =
-    isSniperScopeActive || isSpectating || isMatchOver || isBulletCamActive
+    isSniperScopeActive ||
+    isSpectating ||
+    isMatchOver ||
+    isBulletCamActive ||
+    isGrenadeKillCamActive
       ? 0
       : Math.max(
           0,
@@ -144,6 +157,78 @@ export const TacticalHudOverlay: React.FC<TacticalHudOverlayProps> = ({
   return (
     <>
       {/* SPAWNDBG moved to App.tsx (z-200 lime bar) — was easy to miss in HUD */}
+      {/* RAIO 2 — SHELLSHOCK / CONCUSSÃO DE GRANADA (5.0m..11.0m): Vinheta Esbranquiçada/Embaçada Leve em CSS (Zero Shaders/Zero Backdrop-Filter) */}
+      {isShellshocked && !isBulletCamActive && !isGrenadeKillCamActive && (
+        <div
+          className="fixed inset-0 pointer-events-none z-20 select-none overflow-hidden transition-opacity duration-75"
+          style={{
+            opacity: Math.min(0.96, shellshockIntensity * 0.95),
+            background: `radial-gradient(ellipse at center, rgba(255, 250, 240, ${
+              (shellshockIntensity * 0.16).toFixed(3)
+            }) 0%, rgba(226, 232, 240, ${
+              (shellshockIntensity * 0.34).toFixed(3)
+            }) 56%, rgba(248, 250, 252, ${
+              (shellshockIntensity * 0.72).toFixed(3)
+            }) 100%)`,
+            boxShadow: `inset 0 0 ${Math.round(
+              70 + shellshockIntensity * 110
+            )}px rgba(255, 255, 255, ${(shellshockIntensity * 0.68).toFixed(
+              3
+            )}), inset 0 0 ${Math.round(
+              35 + shellshockIntensity * 55
+            )}px rgba(251, 146, 60, ${(shellshockIntensity * 0.38).toFixed(3)})`,
+          }}
+        >
+          {/* Dupla visão periférica leve (anéis translúcidos deslocados com blur estático leve nas bordas) */}
+          <div
+            className="absolute inset-0 animate-pulse"
+            style={{
+              transform: `scale(${(1 + shellshockIntensity * 0.028).toFixed(
+                4
+              )}) translate3d(${(shellshockIntensity * 6).toFixed(1)}px, ${(
+                -shellshockIntensity * 4
+              ).toFixed(1)}px, 0)`,
+              border: `${Math.round(14 + shellshockIntensity * 24)}px solid rgba(255, 255, 255, ${(
+                shellshockIntensity * 0.28
+              ).toFixed(3)})`,
+              filter: `blur(${Math.max(1, Math.round(shellshockIntensity * 4))}px)`,
+            }}
+          />
+          <div className="absolute top-14 left-1/2 -translate-x-1/2 px-3 py-1 border border-amber-300/40 bg-slate-950/75 text-[10px] font-bold tracking-[0.22em] uppercase text-amber-200">
+            CONCUSSÃO // SHELLSHOCK · AUDIÇÃO E VISÃO AFETADAS
+          </div>
+        </div>
+      )}
+
+      {/* RAIO 1 — GRENADE DEATH CAM CINEMATOGRÁFICA (0m..5.0m): Sem botão de Skip, Câmera Lenta + Arremesso de Onda de Choque */}
+      {isGrenadeKillCamActive && !isBulletCamActive && (
+        <div
+          className="fixed inset-0 pointer-events-none z-25 select-none"
+          style={{
+            background:
+              'radial-gradient(ellipse at center, transparent 42%, rgba(15, 23, 42, 0.72) 82%, rgba(127, 29, 29, 0.65) 100%)',
+            boxShadow:
+              'inset 0 0 120px rgba(0, 0, 0, 0.92), inset 0 0 60px rgba(239, 68, 68, 0.42)',
+          }}
+        >
+          <div className="absolute top-0 left-0 right-0 h-[5vh] max-h-10 bg-gradient-to-b from-black/90 to-transparent" />
+          <div className="absolute bottom-0 left-0 right-0 h-[7vh] max-h-14 bg-gradient-to-t from-black/90 to-transparent" />
+          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1">
+            <div className="px-4 py-1 border border-red-500/45 bg-black/80 text-[11px] font-bold tracking-[0.24em] uppercase text-red-400">
+              ZONA FATAL // ONDA DE CHOQUE DE GRANADA
+            </div>
+            {hud.grenadeKillCamKiller && (
+              <div className="text-[10px] font-mono tracking-[0.18em] uppercase text-slate-300">
+                ELIMINADO POR {hud.grenadeKillCamKiller}
+                {hud.grenadeKillCamDistanceM != null
+                  ? ` · ${hud.grenadeKillCamDistanceM.toFixed(1)}M`
+                  : ''}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* SNIPER BULLET CAM: Vinheta Cinematográfica CSS Leve (sem backdrop-filter) + Botão de Pular */}
       {isBulletCamActive && (
         <div

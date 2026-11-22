@@ -339,7 +339,13 @@ export function updateSmartBotNavigation(
 
   for (let i = 0; i < bots.length; i++) {
     const bot = bots[i];
-    if (bot.isDown || bot.type !== 'COMBAT_BOT') continue;
+    if (
+      bot.isDown ||
+      bot.type !== 'COMBAT_BOT' ||
+      bot.root.userData?.bulletCamTargetLocked
+    ) {
+      continue;
+    }
 
     const nav = getOrInitBotNav(bot, mode, i);
     nav.fireCooldown = Math.max(0, nav.fireCooldown - dt);
@@ -1183,7 +1189,17 @@ export function updateSmartBotNavigation(
         triggerBotGrenadeAnimation(bot);
         _throwDir.subVectors(visibleEnemyPos, _botHead).normalize().multiplyScalar(13.5);
         _throwDir.y += 4.8;
-        grenadeSystem.spawnBotGrenade(_botHead, _throwDir, isSmoke ? 'SMOKE' : 'FRAG');
+        grenadeSystem.spawnBotGrenade(
+          _botHead,
+          _throwDir,
+          isSmoke ? 'SMOKE' : 'FRAG',
+          false,
+          {
+            isBot: true,
+            callsign: bot.callsign || (bot.isAlly ? 'RECON-02' : 'KRAKEN-BT'),
+            team: bot.isAlly ? 'VANGUARD' : 'BLACKTHORN',
+          }
+        );
       }
     }
   }

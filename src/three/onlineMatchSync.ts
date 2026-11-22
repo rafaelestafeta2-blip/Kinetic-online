@@ -261,7 +261,7 @@ export function syncOnlineMatchFrame(ctx: OnlineMatchSyncContext): void {
           bot.root.position.set(0, -999, 0);
         }
       }
-      if (bot.root.visible) {
+      if (bot.root.visible && !bot.root.userData?.bombBlastThrown) {
         const gy = ctx.getGroundHeight(renderPose.x, renderPose.y, renderPose.z);
         bot.root.position.set(renderPose.x, gy, renderPose.z);
         bot.root.rotation.y = renderPose.yaw + Math.PI;

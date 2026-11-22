@@ -190,6 +190,9 @@ export class YardBombSystem {
         site: 'NONE' | 'A' | 'B'
       ) => void)
     | null = null;
+  private onBombDetonatedCb:
+    | ((site: 'A' | 'B', bombPos: THREE.Vector3) => void)
+    | null = null;
   private lastAppliedRoundEventKey = '';
   private onlineBarrierWaitSec = 0;
 
@@ -226,6 +229,22 @@ export class YardBombSystem {
       | null
   ): void {
     this.onBombStateChangedCb = cb;
+  }
+
+  public setOnBombDetonated(
+    cb: ((site: 'A' | 'B', bombPos: THREE.Vector3) => void) | null
+  ): void {
+    this.onBombDetonatedCb = cb;
+  }
+
+  public getPlantedBombWorldPosition(out?: THREE.Vector3): THREE.Vector3 {
+    const v = out || new THREE.Vector3();
+    if (this.c4MeshGroup.visible) {
+      return v.copy(this.c4MeshGroup.position);
+    }
+    const { siteA, siteB } = this.getActiveBombSites();
+    const sitePos = this.info.plantedSite === 'B' ? siteB : siteA;
+    return v.set(sitePos.x, sitePos.y + 0.12, sitePos.z);
   }
 
   private getActiveBombSites(): { siteA: THREE.Vector3; siteB: THREE.Vector3 } {
@@ -551,7 +570,11 @@ export class YardBombSystem {
     if (key === this.lastAppliedRoundEventKey) return;
     this.lastAppliedRoundEventKey = key;
 
-    if (evt.kind === 'ROUND_OVER') {
+    if (evt.kind === 'ROUND_OVER' || evt.kind === 'ROUND_END_BOMB_EXPLODED') {
+      if (evt.kind === 'ROUND_END_BOMB_EXPLODED') {
+        this.info.bombStatus = 'DETONATED';
+        this.c4MeshGroup.visible = false;
+      }
       if (this.info.roundState === 'PLAYING' || this.info.roundState === 'EQUIP') {
         this.info.roundState = 'PLAYING';
         this.finishCurrentRound(
@@ -643,7 +666,8 @@ export class YardBombSystem {
       this.info.roundWinner = winner;
       this.info.roundWinReason = reason;
       this.info.roundState = 'ROUND_OVER';
-      this.info.roundTransitionSec = 3.5;
+      this.info.roundTransitionSec =
+        this.info.bombStatus === 'DETONATED' ? 4.8 : 3.5;
       this.info.lastRoundXp = roundXp;
       this.info.lastRoundCash = roundCash;
       this.info.totalMatchXp += roundXp;
@@ -1300,6 +1324,7 @@ export class YardBombSystem {
           this.c4MeshGroup.visible = false;
           playC4DetonationExplosion(this.c4MeshGroup.position, playerPos);
           mobileHardware.vibrateExplosion(1.0);
+          this.onBombDetonatedCb?.(detSite, this.c4MeshGroup.position);
           if (this.isOnlineMatch) {
             this.onBombStateChangedCb?.('DETONATED', detSite);
           }

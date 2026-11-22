@@ -1,5 +1,9 @@
 import * as THREE from 'three';
 import { WeaponId } from '../types/game';
+import {
+  getMasterShellshockLowpassFilter,
+  getPostLowpassAudioDestination,
+} from './audioSettings';
 import { playRealShellCasingBounce } from './characterAndBombAudio';
 import { soundEngine } from './soundEngine';
 
@@ -13,6 +17,8 @@ export type RadioCalloutType =
 
 let shellshockStartTime = 0;
 let shellshockDuration = 0;
+let activeTinnitusOsc: OscillatorNode | null = null;
+let activeTinnitusGain: GainNode | null = null;
 let lastRadioCalloutTime = 0;
 
 function computePan(
@@ -30,7 +36,7 @@ function computePan(
 }
 
 /**
- * Retorna o multiplicador de frequência de corte (0.18 a 1.0) quando o jogador
+ * Retorna o multiplicador de frequência de corte (0.14 a 1.0) quando o jogador
  * está sob efeito de concussão (Shellshock) de uma granada próxima.
  */
 export function getShellshockMuffleMultiplier(): number {
@@ -39,60 +45,135 @@ export function getShellshockMuffleMultiplier(): number {
   const elapsed = state.ctx.currentTime - shellshockStartTime;
   if (elapsed < 0 || elapsed >= shellshockDuration) return 1.0;
   const progress = elapsed / shellshockDuration;
-  return THREE.MathUtils.lerp(0.16, 1.0, progress * progress);
+  return THREE.MathUtils.lerp(0.14, 1.0, progress * progress);
 }
 
 /**
- * 1. Zumbido de Concussão (Tinnitus Shellshock) + Abafamento Acústico Temporário
- * acionado quando uma granada Frag explode a menos de 14.5m do jogador.
+ * 1. Zumbido de Concussão (Tinnitus Shellshock ~3200 Hz) + Abafamento Acústico (BiquadFilterNode lowpass ~400Hz -> 20000Hz)
+ * acionado quando o jogador está dentro do Raio 2 de Concussão (<= 11.0m) por 4.0 segundos.
  */
 export function triggerShellshockTinnitus(
   explosionPos: THREE.Vector3,
-  listenerPos: THREE.Vector3
+  listenerPos: THREE.Vector3,
+  overrideDurationSec = 4.0,
+  overridePeakIntensity?: number
 ): void {
   const state = soundEngine.getSpatialAudioState();
   if (state.muted || !state.ctx) return;
 
   const dist = explosionPos.distanceTo(listenerPos);
-  if (dist > 14.5) return;
+  if (dist > 11.0 && overridePeakIntensity === undefined) return;
 
   const ctx = state.ctx;
   const now = ctx.currentTime;
-  const intensity = THREE.MathUtils.clamp(1 - dist / 14.5, 0.15, 1.0);
+  const intensity =
+    overridePeakIntensity !== undefined
+      ? THREE.MathUtils.clamp(overridePeakIntensity, 0.15, 1.0)
+      : THREE.MathUtils.clamp(1 - Math.max(0, dist - 5.0) / 6.0, 0.25, 1.0);
 
   shellshockStartTime = now;
-  shellshockDuration = THREE.MathUtils.lerp(1.6, 3.4, intensity);
+  shellshockDuration = Math.max(1.5, overrideDurationSec);
 
-  // Onda de choque sub-grave no tímpano (Pressure Blast Thump)
+  // 1. BiquadFilterNode ('lowpass') global: frequência cai para ~400Hz e sobe gradualmente para 20000Hz em 4.0s
+  const masterLp = getMasterShellshockLowpassFilter();
+  if (masterLp) {
+    const minCutoffHz = THREE.MathUtils.lerp(560, 380, intensity);
+    try {
+      masterLp.frequency.cancelScheduledValues(now);
+      masterLp.frequency.setValueAtTime(
+        Math.max(380, masterLp.frequency.value || 20000),
+        now
+      );
+      masterLp.frequency.exponentialRampToValueAtTime(minCutoffHz, now + 0.045);
+      masterLp.frequency.exponentialRampToValueAtTime(
+        20000,
+        now + shellshockDuration
+      );
+    } catch {
+      masterLp.frequency.value = minCutoffHz;
+    }
+  }
+
+  const postFilterDest = getPostLowpassAudioDestination(ctx);
+
+  // 2. Onda de choque sub-grave no tímpano (Pressure Blast Thump 56Hz -> 22Hz)
   const subOsc = ctx.createOscillator();
   subOsc.type = 'sine';
-  subOsc.frequency.setValueAtTime(58, now);
+  subOsc.frequency.setValueAtTime(56, now);
   subOsc.frequency.exponentialRampToValueAtTime(22, now + 0.45);
 
   const subGain = ctx.createGain();
-  subGain.gain.setValueAtTime(0.48 * intensity, now);
+  subGain.gain.setValueAtTime(0.45 * intensity, now);
   subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.48);
 
   subOsc.connect(subGain);
-  subGain.connect(ctx.destination);
+  subGain.connect(postFilterDest);
   subOsc.start(now);
   subOsc.stop(now + 0.5);
 
-  // Agudo característico de Tinnitus (Call of Duty Shellshock Ring ~3180 Hz)
+  // 3. Zumbido agudo procedural via OscillatorNode (~3200Hz) com ganho baixo decaindo em 4.0 segundos
+  if (activeTinnitusOsc) {
+    try {
+      activeTinnitusOsc.stop();
+    } catch {
+      // Ignorar se já finalizado
+    }
+    activeTinnitusOsc = null;
+    activeTinnitusGain = null;
+  }
+
   const ringOsc = ctx.createOscillator();
   ringOsc.type = 'sine';
-  ringOsc.frequency.setValueAtTime(3180, now);
-  ringOsc.frequency.linearRampToValueAtTime(3145, now + shellshockDuration);
+  ringOsc.frequency.setValueAtTime(3200, now);
+  ringOsc.frequency.linearRampToValueAtTime(3165, now + shellshockDuration);
 
   const ringGain = ctx.createGain();
-  ringGain.gain.setValueAtTime(0.001, now);
-  ringGain.gain.linearRampToValueAtTime(0.22 * intensity, now + 0.08);
-  ringGain.gain.exponentialRampToValueAtTime(0.0008, now + shellshockDuration);
+  const peakRingGain = 0.085 * intensity;
+  ringGain.gain.setValueAtTime(0.0005, now);
+  ringGain.gain.linearRampToValueAtTime(peakRingGain, now + 0.06);
+  ringGain.gain.exponentialRampToValueAtTime(0.0001, now + shellshockDuration);
 
   ringOsc.connect(ringGain);
-  ringGain.connect(ctx.destination);
+  ringGain.connect(postFilterDest);
   ringOsc.start(now);
   ringOsc.stop(now + shellshockDuration + 0.05);
+  activeTinnitusOsc = ringOsc;
+  activeTinnitusGain = ringGain;
+  ringOsc.onended = () => {
+    if (activeTinnitusOsc === ringOsc) {
+      activeTinnitusOsc = null;
+      activeTinnitusGain = null;
+    }
+  };
+}
+
+/**
+ * Cancela imediatamente o efeito acústico de Shellshock (ex.: ao reiniciar rodada ou morrer).
+ */
+export function clearShellshockAudioEffect(): void {
+  shellshockDuration = 0;
+  const state = soundEngine.getSpatialAudioState();
+  const ctx = state.ctx;
+  const masterLp = getMasterShellshockLowpassFilter();
+  if (masterLp && ctx) {
+    try {
+      masterLp.frequency.cancelScheduledValues(ctx.currentTime);
+      masterLp.frequency.setTargetAtTime(20000, ctx.currentTime, 0.04);
+    } catch {
+      masterLp.frequency.value = 20000;
+    }
+  }
+  if (activeTinnitusOsc && activeTinnitusGain && ctx) {
+    try {
+      activeTinnitusGain.gain.cancelScheduledValues(ctx.currentTime);
+      activeTinnitusGain.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.03);
+      activeTinnitusOsc.stop(ctx.currentTime + 0.05);
+    } catch {
+      // Ignorar
+    }
+    activeTinnitusOsc = null;
+    activeTinnitusGain = null;
+  }
 }
 
 /**

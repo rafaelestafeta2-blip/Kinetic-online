@@ -16,6 +16,7 @@ import {
 } from './src/server/matchmakingEngine';
 import {
   clearRoomCombatAuthority,
+  evaluateServerGrenadeDetonation,
   IncomingHitLike,
   issueMatchRewardReceipt,
   recordServerPlayerPose,
@@ -972,6 +973,7 @@ async function startServer(): Promise<void> {
           (msg.type === 'PLAYER_STATE' ||
             msg.type === 'COMBAT_HIT' ||
             msg.type === 'GRENADE_THROW' ||
+            msg.type === 'GRENADE_DETONATE' ||
             msg.type === 'SCORESTREAK_EVENT' ||
             msg.type === 'BOMB_EVENT' ||
             msg.type === 'CLASS_SUPPORT' ||
@@ -1032,6 +1034,95 @@ async function startServer(): Promise<void> {
                 meta.memberPlayers.set(uid, { ...prev, ...player, uid });
               }
             }
+          }
+
+          if (msg.type === 'GRENADE_DETONATE') {
+            const meta = roomMetaMap.get(clientMeta.roomId);
+            if (!meta || !clientMeta.uid) return;
+            const rawDet = (msg.detonation || msg) as Record<string, unknown>;
+            const senderMember = meta.memberPlayers.get(clientMeta.uid);
+            const attackerTeam =
+              senderMember?.team === 'BLACKTHORN'
+                ? 'BLACKTHORN'
+                : senderMember?.team === 'VANGUARD'
+                  ? 'VANGUARD'
+                  : rawDet.attackerTeam === 'BLACKTHORN'
+                    ? 'BLACKTHORN'
+                    : 'VANGUARD';
+            const attackerCallsign = String(
+              senderMember?.callsign ||
+                rawDet.attackerCallsign ||
+                clientMeta.callsign ||
+                'OPERADOR'
+            ).slice(0, 24);
+
+            const verdict = evaluateServerGrenadeDetonation({
+              roomId: clientMeta.roomId,
+              senderUid: clientMeta.uid,
+              eventId:
+                typeof rawDet.eventId === 'string' ? rawDet.eventId : undefined,
+              attackerUid: clientMeta.uid,
+              attackerCallsign,
+              attackerTeam,
+              grenadePos: Array.isArray(rawDet.grenadePos)
+                ? (rawDet.grenadePos as [number, number, number])
+                : undefined,
+              occludedTargetUids: Array.isArray(rawDet.occludedTargetUids)
+                ? (rawDet.occludedTargetUids as string[])
+                : undefined,
+              members: meta.memberPlayers.entries(),
+              ts: typeof rawDet.ts === 'number' ? rawDet.ts : Date.now(),
+            });
+
+            if (!verdict.ok || !verdict.detonation) return;
+
+            let lethalKillsCount = 0;
+            for (const victim of verdict.detonation.victims) {
+              const tgtMember = meta.memberPlayers.get(victim.uid);
+              if (!tgtMember) continue;
+              const prevHp =
+                typeof tgtMember.health === 'number' && tgtMember.health > 0
+                  ? tgtMember.health
+                  : 100;
+              if (victim.lethal) {
+                if (victim.uid !== clientMeta.uid) {
+                  lethalKillsCount += 1;
+                }
+                meta.memberPlayers.set(victim.uid, {
+                  ...tgtMember,
+                  health: 0,
+                  isDown: true,
+                  deaths: Number(tgtMember.deaths || 0) + 1,
+                });
+              } else {
+                const nextHp = Math.max(1, prevHp - victim.damageApplied);
+                meta.memberPlayers.set(victim.uid, {
+                  ...tgtMember,
+                  health: nextHp,
+                });
+              }
+            }
+
+            if (lethalKillsCount > 0 && senderMember) {
+              meta.memberPlayers.set(clientMeta.uid, {
+                ...senderMember,
+                kills: Number(senderMember.kills || 0) + lethalKillsCount,
+              });
+            }
+
+            broadcastToRoom(
+              clientMeta.roomId,
+              {
+                type: 'ON_GRENADE_DETONATED',
+                roomId: clientMeta.roomId,
+                senderUid: clientMeta.uid,
+                detonation: verdict.detonation,
+                serverValidated: true,
+                ts: Date.now(),
+              },
+              null
+            );
+            return;
           }
 
           if (msg.type === 'SCORESTREAK_EVENT') {
@@ -1169,6 +1260,18 @@ async function startServer(): Promise<void> {
               roundNumber?: number;
               vanguardScore?: number;
               blackthornScore?: number;
+              blastPayload?: {
+                plantedSite?: 'A' | 'B';
+                bombPos?: [number, number, number];
+                lethalRadiusMeters?: number;
+                victims?: Array<{
+                  id?: string;
+                  callsign?: string;
+                  isBehindCover?: boolean;
+                  lethal?: boolean;
+                  damageApplied?: number;
+                }>;
+              };
             };
             if (meta) {
               if (typeof evt.vanguardScore === 'number') {
@@ -1177,7 +1280,31 @@ async function startServer(): Promise<void> {
               if (typeof evt.blackthornScore === 'number') {
                 meta.blackthornScore = Math.max(meta.blackthornScore, evt.blackthornScore);
               }
-              if (evt.kind === 'NEXT_ROUND' && typeof evt.roundNumber === 'number') {
+              if (evt.kind === 'ROUND_END_BOMB_EXPLODED') {
+                meta.bombStatus = 'DETONATED';
+                if (evt.blastPayload?.plantedSite) {
+                  meta.plantedSite = evt.blastPayload.plantedSite;
+                }
+                const victims = evt.blastPayload?.victims;
+                if (Array.isArray(victims)) {
+                  for (const v of victims) {
+                    if (!v || !v.lethal || v.isBehindCover) continue;
+                    for (const [mUid, member] of meta.memberPlayers.entries()) {
+                      if (
+                        mUid === v.id ||
+                        (v.callsign && member.callsign === v.callsign)
+                      ) {
+                        meta.memberPlayers.set(mUid, {
+                          ...member,
+                          health: 0,
+                          isDown: true,
+                          deaths: Number(member.deaths || 0) + 1,
+                        });
+                      }
+                    }
+                  }
+                }
+              } else if (evt.kind === 'NEXT_ROUND' && typeof evt.roundNumber === 'number') {
                 meta.currentRound = Math.max(meta.currentRound, evt.roundNumber);
                 meta.bombStatus = 'CARRIED';
                 meta.plantedSite = 'NONE';

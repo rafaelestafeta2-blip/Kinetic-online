@@ -341,8 +341,83 @@ export const YardBombHudBar: React.FC<YardBombHudBarProps> = ({
         );
       })()}
 
-      {/* BANNER DE FIM DE RODADA */}
-      {yardBomb.roundState === 'ROUND_OVER' && (
+      {/* ALERTA DE ZONA DE PERIGO AMPLA (22M) E STATUS DE ABRIGO ATRÁS DE COBERTURA */}
+      {isPlanted &&
+        !yardBomb.isCaptureMode &&
+        !yardBomb.isTdmMode &&
+        yardBomb.roundState === 'PLAYING' &&
+        (yardBomb.dangerZoneInRadius || yardBomb.dangerZoneCritical) && (
+          <div className="fixed top-12 left-1/2 -translate-x-1/2 z-35 pointer-events-none select-none w-[min(92vw,470px)] font-mono">
+            {yardBomb.dangerZoneInRadius && !yardBomb.dangerZoneBehindCover ? (
+              <div
+                className={`px-3.5 py-1.5 rounded-xl border-2 bg-[#240508]/95 text-center shadow-[0_0_24px_rgba(239,68,68,0.65)] ${
+                  yardBomb.dangerZoneCritical
+                    ? 'border-red-400 animate-pulse'
+                    : 'border-red-500/80'
+                }`}
+              >
+                <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-widest text-amber-300">
+                  <span>
+                    ⚠ ZONA DE PERIGO C4 [{yardBomb.plantedSite}] ·{' '}
+                    {Math.round(yardBomb.dangerZoneDistanceM ?? 0)}M /{' '}
+                    {yardBomb.dangerZoneLethalRadiusM ?? 22}M
+                  </span>
+                  <span className="text-red-300 tabular-nums">
+                    T-{Math.max(0, yardBomb.c4TimerSec).toFixed(1)}S
+                  </span>
+                </div>
+                <div className="text-[11px] sm:text-xs font-display font-black uppercase tracking-wider text-white mt-0.5">
+                  EXPOSTO À ONDA DE CHOQUE — FUJA OU PROCURE COBERTURA SÓLIDA!
+                </div>
+              </div>
+            ) : yardBomb.dangerZoneInRadius && yardBomb.dangerZoneBehindCover ? (
+              <div className="px-3.5 py-1.5 rounded-xl border-2 border-cyan-400/80 bg-[#051c2c]/95 text-center shadow-[0_0_20px_rgba(34,211,238,0.45)]">
+                <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-widest text-cyan-300">
+                  <span>
+                    🛡 ABRIGO SÓLIDO DETECTADO ·{' '}
+                    {Math.round(yardBomb.dangerZoneDistanceM ?? 0)}M /{' '}
+                    {yardBomb.dangerZoneLethalRadiusM ?? 22}M
+                  </span>
+                  <span className="text-amber-300 tabular-nums">
+                    T-{Math.max(0, yardBomb.c4TimerSec).toFixed(1)}S
+                  </span>
+                </div>
+                <div className="text-[11px] sm:text-xs font-display font-black uppercase tracking-wider text-sky-100 mt-0.5">
+                  PROTEGIDO ATRÁS DE COBERTURA — DANO LETAL DO C4 BLOQUEADO
+                </div>
+              </div>
+            ) : (
+              <div className="px-3.5 py-1 rounded-xl border border-emerald-400/70 bg-[#041f17]/95 text-center shadow-lg">
+                <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-widest text-emerald-300">
+                  <span>
+                    ✓ FORA DO RAIO LETAL ({Math.round(yardBomb.dangerZoneDistanceM ?? 25)}M /{' '}
+                    {yardBomb.dangerZoneLethalRadiusM ?? 22}M)
+                  </span>
+                  <span className="text-amber-300 tabular-nums">
+                    DETONAÇÃO EM {Math.max(0, yardBomb.c4TimerSec).toFixed(1)}S
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+      {/* CÂMERA LENTA CINEMATOGRÁFICA DE DETONAÇÃO DO C4 (Visão limpa da onda de choque e corpos arremessados) */}
+      {yardBomb.roundState === 'ROUND_OVER' && yardBomb.blastCineActive && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 pointer-events-none select-none w-[min(92vw,480px)]">
+          <div className="px-4 py-2 rounded-xl border border-amber-400/70 bg-[#070b12]/92 text-center shadow-[0_0_30px_rgba(245,158,11,0.35)]">
+            <div className="text-[9px] font-mono font-bold tracking-[0.22em] text-amber-400 uppercase">
+              DETONAÇÃO C4 NO PONTO {yardBomb.plantedSite || 'A'} · CÂMERA LENTA (0.28X)
+            </div>
+            <div className="text-xs sm:text-sm font-display font-black tracking-wider text-white uppercase mt-0.5">
+              {yardBomb.roundWinReason}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BANNER DE FIM DE RODADA (Exibido após a câmera lenta da explosão encerrar) */}
+      {yardBomb.roundState === 'ROUND_OVER' && !yardBomb.blastCineActive && (
         <div className="fixed inset-0 z-45 pointer-events-none flex items-center justify-center p-4 select-none">
           <div
             className={`max-w-lg w-full rounded-2xl border-2 p-5 text-center shadow-2xl bg-[#070b12]/95 ${

@@ -92,7 +92,10 @@ export function updateWeaponKinematicsAndOptics(engine: any, dt: number): void {
     }
 
     const punch = typeof engine.cameraFovPunch === 'number' ? engine.cameraFovPunch : 0;
-    const desiredFov = targetFov + punch;
+    const shellshockFov = engine.shellshockController?.isActive?.()
+      ? engine.shellshockController.getTelemetry().fovOffsetDeg
+      : 0;
+    const desiredFov = targetFov + punch + shellshockFov;
     if (Math.abs(engine.camera.fov - desiredFov) > 0.05) {
       engine.camera.fov = THREE.MathUtils.damp(engine.camera.fov, desiredFov, 16, dt);
       engine.camera.updateProjectionMatrix();

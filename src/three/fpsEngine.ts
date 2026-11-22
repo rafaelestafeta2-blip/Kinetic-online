@@ -139,6 +139,19 @@ import {
   XRayBulletCamManager,
 } from './XRayBulletCamManager';
 import {
+  BombBlastManager,
+  BombExplodedAuthorityPayload,
+} from './BombBlastManager';
+import {
+  evaluateGrenadeTwoRadiusVerdict,
+  GRENADE_CONCUSSION_RADIUS_M,
+  GRENADE_LETHAL_RADIUS_M,
+  ShellshockEffectController,
+} from './ShellshockEffectController';
+import { GrenadeKillCam } from './GrenadeKillCam';
+import { GrenadeThrowerInfo } from './grenadeSystem';
+import { getPlayerCallsign } from '../firebase/playerCloudSync';
+import {
   buildStanderTiroLevel,
   loadStanderTiroMapGeometry,
   STANDER_TIRO_SPAWN,
@@ -155,12 +168,14 @@ import {
   leaveActiveRoom,
   publishBombStateChange,
   publishCombatHit,
+  publishGrenadeDetonation,
   publishGrenadeThrow,
   publishRoundEvent,
   publishScorestreakEvent,
   resetLocalOnlinePlayerForNextRound,
   subscribeOnlineBombEvents,
   subscribeOnlineClassSupport,
+  subscribeOnlineGrenadeDetonations,
   subscribeOnlineGrenadeEvents,
   subscribeOnlineHitEvents,
   subscribeOnlineRoundEvents,
@@ -256,6 +271,7 @@ export class TacticalFPSEngine {
   private onHudUpdate: (state: HudState) => void;
   private unsubOnlineHits: (() => void) | null = null;
   private unsubOnlineGrenades: (() => void) | null = null;
+  private unsubOnlineGrenadeDetonations: (() => void) | null = null;
   private unsubOnlineScorestreaks: (() => void) | null = null;
   private unsubOnlineClassSupport: (() => void) | null = null;
   private unsubOnlineBomb: (() => void) | null = null;
@@ -420,6 +436,11 @@ export class TacticalFPSEngine {
   private playerDeathTp!: PlayerDeathThirdPersonController;
   private postMatchShowcase!: PostMatchShowcase3D;
   public bulletCamManager!: XRayBulletCamManager;
+  public bombBlastManager!: BombBlastManager;
+  public shellshockController!: ShellshockEffectController;
+  public grenadeKillCam!: GrenadeKillCam;
+  private pendingBlastAuthorityPayload: BombExplodedAuthorityPayload | null =
+    null;
 
   // Reload State Machine
   private reloadTimer = 0;
@@ -525,6 +546,11 @@ export class TacticalFPSEngine {
     bulletCamVignetteAlpha: 0,
     bulletCamDistanceM: 0,
     bulletCamIsHeadshot: false,
+    isShellshocked: false,
+    shellshockIntensity: 0,
+    grenadeKillCamActive: false,
+    grenadeKillCamKiller: '',
+    grenadeKillCamDistanceM: 0,
     killConfirmAlpha: 0,
     killConfirmLabel: '',
     damageFlashAlpha: 0,
@@ -733,6 +759,13 @@ export class TacticalFPSEngine {
       this.camera,
       this.weaponRig.root
     );
+    this.bombBlastManager = new BombBlastManager(
+      this.scene,
+      this.camera,
+      this.weaponRig.root
+    );
+    this.shellshockController = new ShellshockEffectController();
+    this.grenadeKillCam = new GrenadeKillCam(this.scene);
 
     const standerData = buildStanderTiroLevel(this.isSoftwareGl);
     this.standerTiroLevelData = standerData;
@@ -799,8 +832,13 @@ export class TacticalFPSEngine {
     this.grenadeSystem = new TacticalGrenadeSystem(
       this.scene,
       this.camera,
-      (blastCenter, blastRadius, isRemote) =>
-        this.handleFragGrenadeDetonation(blastCenter, blastRadius, Boolean(isRemote)),
+      (blastCenter, blastRadius, isRemote, throwerInfo) =>
+        this.handleFragGrenadeDetonation(
+          blastCenter,
+          blastRadius,
+          Boolean(isRemote),
+          throwerInfo
+        ),
       (type, origin, velocity) => {
         if (type === 'FRAG') {
           this.state.fragGrenades = Math.max(0, this.state.fragGrenades - 1);
@@ -938,6 +976,10 @@ export class TacticalFPSEngine {
       }
     });
 
+    this.yardBombSystem?.setOnBombDetonated((site, bombPos) => {
+      this.triggerAuthoritativeBombBlast(site, bombPos);
+    });
+
     this.unsubOnlineHits?.();
     this.unsubOnlineHits = subscribeOnlineHitEvents((hit) => {
       if (!isOnlineMatchActive()) return;
@@ -1061,7 +1103,12 @@ export class TacticalFPSEngine {
         _worldPos,
         _worldPos2,
         evt.grenadeType === 'SMOKE' ? 'SMOKE' : 'FRAG',
-        true
+        true,
+        {
+          isBot: false,
+          callsign: evt.senderCallsign || 'OPERADOR',
+          team: evt.senderTeam || 'BLACKTHORN',
+        }
       );
       for (let i = 0; i < this.targets.length; i++) {
         const bot = this.targets[i];
@@ -1071,6 +1118,77 @@ export class TacticalFPSEngine {
         }
       }
     });
+
+    this.unsubOnlineGrenadeDetonations?.();
+    this.unsubOnlineGrenadeDetonations = subscribeOnlineGrenadeDetonations(
+      (evt) => {
+        if (!isOnlineMatchActive()) return;
+        const room = getActiveOnlineRoom();
+        const localOp = getLocalOnlinePlayerState();
+        _worldPos.set(
+          Number(evt.grenadePos?.[0] || 0),
+          Number(evt.grenadePos?.[1] || 0),
+          Number(evt.grenadePos?.[2] || 0)
+        );
+        // Spawn 3D expansive shockwave ring & pressure dome at authoritative detonation center
+        this.grenadeKillCam?.spawnShockwaveAt(_worldPos);
+
+        for (const v of evt.victims || []) {
+          const victimOp = room?.players?.[v.targetUid];
+          // Register killfeed for remote victims killed in Raio 1
+          if (v.lethal && v.targetUid !== localOp?.uid && victimOp) {
+            this.registerKill(
+              evt.attackerCallsign,
+              evt.attackerTeam,
+              victimOp.callsign || 'OPERADOR',
+              victimOp.team,
+              'GRENADE',
+              false
+            );
+          }
+
+          // Parabolic blast throw for remote player avatars killed in Raio 1
+          if (v.lethal && v.targetUid !== localOp?.uid) {
+            for (let i = 0; i < this.targets.length; i++) {
+              const t = this.targets[i];
+              if (t.root.userData?.remotePlayerUid === v.targetUid) {
+                t.isDown = true;
+                t.health = 0;
+                const groundY = this.getCurrentGroundHeight(
+                  t.root.position.x,
+                  t.root.position.y,
+                  t.root.position.z
+                );
+                this.grenadeKillCam?.triggerBotBlastThrow(
+                  t as YardBotEntity,
+                  _worldPos,
+                  v.distanceMeters,
+                  groundY
+                );
+                break;
+              }
+            }
+          }
+
+          // Authoritative verdict for the local player
+          if (localOp && v.targetUid === localOp.uid) {
+            this.applyAuthoritativeGrenadeVerdictToLocalPlayer(
+              _worldPos,
+              v.zone,
+              v.distanceMeters,
+              v.damage,
+              v.lethal,
+              v.shellshockIntensity,
+              v.shellshockDurationSec,
+              evt.attackerCallsign,
+              evt.attackerTeam,
+              v.impulseVel
+            );
+          }
+        }
+        this.emitHud(true);
+      }
+    );
 
     this.unsubOnlineScorestreaks?.();
     this.unsubOnlineScorestreaks = subscribeOnlineScorestreakEvents((evt) => {
@@ -1131,6 +1249,26 @@ export class TacticalFPSEngine {
     this.unsubOnlineRounds?.();
     this.unsubOnlineRounds = subscribeOnlineRoundEvents((evt) => {
       if (!isOnlineMatchActive()) return;
+      if (
+        evt.kind === 'ROUND_END_BOMB_EXPLODED' &&
+        !this.bombBlastManager?.isActive()
+      ) {
+        const bp = evt.blastPayload;
+        if (bp && Array.isArray(bp.bombPos) && bp.bombPos.length === 3) {
+          _worldPos.set(
+            Number(bp.bombPos[0]) || 0,
+            Number(bp.bombPos[1]) || 0,
+            Number(bp.bombPos[2]) || 0
+          );
+        } else {
+          this.yardBombSystem.getPlantedBombWorldPosition(_worldPos);
+        }
+        this.triggerAuthoritativeBombBlast(
+          bp?.plantedSite || this.yardBombSystem.info.plantedSite || 'A',
+          _worldPos,
+          bp
+        );
+      }
       this.yardBombSystem?.applyRemoteRoundEvent(
         evt,
         (xp, cash) => {
@@ -1292,10 +1430,104 @@ export class TacticalFPSEngine {
     }
   }
 
+  private triggerAuthoritativeBombBlast(
+    site: 'A' | 'B',
+    bombPos: THREE.Vector3,
+    authoritativePayload?: BombExplodedAuthorityPayload
+  ): void {
+    if (!this.bombBlastManager) return;
+
+    if (this.bulletCamManager?.isActive()) {
+      this.bulletCamManager.reset();
+      this.syncBulletCamHudState();
+    }
+    if (this.weaponRig?.root) {
+      this.playerDeathTp?.stop(this.camera, this.weaponRig.root);
+    }
+    this.isPlayerDying = false;
+    this.yardBombSystem.info.isSpectating = false;
+
+    const localOp = getLocalOnlinePlayerState();
+    const localCallsign =
+      localOp?.callsign || getPlayerCallsign() || 'VOCÊ';
+    const localTeam: 'VANGUARD' | 'BLACKTHORN' =
+      localOp?.team || 'VANGUARD';
+    const localPlayerAlive =
+      this.state.health > 0 &&
+      !this.isPlayerDying &&
+      !isLocalPlayerPendingRevive(this as any);
+
+    this.touchMoveX = 0;
+    this.touchMoveY = 0;
+    this.touchSprinting = false;
+    this.touchFireHeld = false;
+    this.burstRemaining = 0;
+    this.mouseButtonsHeld.clear();
+
+    const payload = this.bombBlastManager.onBombDetonate({
+      plantedSite: site,
+      bombPos,
+      localPlayerPos: this.playerPos,
+      localPlayerAlive,
+      localPlayerCallsign: localCallsign,
+      localPlayerTeam: localTeam,
+      bots: this.targets as YardBotEntity[],
+      obstacles: this.colliders,
+      activeGlbCollider: this.getActiveGlbCollider(),
+      yawObject: this.yawObject,
+      pitchObject: this.pitchObject,
+      baseFov: 72,
+      getGroundHeight: (x, y, z) => this.getCurrentGroundHeight(x, y, z),
+      authoritativePayload,
+      onApplyLocalPlayerBlastResult: (verdict) => {
+        if (!verdict.inBlastRadius) return;
+        if (verdict.lethal) {
+          this.state.armor = 0;
+          this.state.health = 0;
+          this.state.damageFlashAlpha = 0.95;
+          this.cameraShake = 0.048;
+          this.state.reloadTypeLabel =
+            'ATINGIDO PELA ONDA DE CHOQUE LETAL DO C4 (SEM COBERTURA)';
+          this.magCheckTimer = 3.0;
+        } else if (verdict.isBehindCover) {
+          if (verdict.damageApplied > 0) {
+            applyPlayerCombatDamage(this as any, verdict.damageApplied, false);
+            this.state.damageFlashAlpha = 0.45;
+          }
+          this.cameraShake = 0.026;
+          this.state.reloadTypeLabel =
+            'PROTEGIDO ATRÁS DE COBERTURA SÓLIDA — IMPACTO LETAL BLOQUEADO!';
+          this.magCheckTimer = 3.2;
+        }
+      },
+      onRegisterBlastKill: (victimCallsign, victimTeam) => {
+        this.registerKill(
+          'BOMBA C4',
+          'VANGUARD',
+          victimCallsign,
+          victimTeam,
+          'RPG7_LAUNCHER',
+          false
+        );
+      },
+    });
+
+    this.pendingBlastAuthorityPayload = payload;
+    this.yardBombSystem.info.blastCineActive = this.bombBlastManager.isActive();
+    this.state.yardBomb = { ...this.yardBombSystem.info };
+  }
+
   public returnToMainMenu(): void {
     stopMatchEndFanfare();
     this.bulletCamManager?.reset();
     this.syncBulletCamHudState();
+    this.bombBlastManager?.reset();
+    this.shellshockController?.clear();
+    this.grenadeKillCam?.clear();
+    this.state.isShellshocked = false;
+    this.state.shellshockIntensity = 0;
+    this.state.grenadeKillCamActive = false;
+    this.pendingBlastAuthorityPayload = null;
     this.clearEnemyAimOutline();
     this.clearTacticalStreaks(true);
     if (isOnlineMatchActive()) {
@@ -1545,6 +1777,11 @@ export class TacticalFPSEngine {
     this.isPlayerDying = false;
     this.deathAnimElapsed = 0;
     this.deathOnFinish = null;
+    this.shellshockController?.clear();
+    this.grenadeKillCam?.clear();
+    this.state.isShellshocked = false;
+    this.state.shellshockIntensity = 0;
+    this.state.grenadeKillCamActive = false;
     if (this.weaponRig?.root) {
       this.playerDeathTp?.stop(this.camera, this.weaponRig.root);
       this.weaponRig.root.visible = true;
@@ -2402,63 +2639,322 @@ export class TacticalFPSEngine {
     }
   }
 
+  private readonly _shellshockCamImpulse = {
+    pitchKick: 0,
+    rollKick: 0,
+    shake: 0,
+  };
+
+  private applyAuthoritativeGrenadeVerdictToLocalPlayer(
+    blastCenter: THREE.Vector3,
+    zone: 'LETHAL_R1' | 'CONCUSSION_R2',
+    distanceMeters: number,
+    damage: number,
+    lethal: boolean,
+    shellshockIntensity: number,
+    shellshockDurationSec: number,
+    attackerCallsign: string,
+    attackerTeam: 'VANGUARD' | 'BLACKTHORN',
+    impulseVel?: [number, number, number]
+  ): void {
+    if (
+      this.isPlayerDying ||
+      this.playerDeathTp?.isActive() ||
+      isLocalPlayerPendingRevive(this as any) ||
+      this.state.health <= 0
+    ) {
+      return;
+    }
+
+    if (zone === 'LETHAL_R1' || lethal) {
+      // Raio 1 (0m a 5.0m): Dano fatal (100% / eliminação imediata) + Grenade Death Cam
+      this.shellshockController?.clear();
+      this.state.isShellshocked = false;
+      this.state.shellshockIntensity = 0;
+      this.state.armor = 0;
+      this.state.health = 0;
+      this.state.damageFlashAlpha = 1.0;
+      this.cameraShake = 0.052;
+      mobileHardware.vibrateExplosion(1.0);
+      playRealPlayerHitGrunt(true);
+
+      this.grenadeKillCam?.triggerLocalPlayerDeath(
+        blastCenter,
+        this.playerPos,
+        attackerCallsign,
+        impulseVel
+      );
+      this.state.grenadeKillCamActive = true;
+      this.state.grenadeKillCamKiller = attackerCallsign;
+      this.state.grenadeKillCamDistanceM = distanceMeters;
+
+      this.triggerPlayerDeathSequence(
+        false,
+        attackerCallsign,
+        attackerTeam,
+        'GRENADE',
+        () => {
+          this.state.grenadeKillCamActive = false;
+          if (this.state.drillMode === 'STATION_TDM_5V5') {
+            if (this.yardBombSystem?.info.roundState === 'PLAYING') {
+              this.respawnLocalPlayerTdm();
+            }
+            this.emitHud();
+            return;
+          }
+          const isBomb =
+            this.state.drillMode === 'YARD_BOMB_5V5' ||
+            this.state.drillMode === 'DUST2_BOMB_5V5' ||
+            this.state.drillMode === 'ASSAULT_BOMB_5V5' ||
+            this.state.drillMode === 'INDUSTRIA_BOMB_5V5' ||
+            this.state.drillMode === 'HANGAR_BOMB_5V5' ||
+            this.state.drillMode === 'EASTERN_CITY_BOMB_5V5' ||
+            this.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
+            this.state.drillMode === 'STATION_CAPTURE_5V5';
+          if (isBomb) {
+            const specBot = this.playerDeathTp.startSpectating(
+              this.targets as YardBotEntity[]
+            );
+            if (specBot && this.yardBombSystem.info.roundState === 'PLAYING') {
+              this.yardBombSystem.info.isSpectating = true;
+              this.yardBombSystem.info.spectatedCallsign =
+                specBot.callsign || 'VANGUARD-02';
+              this.yardBombSystem.info.spectatedWeapon =
+                specBot.weaponId || 'M4_CARBINE';
+              this.yardBombSystem.info.spectatedHealth = Math.max(
+                0,
+                specBot.health
+              );
+              this.state.damageFlashAlpha = 0;
+            }
+          } else if (
+            this.state.drillMode === 'KILLHOUSE_BLITZ' ||
+            this.state.drillMode === 'TACTICAL_WAVE'
+          ) {
+            this.state.screen = 'GAME_OVER';
+          }
+          this.emitHud();
+        },
+        blastCenter
+      );
+      return;
+    }
+
+    // Raio 2 (5.0m a 11.0m ou protegido parcialmente por cobertura):
+    // Sobrevive com dano escalonado (75 até 20), recuo/empurrão na câmera e isShellshocked = true por 4.0s
+    const prevHp = this.state.health;
+    applyPlayerCombatDamage(this as any, damage, false);
+    if (prevHp > 0 && this.state.health <= 0) {
+      // No Raio 2 o jogador sobrevive à concussão (mínimo 1 HP)
+      this.state.health = 1;
+    }
+    this.state.damageFlashAlpha = Math.max(
+      this.state.damageFlashAlpha,
+      0.38 + shellshockIntensity * 0.42
+    );
+    playRealPlayerHitGrunt(false);
+    mobileHardware.vibrateExplosion(Math.max(0.45, shellshockIntensity));
+
+    this.shellshockController?.triggerShellshock(
+      blastCenter,
+      this.playerPos,
+      shellshockIntensity,
+      shellshockDurationSec,
+      this.playerVel,
+      this._shellshockCamImpulse
+    );
+    this.pitch = THREE.MathUtils.clamp(
+      this.pitch + this._shellshockCamImpulse.pitchKick,
+      -Math.PI * 0.46,
+      Math.PI * 0.46
+    );
+    this.yaw += this._shellshockCamImpulse.rollKick;
+    this.cameraShake = Math.max(
+      this.cameraShake,
+      this._shellshockCamImpulse.shake
+    );
+    this.cameraFovPunch = Math.min(
+      (this.cameraFovPunch || 0) + 3.8 * shellshockIntensity,
+      7.5
+    );
+    this.state.isShellshocked = true;
+    this.state.shellshockIntensity = shellshockIntensity;
+    this.state.reloadTypeLabel = `CONCUSSÃO DE GRANADA (${distanceMeters.toFixed(1)}M) · -${damage} HP · ATORDOADO (4.0S)`;
+    this.magCheckTimer = 2.6;
+  }
+
   private handleFragGrenadeDetonation(
     blastCenter: THREE.Vector3,
-    blastRadius: number,
-    isRemote = false
+    _blastRadius: number,
+    isRemote = false,
+    throwerInfo?: GrenadeThrowerInfo
   ): void {
-    // Spawn extra metallic/fire spark burst at detonation point
+    // Spawn extra metallic/fire spark burst & 3D expansive shockwave ring at detonation point
     _hitNormal.set(0, 1, 0);
     this.fxPool.spawnImpactFX(blastCenter, _hitNormal, true, true);
+    this.grenadeKillCam?.spawnShockwaveAt(blastCenter);
 
-    // Camera trauma shake, Shellshock Tinnitus & strong physical phone vibration on Frag explosion
-    const playerDist = this.playerPos.distanceTo(blastCenter);
-    const shakeFactor =
-      playerDist < 28 ? Math.max(0.35, 1 - playerDist / 28) : 0.35;
-    this.cameraShake = Math.max(this.cameraShake, 0.038 * shakeFactor);
-    mobileHardware.vibrateExplosion(shakeFactor);
-    triggerShellshockTinnitus(blastCenter, this.playerPos);
+    const activeGlbCol = this.getActiveGlbCollider();
+    const localOp = getLocalOnlinePlayerState();
+    const myTeam = localOp?.team || 'VANGUARD';
+    const enemyTeam = myTeam === 'VANGUARD' ? 'BLACKTHORN' : 'VANGUARD';
 
-    if (isRemote) {
+    // Em partidas online PvP, o cliente que lançou a granada envia GRENADE_DETONATE ao servidor autoritativo
+    if (isOnlineMatchActive() && !isRemote && !throwerInfo?.isBot) {
+      const room = getActiveOnlineRoom();
+      const occludedUids: string[] = [];
+      if (room && this.bombBlastManager) {
+        for (const p of Object.values(room.players)) {
+          if (!p || p.isDown) continue;
+          _worldPos2.set(p.x, p.y, p.z);
+          if (
+            _worldPos2.distanceTo(blastCenter) <= GRENADE_CONCUSSION_RADIUS_M &&
+            this.bombBlastManager.isProtectedByCover(
+              blastCenter,
+              _worldPos2,
+              this.colliders,
+              activeGlbCol
+            )
+          ) {
+            occludedUids.push(p.uid);
+          }
+        }
+      }
+      publishGrenadeDetonation(
+        [blastCenter.x, blastCenter.y, blastCenter.z],
+        occludedUids
+      );
+    }
+
+    // Se a granada veio de outro jogador remoto via WS, o servidor aplicará o veredito via ON_GRENADE_DETONATED
+    if (isRemote && isOnlineMatchActive() && !throwerInfo?.isBot) {
+      this.emitHud();
+      return;
+    }
+
+    // Avalia impacto da granada no JOGADOR LOCAL (em partidas contra bots/treino ou auto-dano offline)
+    if (!isOnlineMatchActive() || isPrivateRoomWithBotsActive()) {
+      const isEnemyBotGrenade =
+        Boolean(throwerInfo?.isBot) && throwerInfo?.team !== myTeam;
+      const isSelfGrenade = !throwerInfo?.isBot && !isRemote;
+      if (isEnemyBotGrenade || isSelfGrenade) {
+        const playerBehindCover = this.bombBlastManager
+          ? this.bombBlastManager.isProtectedByCover(
+              blastCenter,
+              this.playerPos,
+              this.colliders,
+              activeGlbCol
+            )
+          : false;
+        const playerVerdict = evaluateGrenadeTwoRadiusVerdict(
+          blastCenter.x,
+          blastCenter.y,
+          blastCenter.z,
+          this.playerPos.x,
+          this.playerPos.y,
+          this.playerPos.z,
+          playerBehindCover
+        );
+        // Fora de 11.0m: zero impacto (100% velocidade, visão e audição normais)
+        if (playerVerdict.zone !== 'OUTSIDE') {
+          const killerName = isEnemyBotGrenade
+            ? throwerInfo?.callsign || 'KRAKEN-BT'
+            : localOp?.callsign || 'VOCÊ';
+          const killerTeam = isEnemyBotGrenade ? enemyTeam : myTeam;
+          this.applyAuthoritativeGrenadeVerdictToLocalPlayer(
+            blastCenter,
+            playerVerdict.zone,
+            playerVerdict.distanceMeters,
+            playerVerdict.damageApplied,
+            playerVerdict.lethal,
+            playerVerdict.shellshockIntensity,
+            playerVerdict.shellshockDurationSec,
+            killerName,
+            killerTeam,
+            playerVerdict.impulseVel
+          );
+        }
+      }
+    }
+
+    // Se a granada foi jogada por um bot inimigo, ela também não dá pontos de hitmarker ao jogador local
+    if (throwerInfo?.isBot && throwerInfo.team !== myTeam) {
       this.emitHud();
       return;
     }
 
     let targetsHitCount = 0;
     let killsCount = 0;
+    let concussedCount = 0;
 
     for (let i = 0; i < this.targets.length; i++) {
       const t = this.targets[i];
       if (t.isDown || (t as YardBotEntity).isAlly) continue;
 
-      const dist = t.root.position.distanceTo(blastCenter);
-      if (dist > blastRadius) continue;
+      const remoteUid = t.root.userData?.remotePlayerUid as string | undefined;
+      // Jogadores humanos remotos em partida online recebem dano via ON_GRENADE_DETONATED autoritativo
+      if (remoteUid && isOnlineMatchActive()) continue;
 
-      targetsHitCount++;
-      this.state.hits += 1;
+      const dist = t.root.position.distanceTo(blastCenter);
+      if (dist > GRENADE_CONCUSSION_RADIUS_M) continue;
 
       if (t.type === 'STEEL_GONG') {
+        targetsHitCount++;
+        this.state.hits += 1;
         soundEngine.playImpact('STEEL_GONG');
         t.hitTiltVelocity = -18.0;
         this.state.score += 100;
         continue;
       }
 
-      // Radial fragmentation blast damage (up to 190 at center)
-      const falloff = Math.max(0.25, 1 - dist / (blastRadius * 1.1));
-      const blastDmg = Math.round(190 * falloff);
+      const targetBehindCover = this.bombBlastManager
+        ? this.bombBlastManager.isProtectedByCover(
+            blastCenter,
+            t.root.position,
+            this.colliders,
+            activeGlbCol
+          )
+        : false;
+      const verdict = evaluateGrenadeTwoRadiusVerdict(
+        blastCenter.x,
+        blastCenter.y,
+        blastCenter.z,
+        t.root.position.x,
+        t.root.position.y,
+        t.root.position.z,
+        targetBehindCover
+      );
+      if (verdict.zone === 'OUTSIDE') continue;
 
-      if (t.armorHealth > 0) {
-        t.armorHealth = 0;
-        if (t.armorMesh) t.armorMesh.visible = false;
-      }
+      targetsHitCount++;
+      this.state.hits += 1;
 
-      t.health -= blastDmg;
-      t.hitTiltVelocity = -16.0;
-
-      const remoteUid = t.root.userData?.remotePlayerUid as string | undefined;
-      if (remoteUid && isOnlineMatchActive()) {
-        publishCombatHit(remoteUid, blastDmg, false, 'GRENADE');
+      if (verdict.zone === 'LETHAL_R1') {
+        // Raio 1 (0m a 5.0m exposto): Dano fatal (100% / eliminação imediata) + arremesso forte do bot
+        if (t.armorHealth > 0) {
+          t.armorHealth = 0;
+          if (t.armorMesh) t.armorMesh.visible = false;
+        }
+        t.health = 0;
+        t.hitTiltVelocity = -22.0;
+      } else {
+        // Raio 2 (5.0m a 11.0m ou cobertura parcial): Dano escalonado (75..20) + concussão de 4.0s
+        let remainingDmg = verdict.damageApplied;
+        if (t.armorHealth > 0) {
+          const absorbed = Math.min(t.armorHealth, Math.round(remainingDmg * 0.55));
+          t.armorHealth -= absorbed;
+          remainingDmg = Math.max(10, remainingDmg - absorbed);
+          if (t.armorHealth <= 0 && t.armorMesh) {
+            t.armorMesh.visible = false;
+          }
+        }
+        t.health -= remainingDmg;
+        t.hitTiltVelocity = -14.0;
+        concussedCount++;
+        t.root.userData = t.root.userData || {};
+        t.root.userData.concussedUntilMs =
+          performance.now() + verdict.shellshockDurationSec * 1000;
+        triggerBotHitAnimation(t);
       }
 
       if (t.health <= 0) {
@@ -2476,9 +2972,17 @@ export class TacticalFPSEngine {
         this.state.score += 150;
         this.state.lastHitZone = 'KILL';
         const bot = t as YardBotEntity;
-        const localOp = getLocalOnlinePlayerState();
-        const myTeam = localOp?.team || 'VANGUARD';
-        const enemyTeam = myTeam === 'VANGUARD' ? 'BLACKTHORN' : 'VANGUARD';
+        const groundY = this.getCurrentGroundHeight(
+          bot.root.position.x,
+          bot.root.position.y,
+          bot.root.position.z
+        );
+        this.grenadeKillCam?.triggerBotBlastThrow(
+          bot,
+          blastCenter,
+          verdict.distanceMeters,
+          groundY
+        );
         this.registerKill(
           localOp?.callsign || 'VOCÊ',
           myTeam,
@@ -2500,13 +3004,13 @@ export class TacticalFPSEngine {
       if (killsCount > 0) {
         this.state.killConfirmAlpha = 1.0;
         this.state.killConfirmLabel =
-          killsCount > 1 ? `${killsCount}x HITKILL!` : 'ABATE CONFIRMADO';
+          killsCount > 1 ? `${killsCount}x HITKILL GRANADA!` : 'ABATE GRANADA (RAIO 1)';
       }
       this.state.reloadTypeLabel =
         killsCount > 0
-          ? `EXPLOSÃO FRAG! ${killsCount} ALVO(S) ELIMINADO(S) (+${killsCount * 120} XP)`
-          : `IMPACTO DE FRAGMENTAÇÃO EM ${targetsHitCount} ALVO(S)!`;
-      this.magCheckTimer = 2.0;
+          ? `RAIO FATAL (${GRENADE_LETHAL_RADIUS_M}M)! ${killsCount} ELIMINADO(S)${concussedCount > 0 ? ` · ${concussedCount} ATORDOADO(S)` : ''}`
+          : `RAIO DE CONCUSSÃO (${GRENADE_CONCUSSION_RADIUS_M}M)! ${targetsHitCount} ALVO(S) ATORDOADO(S)`;
+      this.magCheckTimer = 2.2;
 
       if (
         this.state.drillMode === 'KILLHOUSE_BLITZ' ||
@@ -3023,6 +3527,13 @@ export class TacticalFPSEngine {
     this.state.stamina = 100;
     this.bulletCamManager?.reset();
     this.syncBulletCamHudState();
+    this.bombBlastManager?.reset();
+    this.shellshockController?.clear();
+    this.grenadeKillCam?.clear();
+    this.state.isShellshocked = false;
+    this.state.shellshockIntensity = 0;
+    this.state.grenadeKillCamActive = false;
+    this.pendingBlastAuthorityPayload = null;
     this.clearEnemyAimOutline();
     this.state.hitMarkerAlpha = 0;
     this.state.hitMarkerIsCrit = false;
@@ -4392,8 +4903,7 @@ export class TacticalFPSEngine {
   // ACTIVE FIRST-PERSON COMBAT & RANGE SIMULATION
   // =========================================================================
   private updatePlayingSimulation(rawDt: number): void {
-    // 0. X-Ray Sniper Bullet Cam: atualiza câmera/projétil/esqueleto em 60 FPS reais (rawDt)
-    // e mantém os pools de estilhaços de osso + sangue ativos acompanhando o timeScale
+    // 0. X-Ray Sniper Bullet Cam & Bomb Detonation Slow-Mo Camera (60 FPS rawDt)
     if (this.bulletCamManager) {
       const wasActive = this.bulletCamManager.isActive();
       this.bulletCamManager.update(
@@ -4406,10 +4916,51 @@ export class TacticalFPSEngine {
       }
     }
 
+    if (this.bombBlastManager) {
+      this.bombBlastManager.update(
+        rawDt,
+        this.getActiveGlbCollider(),
+        (x, y, z) => this.getCurrentGroundHeight(x, y, z)
+      );
+    }
+
+    if (this.shellshockController) {
+      const ssTelem = this.shellshockController.update(rawDt);
+      this.state.isShellshocked = ssTelem.isShellshocked;
+      this.state.shellshockIntensity = ssTelem.intensity;
+    }
+
+    if (this.grenadeKillCam) {
+      this.grenadeKillCam.update(
+        rawDt,
+        this.playerPos,
+        this.playerDeathTp,
+        this.colliders,
+        this.getActiveGlbCollider(),
+        (x, y, z) => this.getCurrentGroundHeight(x, y, z),
+        (x, z, y, r) => this.checkHorizontalCollision(x, z, y, r)
+      );
+      this.state.grenadeKillCamActive = this.grenadeKillCam.isActive();
+    }
+
     const bulletCamActive = Boolean(this.bulletCamManager?.isActive());
-    const timeScale = this.bulletCamManager
+    const bombBlastCineActive = Boolean(this.bombBlastManager?.isActive());
+    const grenadeKillCamActive = Boolean(this.grenadeKillCam?.isActive());
+    const cineLocked = bulletCamActive || bombBlastCineActive;
+    const bulletTimeScale = this.bulletCamManager
       ? this.bulletCamManager.getTimeScale()
       : 1.0;
+    const blastTimeScale = this.bombBlastManager
+      ? this.bombBlastManager.getTimeScale()
+      : 1.0;
+    const grenadeKillCamTimeScale = this.grenadeKillCam
+      ? this.grenadeKillCam.getTimeScale()
+      : 1.0;
+    const timeScale = Math.min(
+      bulletTimeScale,
+      blastTimeScale,
+      grenadeKillCamTimeScale
+    );
     const dt = rawDt * timeScale;
 
     // 1. Course Timer & Decay Timers
@@ -4445,8 +4996,11 @@ export class TacticalFPSEngine {
         !this.isPlayerDying &&
         !this.playerDeathTp?.isActive();
 
+      const bombSystemDt =
+        this.yardBombSystem.info.roundState === 'ROUND_OVER' ? rawDt : dt;
+
       this.yardBombSystem.update(
-        dt,
+        bombSystemDt,
         this.playerPos,
         this.targets,
         this.fxPool,
@@ -4457,13 +5011,20 @@ export class TacticalFPSEngine {
           }
           this.state.score += xp;
           if (isOnlineMatchActive()) {
+            const isBombDetonated =
+              this.yardBombSystem.info.bombStatus === 'DETONATED';
             publishRoundEvent({
-              kind: 'ROUND_OVER',
+              kind: isBombDetonated
+                ? 'ROUND_END_BOMB_EXPLODED'
+                : 'ROUND_OVER',
               roundNumber: this.yardBombSystem.info.currentRound,
               winner: this.yardBombSystem.info.roundWinner || undefined,
               reason: this.yardBombSystem.info.roundWinReason,
               vanguardScore: this.yardBombSystem.info.vanguardScore,
               blackthornScore: this.yardBombSystem.info.blackthornScore,
+              blastPayload: isBombDetonated
+                ? this.pendingBlastAuthorityPayload || undefined
+                : undefined,
             });
           }
           this.emitHud();
@@ -4488,6 +5049,34 @@ export class TacticalFPSEngine {
         playerAlive,
         isLocalPlayerPendingRevive(this as any)
       );
+
+      if (this.bombBlastManager) {
+        const isBombPlanted =
+          !this.yardBombSystem.info.isCaptureMode &&
+          !this.yardBombSystem.info.isTdmMode &&
+          this.yardBombSystem.info.roundState === 'PLAYING' &&
+          this.yardBombSystem.info.bombStatus === 'PLANTED';
+        const dangerHud = this.bombBlastManager.updateDangerZoneWarning(
+          rawDt,
+          isBombPlanted,
+          this.yardBombSystem.info.c4TimerSec,
+          this.yardBombSystem.getPlantedBombWorldPosition(_worldPos),
+          this.playerPos,
+          this.colliders,
+          this.getActiveGlbCollider()
+        );
+        this.yardBombSystem.info.dangerZoneInRadius = dangerHud.inDangerZone;
+        this.yardBombSystem.info.dangerZoneDistanceM =
+          dangerHud.distanceMeters;
+        this.yardBombSystem.info.dangerZoneLethalRadiusM =
+          dangerHud.lethalRadiusMeters;
+        this.yardBombSystem.info.dangerZoneBehindCover =
+          dangerHud.isBehindCover;
+        this.yardBombSystem.info.dangerZoneCritical =
+          dangerHud.countdownCritical;
+        this.yardBombSystem.info.blastCineActive =
+          this.bombBlastManager.isActive();
+      }
 
       // Pre-round equip freeze: look OK, no combat / sprint / plant.
       if (this.yardBombSystem.info.roundState === 'EQUIP') {
@@ -4696,11 +5285,11 @@ export class TacticalFPSEngine {
       }
     }
 
-    // 2. Continuous Fire / Burst Fire Handling (bloqueado durante Sniper Bullet Cam)
+    // 2. Continuous Fire / Burst Fire Handling (bloqueado durante Sniper Bullet Cam / Detonação C4)
     if (this.fireCooldown > 0) {
       this.fireCooldown -= dt;
     }
-    if (!bulletCamActive && this.fireCooldown <= 0) {
+    if (!cineLocked && this.fireCooldown <= 0) {
       if (this.burstRemaining > 0) {
         if (this.state.chambered === 0 && this.state.activeWeapon !== 'KNIFE_TACTICAL') {
           this.burstRemaining = 0;
@@ -4733,7 +5322,7 @@ export class TacticalFPSEngine {
     }
 
     // 3. Update Multi-Stage Reload State Machine & Hand Kinematics
-    if (!bulletCamActive) {
+    if (!cineLocked) {
       this.updateReloadStateMachine(dt);
 
       // 3b. Late collider bake: keep feet on walkable floor (new GLB maps).
@@ -4746,11 +5335,11 @@ export class TacticalFPSEngine {
       this.updateWeaponKinematicsAndOptics(dt);
     }
 
-    // 6. Reactive Targets & Killhouse Combat Bot AI (roda em slow-motion `dt = rawDt * 0.2`)
+    // 6. Reactive Targets & Killhouse Combat Bot AI (roda em slow-motion durante Bullet Cam / Explosão C4)
     this.updateTargetsAndCombatAI(dt);
 
     // 6b. Warface class support (ammo / heal+revive / armor) + medic markers
-    if (!bulletCamActive) {
+    if (!cineLocked) {
       updateClassSupport(this as any, dt);
     }
     this.playerGesture?.update(dt);
@@ -4770,7 +5359,7 @@ export class TacticalFPSEngine {
     // 6c. Red outline highlight when aiming directly at a living enemy operator
     this.enemyOutlineTimer += dt;
     const isPlayerAliveForOutline =
-      !bulletCamActive &&
+      !cineLocked &&
       this.state.health > 0 &&
       !this.isPlayerDying &&
       !this.playerDeathTp?.isActive();
@@ -4830,9 +5419,12 @@ export class TacticalFPSEngine {
     this.state.isThrowingGrenade = this.grenadeSystem.isThrowing();
     this.state.equippedGrenade = this.grenadeSystem.getHeldGrenade();
 
-    // 8. Throttled HUD Sync (30Hz durante fade da vinheta da Bullet Cam, 11Hz em combate normal)
+    // 8. Throttled HUD Sync (30Hz durante câmera cinematográfica/shellshock, 11Hz em combate normal)
     this.hudSyncTimer += rawDt;
-    const hudInterval = bulletCamActive ? 0.033 : 0.09;
+    const hudInterval =
+      cineLocked || grenadeKillCamActive || this.state.isShellshocked
+        ? 0.033
+        : 0.09;
     if (this.hudSyncTimer >= hudInterval) {
       this.hudSyncTimer = 0;
       this.emitHud();
@@ -4933,6 +5525,8 @@ export class TacticalFPSEngine {
     this.unsubOnlineHits = null;
     this.unsubOnlineGrenades?.();
     this.unsubOnlineGrenades = null;
+    this.unsubOnlineGrenadeDetonations?.();
+    this.unsubOnlineGrenadeDetonations = null;
     this.unsubOnlineScorestreaks?.();
     this.unsubOnlineScorestreaks = null;
     this.unsubOnlineClassSupport?.();
@@ -4989,6 +5583,9 @@ export class TacticalFPSEngine {
 
     runtimeTelemetry.flush(true);
     this.bulletCamManager?.dispose();
+    this.bombBlastManager?.dispose();
+    this.shellshockController?.dispose();
+    this.grenadeKillCam?.dispose();
     this.weaponRig?.dispose();
     this.fxPool?.dispose?.();
     (

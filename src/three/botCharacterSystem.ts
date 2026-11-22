@@ -1174,7 +1174,9 @@ export function updateAllBotCharacters(
 
     if (t.isDown) {
       setBotEnemyOutline(t, false);
-      t.pivotGroup.rotation.x = 0;
+      if (!t.root.userData?.bombBlastThrown) {
+        t.pivotGroup.rotation.x = 0;
+      }
       if (!ctrl.currentState.startsWith('RIFLE_DEATH')) {
         ctrl.deathElapsed = 0;
         const wasCrouched =
@@ -1196,8 +1198,11 @@ export function updateAllBotCharacters(
         );
       }
 
-      ctrl.deathElapsed += dt;
-      if (ctrl.deathElapsed < 2.8) ctrl.mixer.update(dt);
+      const deathStepDt = t.root.userData?.bulletCamPenetrationFreeze
+        ? dt * 0.12
+        : dt;
+      ctrl.deathElapsed += deathStepDt;
+      if (ctrl.deathElapsed < 2.8) ctrl.mixer.update(deathStepDt);
 
       const dropEase = 1 - Math.pow(1 - Math.min(1, ctrl.deathElapsed / 0.45), 2.2);
       ctrl.weaponProp.position.set(
@@ -1228,6 +1233,16 @@ export function updateAllBotCharacters(
       transitionBotAnim(ctrl, ctrl.crouchStance ? 'RIFLE_CROUCH' : 'RIFLE_IDLE', 0.15);
     }
     t.pivotGroup.rotation.x = 0;
+
+    // Quando o bot é o alvo travado da X-Ray Sniper Bullet Cam, congela a pose para o tiro acertar exatamente o osso mirado!
+    if (t.root.userData?.bulletCamTargetLocked) {
+      ctrl.prevX = t.root.position.x;
+      ctrl.prevY = t.root.position.y;
+      ctrl.prevZ = t.root.position.z;
+      ctrl.smoothedSpeed = 0;
+      ctrl.mixer.update(dt * 0.02);
+      continue;
+    }
 
     // Nav hop pulse → jump one-shot.
     if (t.root.userData.botJumpPulse) {
