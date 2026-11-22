@@ -415,7 +415,7 @@ service cloud.firestore {
 
     match /players/{userId} {
       allow get: if isAuthenticated() && isValidId(userId);
-      allow list: if false;
+      allow list: if isAuthenticated() && existing().rankLevel >= 1;
       allow create: if isOwner(userId)
         && isValidId(userId)
         && isValidPlayerProfile(incoming())

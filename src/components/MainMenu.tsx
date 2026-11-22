@@ -14,6 +14,7 @@ import {
   createSquadReadyRoom,
   getActiveOnlineRoom,
   getLocalEffectiveUid,
+  joinOrCreateChampionshipRoom,
   subscribeOnlineRoom,
   updateSquadRoomConfig,
 } from '../multiplayer/onlineRoomService';
@@ -38,6 +39,7 @@ import { CompetitiveRankedScreen } from './CompetitiveRankedScreen';
 import { DailyContractsModal } from './DailyContractsModal';
 import { DownloadCenterModal } from './DownloadCenterModal';
 import { FriendsSocialModal } from './FriendsSocialModal';
+import { GlobalLeaderboardModal } from './GlobalLeaderboardModal';
 import { GraphicsSettingsPanel } from './GraphicsSettingsPanel';
 import { InventoryLoadoutModal } from './InventoryLoadoutModal';
 import { MainMenuOverlays } from './MainMenuOverlays';
@@ -51,6 +53,7 @@ import { SquadReadyRoomModal } from './SquadReadyRoomModal';
 import { VipBattlePassModal } from './VipBattlePassModal';
 import { WarfaceDiamondStoreModal } from './WarfaceDiamondStoreModal';
 import { WeaponInspectionModal } from './WeaponInspectionModal';
+import { ChampionshipHubModal } from './championship/ChampionshipHubModal';
 
 interface MainMenuProps {
   onStartTraining: () => void;
@@ -128,6 +131,14 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     getActiveOnlineRoom()
   );
   const [showRankedScreen, setShowRankedScreen] = useState(false);
+  const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
+  const [showChampionshipModal, setShowChampionshipModal] = useState(() => {
+    try {
+      return new URLSearchParams(window.location.search).has('championship_payment');
+    } catch {
+      return false;
+    }
+  });
   const [onlineLobbyArena, setOnlineLobbyArena] = useState<DrillMode>('DUST2_BOMB_5V5');
   const [syncState, setSyncState] = useState<CloudSyncState>(() =>
     getCloudSyncState()
@@ -269,7 +280,13 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     >
       {/* 1. BACKGROUND (Soldado 3D .glb centralizado + Bandeira 3D Blackthorn atrás) */}
       <MenuBackground
-        showHero={activeTab === 'PLAY' && !showRankedScreen && !showSquadRoom}
+        showHero={
+          activeTab === 'PLAY' &&
+          !showRankedScreen &&
+          !showSquadRoom &&
+          !showLeaderboardModal &&
+          !showChampionshipModal
+        }
         activeWeapon={heroEquippedWeapon}
         selectedClass={inventoryState.selectedClass}
       />
@@ -330,6 +347,8 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             onOpenEventsModal={() => setShowEventsModal(true)}
             onOpenContractsModal={() => setShowContractsModal(true)}
             onOpenClanModal={() => setClanModalTab('OVERVIEW')}
+            onOpenLeaderboardModal={() => setShowLeaderboardModal(true)}
+            onOpenChampionshipModal={() => setShowChampionshipModal(true)}
             contractsBadgeCount={contractsBadgeCount}
             onHover={handleHover}
           />
@@ -487,6 +506,8 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           activeTab === 'PLAY' &&
           !showSquadRoom &&
           !showRankedScreen &&
+          !showLeaderboardModal &&
+          !showChampionshipModal &&
           clanModalTab === null
         }
         onOpenSquadRoom={() => setShowSquadRoom(true)}
@@ -499,12 +520,32 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           activeWeapon={activeWeapon}
           initialArena={onlineLobbyArena}
           onBackToMainMenu={() => setShowRankedScreen(false)}
+          onOpenLeaderboard={() => setShowLeaderboardModal(true)}
           onRankedMatchReady={(mode) => {
             setShowRankedScreen(false);
             void handleLaunchDrill(mode);
           }}
         />
       )}
+
+      <GlobalLeaderboardModal
+        isOpen={showLeaderboardModal}
+        onClose={() => setShowLeaderboardModal(false)}
+      />
+
+      <ChampionshipHubModal
+        isOpen={showChampionshipModal}
+        onClose={() => setShowChampionshipModal(false)}
+        onOpenClanCenter={() => setClanModalTab('OVERVIEW')}
+        onLaunchChampionshipMatch={(roomCode, arenaMode) => {
+          setShowChampionshipModal(false);
+          void joinOrCreateChampionshipRoom(roomCode, arenaMode).then((res) => {
+            if (res.ok) {
+              setShowSquadRoom(true);
+            }
+          });
+        }}
+      />
     </div>
   );
 };

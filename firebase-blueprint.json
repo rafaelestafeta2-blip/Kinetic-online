@@ -540,7 +540,7 @@
       "schema": {
         "$ref": "#/entities/PlayerProfile"
       },
-      "description": "Stores each authenticated player's persistent profile, progression, unlocked weapons, avatar, and achievements."
+      "description": "Stores each authenticated player's persistent profile, progression, combat stats, unlocked weapons, avatar, and achievements; supports constrained authenticated listing (rankLevel >= 1) for the Global Leaderboard."
     },
     "/usernames/{usernameLower}": {
       "schema": {

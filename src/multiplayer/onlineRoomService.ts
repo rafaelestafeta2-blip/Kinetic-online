@@ -1114,6 +1114,73 @@ export async function joinRoomByCode(rawCode: string): Promise<{ ok: boolean; er
   }
 }
 
+/**
+ * Joins an existing Championship 5v5 private room by code, or initializes it
+ * if this player is the first starter from either clan to arrive.
+ */
+export async function joinOrCreateChampionshipRoom(
+  rawCode: string,
+  arenaMode: DrillMode = 'DUST2_BOMB_5V5'
+): Promise<{ ok: boolean; error?: string; room?: OnlineRoomState }> {
+  const code = rawCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
+  if (code.length < 4) {
+    return { ok: false, error: 'Código de sala do campeonato inválido.' };
+  }
+
+  const joined = await joinRoomByCode(code);
+  if (joined.ok) {
+    return joined;
+  }
+
+  // First starter arriving creates the deterministic championship room code
+  await leaveActiveRoom();
+  autoJoinQueueOnWsOpen = false;
+  const uid = getEffectiveLocalUid();
+  const localPlayer = createInitialLocalPlayerState(arenaMode, 'VANGUARD', 0);
+  localPlayer.isReady = true;
+
+  const newRoom: OnlineRoomState = {
+    roomId: code,
+    hostUid: uid,
+    arenaMode,
+    isPrivate: true,
+    queueType: 'RANKED',
+    randomMap: false,
+    includeBots: false,
+    averageMmr: localPlayer.mmr || 2450,
+    status: 'WAITING',
+    isSearchingMatch: false,
+    searchStartedAtMs: null,
+    currentRound: 1,
+    vanguardScore: 0,
+    blackthornScore: 0,
+    bombStatus: 'CARRIED',
+    plantedSite: 'NONE',
+    players: { [uid]: localPlayer },
+    updatedAtMs: Date.now(),
+    createdAt: new Date().toISOString(),
+  };
+
+  activeRoom = newRoom;
+  clearSquadChat();
+  resetCombatNetcodeThrottle();
+  resetPeerSnapshotBuffers();
+  connectWebSocketForRoom(newRoom, localPlayer);
+  emitRoomState();
+
+  if (auth.currentUser) {
+    try {
+      await setDoc(doc(db, 'rooms', code), buildFirestoreSafeRoomDoc(newRoom));
+      attachRoomSnapshotListener(code);
+    } catch {
+      // Another starter may have created the doc concurrently — retry join once
+      const retry = await joinRoomByCode(code);
+      if (retry.ok) return retry;
+    }
+  }
+  return { ok: true, room: newRoom };
+}
+
 export async function quickMatchOrCreateRoom(
   arenaMode: DrillMode,
   queueType: MatchQueueType = 'CASUAL'

@@ -658,7 +658,11 @@ export const ClanCenterModal: React.FC<ClanCenterModalProps> = ({
                   type="button"
                   onClick={() => {
                     soundEngine.playMenuSelect();
-                    void leaveOrDisbandClan();
+                    void leaveOrDisbandClan().then((res) => {
+                      if (!res.ok && res.error) {
+                        setFeedback({ type: 'err', text: res.error });
+                      }
+                    });
                   }}
                   className="mt-4 w-full py-2 rounded-xl bg-red-500/15 hover:bg-red-500/30 border border-red-500/40 text-red-200 font-display font-bold text-xs uppercase tracking-wider cursor-pointer transition-all"
                 >

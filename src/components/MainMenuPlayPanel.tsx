@@ -31,6 +31,8 @@ interface MainMenuPlayPanelProps {
   onOpenEventsModal: () => void;
   onOpenContractsModal: () => void;
   onOpenClanModal?: () => void;
+  onOpenLeaderboardModal?: () => void;
+  onOpenChampionshipModal?: () => void;
   contractsBadgeCount?: number;
   onHover: () => void;
 }
@@ -53,6 +55,8 @@ export const MainMenuPlayPanel: React.FC<MainMenuPlayPanelProps> = ({
   onOpenEventsModal,
   onOpenContractsModal,
   onOpenClanModal,
+  onOpenLeaderboardModal,
+  onOpenChampionshipModal,
   contractsBadgeCount = 0,
   onHover,
 }) => {
@@ -74,6 +78,12 @@ export const MainMenuPlayPanel: React.FC<MainMenuPlayPanelProps> = ({
         break;
       case 'RANKED':
         onOpenSquadRoom('DUST2_BOMB_5V5', 'RANKED', false);
+        break;
+      case 'RANKING':
+        onOpenLeaderboardModal?.();
+        break;
+      case 'CAMPEONATO':
+        onOpenChampionshipModal?.();
         break;
       case 'CLAN':
         onOpenClanModal?.();

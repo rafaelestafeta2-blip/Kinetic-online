@@ -33,6 +33,7 @@ import {
   isFirestoreOfflineError,
   OperationType,
 } from './firebaseClient';
+import { fetchRosterLockStatus } from '../services/championshipClient';
 import {
   getCloudSyncState,
   subscribePlayerProfile,
@@ -826,6 +827,15 @@ export async function removeMemberFromClan(
     return { ok: false, error: 'Operador não encontrado no clã.' };
   }
 
+  // Roster Lock protection: locked championship rosters cannot be altered
+  const lockStatus = await fetchRosterLockStatus();
+  if (lockStatus.locked) {
+    return {
+      ok: false,
+      error: `Elenco travado (Roster Lock) no campeonato "${lockStatus.championshipTitle || 'KINETIC'}". Não é possível remover membros durante o torneio.`,
+    };
+  }
+
   const nextMembers = { ...clan.members };
   delete nextMembers[targetUid];
   const nextUids = Object.keys(nextMembers);
@@ -932,10 +942,19 @@ export async function joinExistingClanById(
 /**
  * Leaves current clan (or disbands if owner is the last member).
  */
-export async function leaveOrDisbandClan(): Promise<void> {
+export async function leaveOrDisbandClan(): Promise<{ ok: boolean; error?: string }> {
   const clan = currentState.myClan;
-  if (!clan) return;
+  if (!clan) return { ok: true };
   const myUid = auth.currentUser?.uid || getCloudSyncState().profile.uid;
+
+  // Roster Lock protection: players enrolled in an active locked championship cannot leave/disband
+  const lockStatus = await fetchRosterLockStatus();
+  if (lockStatus.locked) {
+    return {
+      ok: false,
+      error: `Elenco travado (Roster Lock) em "${lockStatus.championshipTitle || 'Campeonato KINETIC'}". Você não pode sair ou dissolver o clã até o fim do torneio.`,
+    };
+  }
 
   if (clanDocUnsub) {
     clanDocUnsub();
@@ -972,6 +991,7 @@ export async function leaveOrDisbandClan(): Promise<void> {
   saveCachedClan(null);
   emitClanState();
   await updatePlayerClanCloudMeta({ clanId: '' });
+  return { ok: true };
 }
 
 /**

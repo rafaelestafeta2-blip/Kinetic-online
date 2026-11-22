@@ -30,6 +30,7 @@ interface CompetitiveRankedScreenProps {
   activeWeapon: WeaponId;
   initialArena: DrillMode;
   onBackToMainMenu: () => void;
+  onOpenLeaderboard?: () => void;
   onRankedMatchReady: (mode: DrillMode) => void;
 }
 
@@ -86,6 +87,7 @@ export const CompetitiveRankedScreen: React.FC<CompetitiveRankedScreenProps> = (
   playerMmr,
   activeWeapon,
   onBackToMainMenu,
+  onOpenLeaderboard,
   onRankedMatchReady,
 }) => {
   const [isSearching, setIsSearching] = useState(false);
@@ -313,6 +315,24 @@ export const CompetitiveRankedScreen: React.FC<CompetitiveRankedScreenProps> = (
               VER TODAS AS PATENTES
             </span>
           </button>
+
+          {onOpenLeaderboard && (
+            <button
+              type="button"
+              onClick={() => {
+                soundEngine.playMenuSelect();
+                onOpenLeaderboard();
+              }}
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-md bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/50 text-amber-100 shadow-[0_0_14px_rgba(245,158,11,0.25)] transition-all cursor-pointer"
+            >
+              <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 text-amber-300" fill="currentColor">
+                <path d="M2 20h6v-9H2v9zm7 0h6V4H9v16zm7 0h6v-6h-6v6z" />
+              </svg>
+              <span className="font-display font-bold text-[10px] sm:text-xs tracking-wider uppercase">
+                RANKING GERAL
+              </span>
+            </button>
+          )}
         </div>
 
         {/* Badge Oficial de Mapa Sorteado Aleatoriamente (Jogadores não escolhem mapa na Ranked) */}

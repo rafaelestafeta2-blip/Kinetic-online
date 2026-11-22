@@ -34,6 +34,16 @@ import {
   roomsMap,
   WsClientMeta,
 } from './src/server/roomSessionManager';
+import {
+  createChampionshipRouter,
+  handleStripeChampionshipWebhook,
+} from './src/server/championship/championshipRouter';
+import { runChampionshipSchedulerTick } from './src/server/championship/championshipService';
+import {
+  broadcastChampionshipEvent,
+  detachChampionshipSocket,
+  handleChampionshipWsMessage,
+} from './src/server/championship/championshipWsHub';
 
 const PORT = Number(process.env.PORT) || 3000;
 
@@ -41,7 +51,7 @@ async function startServer(): Promise<void> {
   const app = express();
   app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
     if (req.method === 'OPTIONS') {
       res.sendStatus(204);
@@ -49,7 +59,16 @@ async function startServer(): Promise<void> {
     }
     next();
   });
+
+  // Stripe Webhook MUST receive raw Buffer BEFORE express.json() for HMAC-SHA256 verification
+  app.post(
+    '/api/championships/webhooks/stripe',
+    express.raw({ type: 'application/json' }),
+    handleStripeChampionshipWebhook
+  );
+
   app.use(express.json());
+  app.use('/api/championships', createChampionshipRouter());
 
   app.get('/api/health', (_req, res) => {
     res.json({
@@ -426,6 +445,11 @@ async function startServer(): Promise<void> {
               serverTs: Date.now(),
             })
           );
+          return;
+        }
+
+        // 0. Eventos do Lobby Privado do Campeonato de Clãs (Ready Check / Launch)
+        if (handleChampionshipWsMessage(ws, msg)) {
           return;
         }
 
@@ -1276,6 +1300,7 @@ async function startServer(): Promise<void> {
     });
 
     ws.on('close', () => {
+      detachChampionshipSocket(ws);
       removeClientFromQueue(clientMeta);
       removeClientFromRoom(clientMeta);
     });
@@ -1399,6 +1424,26 @@ async function startServer(): Promise<void> {
   };
 
   setInterval(runMatchmakingSweep, 2000);
+
+  // Agendador autoritativo do Campeonato de Clãs (abre inscrições dia 1, Roster Lock, salas 30m antes e W.O. +5m)
+  const runChampionshipCycle = (): void => {
+    try {
+      const summary = runChampionshipSchedulerTick();
+      if (summary.woAppliedMatchIds.length > 0) {
+        summary.woAppliedMatchIds.forEach((matchId) => {
+          broadcastChampionshipEvent(matchId, {
+            type: 'CHAMP_WO_APPLIED',
+            matchId,
+            ts: Date.now(),
+          });
+        });
+      }
+    } catch (err) {
+      console.error('[ChampionshipScheduler] Tick error:', err);
+    }
+  };
+  runChampionshipCycle();
+  setInterval(runChampionshipCycle, 15_000);
 
   // Server-side WebSocket heartbeat sweep: detects half-open/zombie mobile sockets (Wi-Fi <-> 4G drops)
   const HEARTBEAT_TIMEOUT_MS = 28_000;
