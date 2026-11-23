@@ -958,7 +958,25 @@ export async function claimFounderWelcomeDiamonds(): Promise<{
         // Refresh auth token (helps Android WebView after background resume)
         // and reconcile against authoritative server doc.
         await user.getIdToken(true).catch(() => undefined);
-        const serverData = await fetchAuthoritativeServerProfile(user.uid);
+        let serverReadTag = 'doc=none';
+        let serverData: Partial<PlayerCloudProfile> | null = null;
+        try {
+          const snap = await getDocFromServer(playerRef);
+          if (snap.exists()) {
+            serverData = snap.data() as Partial<PlayerCloudProfile>;
+            serverReadTag = `doc=yes,fnd=${Boolean(serverData.founderDiamondsClaimed)},dm=${Number(serverData.diamonds ?? -1)},lk=${Boolean(serverData.callsignLocked)},cr=${typeof serverData.createdAt}`;
+          } else {
+            serverReadTag = 'doc=missing';
+          }
+        } catch (getErr) {
+          const gCode =
+            typeof getErr === 'object' && getErr !== null && 'code' in getErr
+              ? String((getErr as { code?: unknown }).code || 'err')
+              : 'err';
+          serverReadTag = `get=${gCode}`;
+          serverData = await fetchAuthoritativeServerProfile(user.uid);
+        }
+
         if (serverData && serverData.founderDiamondsClaimed === true) {
           const adopted = mergeLocalAndCloudProfiles(updatedProfile, serverData, user);
           state.profile = adopted;
@@ -1024,10 +1042,10 @@ export async function claimFounderWelcomeDiamonds(): Promise<{
               handleFirestoreError(patchErr || retryErr || firstErr, OperationType.WRITE, `players/${user.uid}`);
               return {
                 ok: false,
-                error: formatFirestoreSyncError(
+                error: `${formatFirestoreSyncError(
                   patchErr || retryErr || firstErr,
                   'Não foi possível sincronizar o resgate de Diamantes com a nuvem.'
-                ),
+                )} [${serverReadTag}]`,
               };
             }
           }
@@ -1039,10 +1057,10 @@ export async function claimFounderWelcomeDiamonds(): Promise<{
           handleFirestoreError(retryErr || firstErr, OperationType.WRITE, `players/${user.uid}`);
           return {
             ok: false,
-            error: formatFirestoreSyncError(
+            error: `${formatFirestoreSyncError(
               retryErr || firstErr,
               'Não foi possível sincronizar o resgate de Diamantes com a nuvem.'
-            ),
+            )} [${serverReadTag}]`,
           };
         }
       } finally {
