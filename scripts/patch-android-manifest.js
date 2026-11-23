@@ -65,6 +65,25 @@ if (fs.existsSync(manifestPath)) {
     );
   }
 
+  // Flag APK as a native 3D game with largeHeap + hardware acceleration so Android Game Mode
+  // scheduler and LMK allocator give WebGL + GLB assets priority RAM & sustained GPU clocks.
+  content = content.replace(/<application\b([^>]*)>/, (match, attrs) => {
+    let nextAttrs = attrs;
+    if (!nextAttrs.includes('android:hardwareAccelerated=')) {
+      nextAttrs += '\n        android:hardwareAccelerated="true"';
+    }
+    if (!nextAttrs.includes('android:largeHeap=')) {
+      nextAttrs += '\n        android:largeHeap="true"';
+    }
+    if (!nextAttrs.includes('android:isGame=')) {
+      nextAttrs += '\n        android:isGame="true"';
+    }
+    if (!nextAttrs.includes('android:appCategory=')) {
+      nextAttrs += '\n        android:appCategory="game"';
+    }
+    return `<application${nextAttrs}>`;
+  });
+
   // Patch MAIN / LAUNCHER activity attributes for OAuth survival.
   content = content.replace(
     /<activity\b[\s\S]*?<\/activity>/g,
@@ -174,6 +193,8 @@ import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.PowerManager;
+import android.view.Display;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
@@ -248,11 +269,51 @@ public class MainActivity extends BridgeActivity {
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
             getWindow().setAttributes(lp);
         }
+        enableNativeGamePerformanceHints();
         hideSystemBarsImmersive();
         wireBridge();
         handleAuthDeepLink(getIntent());
         // Cold start after process death: flush any persisted OAuth result.
         getWindow().getDecorView().postDelayed(() -> deliverPendingOAuthToJs(true), 700);
+    }
+
+    private void enableNativeGamePerformanceHints() {
+        try {
+            Window window = getWindow();
+            if (window == null) return;
+            // Sustained Performance Mode reduces thermal clock throttling spikes during long matches
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+                if (pm != null && pm.isSustainedPerformanceModeSupported()) {
+                    window.setSustainedPerformanceMode(true);
+                }
+            }
+            // Request highest supported smooth refresh mode (60/90/120Hz) on high-refresh Android panels
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                Display display =
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                        ? getDisplay()
+                        : getWindowManager().getDefaultDisplay();
+                if (display != null) {
+                    Display.Mode bestMode = display.getMode();
+                    Display.Mode[] modes = display.getSupportedModes();
+                    if (modes != null && bestMode != null) {
+                        for (Display.Mode m : modes) {
+                            if (m.getPhysicalWidth() == bestMode.getPhysicalWidth()
+                                && m.getPhysicalHeight() == bestMode.getPhysicalHeight()
+                                && m.getRefreshRate() > bestMode.getRefreshRate()
+                                && m.getRefreshRate() <= 120.5f) {
+                                bestMode = m;
+                            }
+                        }
+                        WindowManager.LayoutParams lp = window.getAttributes();
+                        lp.preferredDisplayModeId = bestMode.getModeId();
+                        window.setAttributes(lp);
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
     }
 
     @Override
@@ -283,6 +344,10 @@ public class MainActivity extends BridgeActivity {
     private void wireBridge() {
         if (getBridge() == null || getBridge().getWebView() == null) return;
         WebView mainWebView = getBridge().getWebView();
+        mainWebView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            mainWebView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false);
+        }
         WebSettings settings = mainWebView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);

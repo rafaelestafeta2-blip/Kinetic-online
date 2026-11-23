@@ -146,13 +146,13 @@ export function buildHudFingerprint(state: HudState, yaw: number): string {
     state.dockCollapsed ? 1 : 0,
     state.nearWallStand ? 1 : 0,
     state.focusedWallWeapon || '-',
-    Math.round(state.playerPos.x * 4),
-    Math.round(state.playerPos.z * 4),
-    state.playerPos.y != null ? Math.round(state.playerPos.y * 4) : 0,
+    Math.round(state.playerPos.x * 2),
+    Math.round(state.playerPos.z * 2),
+    state.playerPos.y != null ? Math.round(state.playerPos.y * 2) : 0,
     state.spawnDebug
       ? `${state.spawnDebug.ready ? 1 : 0}:${state.spawnDebug.tris}:${Math.round(state.spawnDebug.groundY * 4)}`
       : '-',
-    Math.round(yaw * 8),
+    Math.round(yaw * 5),
     bomb?.bombStatus || '-',
     bomb ? bomb.roundTimerSec | 0 : -1,
     bomb?.alliesAlive ?? -1,

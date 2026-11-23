@@ -1,6 +1,7 @@
 /**
- * Intermittent shadow-map updates for mobile directional lights.
- * Full soft/PCF shadows every frame are a common FPS killer on mid-range GPUs.
+ * Intermittent, texel-snapped shadow-map updates for mobile directional lights.
+ * Texel snapping eliminates shadow shimmering/crawling while moving, and
+ * intermittent cadence cuts GPU shadow-pass cost on mid-range SoCs.
  */
 
 import * as THREE from 'three';
@@ -48,8 +49,8 @@ export function tickShadowBudget(
 ): void {
   if (!renderer.shadowMap.enabled) return;
 
-  const intervalSec = opts?.intervalSec ?? 0.12;
-  const moveThreshold = opts?.moveThreshold ?? 0.55;
+  const intervalSec = opts?.intervalSec ?? 0.14;
+  const moveThreshold = opts?.moveThreshold ?? 0.65;
   const moveThresholdSq = moveThreshold * moveThreshold;
 
   state.accumSec += dt;
@@ -75,37 +76,82 @@ export function requestShadowRefresh(state: ShadowBudgetState): void {
   state.forceNext = true;
 }
 
+// Pre-allocated zero-GC scratch math for texel-snapped directional shadows
+const _sunDir = new THREE.Vector3(0.45, 0.78, 0.35).normalize();
+const _upVec = new THREE.Vector3(0, 1, 0);
+const _lightRight = new THREE.Vector3();
+const _lightUp = new THREE.Vector3();
+const _snappedTarget = new THREE.Vector3();
+const _lightPos = new THREE.Vector3();
+
 /**
- * Tightens the directional shadow camera around the player (smaller frustum → better
- * texel density and cheaper fills). Safe for a single key sun light.
+ * Tightens the directional shadow camera around the player with light-space
+ * texel snapping so shadow edges stay rock-solid (zero shimmering while walking)
+ * and align accurately with the active sky sun direction.
  */
 export function followKeyLightShadowFrustum(
   keyLight: THREE.DirectionalLight,
   playerPos: THREE.Vector3,
-  opts?: { height?: number; radius?: number; followLerp?: number }
+  opts?: {
+    distance?: number;
+    radius?: number;
+    sunDirection?: THREE.Vector3 | null;
+  }
 ): void {
   if (!keyLight.castShadow) return;
-  const height = opts?.height ?? 36;
-  const radius = opts?.radius ?? 38;
+
+  const distance = opts?.distance ?? 56;
+  const radius = opts?.radius ?? 36;
   const cam = keyLight.shadow.camera;
 
-  keyLight.target.position.set(playerPos.x, playerPos.y, playerPos.z);
+  if (opts?.sunDirection && opts.sunDirection.lengthSq() > 0.001) {
+    _sunDir.copy(opts.sunDirection).normalize();
+  } else {
+    _sunDir.set(0.42, 0.82, 0.36).normalize();
+  }
+
+  // Orthonormal basis perpendicular to the sun ray for light-space texel snapping
+  if (Math.abs(_sunDir.y) > 0.98) {
+    _upVec.set(0, 0, 1);
+  } else {
+    _upVec.set(0, 1, 0);
+  }
+  _lightRight.crossVectors(_upVec, _sunDir).normalize();
+  _lightUp.crossVectors(_sunDir, _lightRight).normalize();
+
+  const mapDim = Math.max(256, keyLight.shadow.mapSize.width || 1024);
+  const worldUnitsPerTexel = (radius * 2) / mapDim;
+
+  // Project playerPos onto light basis and snap to whole shadow texels
+  const u = Math.round(playerPos.dot(_lightRight) / worldUnitsPerTexel) * worldUnitsPerTexel;
+  const v = Math.round(playerPos.dot(_lightUp) / worldUnitsPerTexel) * worldUnitsPerTexel;
+  const w = playerPos.dot(_sunDir);
+
+  _snappedTarget
+    .set(0, 0, 0)
+    .addScaledVector(_lightRight, u)
+    .addScaledVector(_lightUp, v)
+    .addScaledVector(_sunDir, w);
+
+  keyLight.target.position.copy(_snappedTarget);
   keyLight.target.updateMatrixWorld();
 
-  const desired = _lightPos.set(
-    playerPos.x + 18,
-    playerPos.y + height,
-    playerPos.z + 14
-  );
-  keyLight.position.lerp(desired, opts?.followLerp ?? 1);
+  _lightPos.copy(_snappedTarget).addScaledVector(_sunDir, distance);
+  keyLight.position.copy(_lightPos);
 
-  cam.left = -radius;
-  cam.right = radius;
-  cam.top = radius;
-  cam.bottom = -radius;
-  cam.near = 1;
-  cam.far = height + radius + 40;
-  cam.updateProjectionMatrix();
+  if (
+    cam.left !== -radius ||
+    cam.right !== radius ||
+    cam.top !== radius ||
+    cam.bottom !== -radius ||
+    cam.far !== distance + radius + 48
+  ) {
+    cam.left = -radius;
+    cam.right = radius;
+    cam.top = radius;
+    cam.bottom = -radius;
+    cam.near = 1;
+    cam.far = distance + radius + 48;
+    cam.updateProjectionMatrix();
+  }
 }
-
-const _lightPos = new THREE.Vector3();

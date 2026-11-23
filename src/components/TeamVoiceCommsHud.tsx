@@ -373,7 +373,7 @@ export const TeamVoiceCommsHud: React.FC<TeamVoiceCommsHudProps> = ({
         style={{ touchAction: 'manipulation' }}
       >
         {/* Compact Radio Status Header Bar */}
-        <div className="flex items-center gap-1 bg-[#070d15]/90 border border-sky-400/35 rounded-xl px-2 py-1 shadow-[0_4px_16px_rgba(0,0,0,0.7)] backdrop-blur-sm">
+        <div className="flex items-center gap-1 bg-[#070d15]/94 border border-sky-400/35 rounded-xl px-2 py-1 shadow-[0_4px_16px_rgba(0,0,0,0.7)]">
           {/* Mic Mode Cycle Button */}
           <button
             type="button"
@@ -457,10 +457,10 @@ export const TeamVoiceCommsHud: React.FC<TeamVoiceCommsHudProps> = ({
         {/* Local Operator Transmitting Indicator Card */}
         {(voiceState.isTransmitting || expandedPanel) && (
           <div
-            className={`px-2.5 py-1.5 rounded-xl border backdrop-blur-sm flex items-center justify-between gap-2.5 transition-all max-w-[235px] ${
+            className={`px-2.5 py-1.5 rounded-xl border flex items-center justify-between gap-2.5 transition-all max-w-[235px] ${
               voiceState.isTransmitting
-                ? 'bg-emerald-950/85 border-emerald-400 shadow-[0_0_16px_rgba(16,185,129,0.45)]'
-                : 'bg-[#070d15]/85 border-white/15'
+                ? 'bg-emerald-950/94 border-emerald-400 shadow-[0_0_16px_rgba(16,185,129,0.45)]'
+                : 'bg-[#070d15]/94 border-white/15'
             }`}
           >
             <div className="flex items-center gap-1.5 min-w-0">
@@ -490,10 +490,10 @@ export const TeamVoiceCommsHud: React.FC<TeamVoiceCommsHudProps> = ({
         {(expandedPanel ? peersList : speakingPeers).map((peer) => (
           <div
             key={peer.uid}
-            className={`px-2.5 py-1.5 rounded-xl border backdrop-blur-sm flex items-center justify-between gap-2 transition-all max-w-[235px] ${
+            className={`px-2.5 py-1.5 rounded-xl border flex items-center justify-between gap-2 transition-all max-w-[235px] ${
               peer.isSpeaking && !peer.mutedByLocal
-                ? 'bg-emerald-950/90 border-emerald-400 shadow-[0_0_16px_rgba(16,185,129,0.5)]'
-                : 'bg-[#070d15]/85 border-white/15'
+                ? 'bg-emerald-950/94 border-emerald-400 shadow-[0_0_16px_rgba(16,185,129,0.5)]'
+                : 'bg-[#070d15]/94 border-white/15'
             }`}
           >
             <div className="flex items-center gap-1.5 min-w-0">

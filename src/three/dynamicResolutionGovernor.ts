@@ -1,6 +1,7 @@
 /**
  * Dynamic Resolution Scaling governor — extracted from fpsEngine for clarity/tests.
- * Adjusts WebGL pixel ratio from rolling FPS averages without GC pressure.
+ * Adjusts WebGL pixel ratio from sustained rolling FPS averages without GC pressure
+ * or mid-firefight backbuffer reallocation hitches.
  */
 
 import * as THREE from 'three';
@@ -28,7 +29,7 @@ export function createDrsRuntimeState(initialScale: number): DrsRuntimeState {
     frameCount: 0,
     lowFpsStreak: 0,
     highFpsStreak: 0,
-    cooldownSec: 0,
+    cooldownSec: 2.0,
     currentRenderScale: initialScale,
   };
 }
@@ -38,7 +39,7 @@ export function updateDynamicResolutionGovernor(
   hud: DrsHudMirror,
   renderer: THREE.WebGLRenderer,
   rawDt: number,
-  opts: { isSoftwareGl: boolean }
+  opts: { isSoftwareGl: boolean; suppressResize?: boolean }
 ): void {
   if (drs.cooldownSec > 0) {
     drs.cooldownSec = Math.max(0, drs.cooldownSec - rawDt);
@@ -47,7 +48,7 @@ export function updateDynamicResolutionGovernor(
   drs.accumTime += rawDt;
   drs.frameCount += 1;
 
-  if (drs.accumTime < 0.48) return;
+  if (drs.accumTime < 0.55) return;
 
   const avgFps = drs.frameCount / drs.accumTime;
   hud.liveFps = Math.min(120, Math.round(avgFps));
@@ -68,19 +69,20 @@ export function updateDynamicResolutionGovernor(
   );
   const targetCeiling =
     hud.qualityPreset === 'COMPETITIVE_120'
-      ? Math.min(maxDpr, 1.35)
+      ? Math.min(maxDpr, 1.45)
       : hud.qualityPreset === 'BALANCED_60'
-        ? Math.min(maxDpr, 1.65)
+        ? Math.min(maxDpr, 1.75)
         : maxDpr;
   const minScale =
     maxDpr >= 1.5
-      ? Math.max(1.12, maxDpr * 0.6)
-      : Math.max(0.82, maxDpr * 0.78);
+      ? Math.max(1.15, maxDpr * 0.65)
+      : Math.max(0.88, maxDpr * 0.8);
 
-  if (avgFps < 50) {
+  // Wider deadband hysteresis (47..57) prevents oscillation between crisp & blurry
+  if (avgFps < 47) {
     drs.lowFpsStreak += 1;
     drs.highFpsStreak = 0;
-  } else if (avgFps >= 58) {
+  } else if (avgFps >= 57) {
     drs.highFpsStreak += 1;
     drs.lowFpsStreak = 0;
   } else {
@@ -88,19 +90,24 @@ export function updateDynamicResolutionGovernor(
     drs.highFpsStreak = 0;
   }
 
+  // Never reallocate the WebGL backbuffer / post-FX render target mid-spray
+  if (opts.suppressResize) return;
+
   let nextScale = drs.currentRenderScale;
-  if (drs.lowFpsStreak >= 1 && drs.currentRenderScale > minScale) {
-    nextScale = Math.max(minScale, drs.currentRenderScale - 0.09);
-  } else if (drs.highFpsStreak >= 4 && drs.currentRenderScale < targetCeiling) {
-    nextScale = Math.min(targetCeiling, drs.currentRenderScale + 0.06);
+  // Require 3 sustained low windows (~1.65s) before stepping down so transient spikes don't hitch
+  if (drs.lowFpsStreak >= 3 && drs.currentRenderScale > minScale) {
+    nextScale = Math.max(minScale, drs.currentRenderScale - 0.1);
+  } else if (drs.highFpsStreak >= 6 && drs.currentRenderScale < targetCeiling) {
+    nextScale = Math.min(targetCeiling, drs.currentRenderScale + 0.08);
   }
 
-  if (Math.abs(nextScale - drs.currentRenderScale) >= 0.01) {
+  if (Math.abs(nextScale - drs.currentRenderScale) >= 0.015) {
     drs.currentRenderScale = nextScale;
     renderer.setPixelRatio(drs.currentRenderScale);
     hud.renderScalePercent = Math.round((drs.currentRenderScale / maxDpr) * 100);
     drs.lowFpsStreak = 0;
     drs.highFpsStreak = 0;
-    drs.cooldownSec = 1.6;
+    // Generous cooldown stops repeated backbuffer reallocations during active rounds
+    drs.cooldownSec = 3.8;
   }
 }

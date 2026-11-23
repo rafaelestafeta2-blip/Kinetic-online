@@ -175,8 +175,8 @@ export function applyGraphicsToEngine(
   ) {
     cache.lastAcesToneMapping = settings.acesToneMapping;
     renderer.toneMapping = targetToneMapping;
-    // 1.12 + map fill lights blew sandstone/WebP atlases white; ~0.95 restores midtones.
-    renderer.toneMappingExposure = settings.acesToneMapping ? 0.95 : 1.0;
+    // Calibrated for biome-matched atmospheric IBL + warm sun key light without washing out midtones
+    renderer.toneMappingExposure = settings.acesToneMapping ? 1.02 : 1.0;
     forceAllMaterialsNeedsUpdate = true;
   }
 
@@ -286,13 +286,18 @@ export function applyGraphicsToEngine(
     }
   }
 
-  // 6. Reflexos PBR (Environment map)
-  if (scene.environment) {
-    cache.cachedEnvironmentTex = scene.environment;
+  // 6. Reflexos PBR (Environment map — sincronizado com IBL por bioma do TacticalSkySystem)
+  scene.userData.pbrReflectionsEnabled = settings.pbrReflections;
+  const preferredEnv =
+    (scene.userData.preferredEnvironmentTex as THREE.Texture | undefined) ||
+    scene.environment ||
+    cache.cachedEnvironmentTex;
+  if (preferredEnv) {
+    cache.cachedEnvironmentTex = preferredEnv;
   }
   if (settings.pbrReflections) {
-    if (!scene.environment && cache.cachedEnvironmentTex) {
-      scene.environment = cache.cachedEnvironmentTex;
+    if (preferredEnv && scene.environment !== preferredEnv) {
+      scene.environment = preferredEnv;
     }
   } else {
     scene.environment = null;

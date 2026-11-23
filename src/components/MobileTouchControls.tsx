@@ -51,8 +51,14 @@ const MobileTouchControlsBase: React.FC<MobileTouchControlsProps> = ({
   const layout = activeControls.hudLayout;
 
   const joyContainerRef = useRef<HTMLDivElement | null>(null);
+  const joyKnobRef = useRef<HTMLDivElement | null>(null);
   const joyPointerIdRef = useRef<number | null>(null);
-  const [knobOffset, setKnobOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const joyMetricsRef = useRef<{ centerX: number; centerY: number; scale: number }>({
+    centerX: 0,
+    centerY: 0,
+    scale: 1,
+  });
+  const sprintRef = useRef(false);
   const [isSprinting, setIsSprinting] = useState(false);
   const [joyActive, setJoyActive] = useState(false);
 
@@ -71,13 +77,14 @@ const MobileTouchControlsBase: React.FC<MobileTouchControlsProps> = ({
 
   const baseMaxRadius = 48;
 
+  const setKnobTransform = (kx: number, ky: number, active: boolean) => {
+    const knob = joyKnobRef.current;
+    if (!knob) return;
+    knob.style.transform = `translate3d(${kx.toFixed(1)}px, ${ky.toFixed(1)}px, 0) scale(${active ? 1.06 : 1})`;
+  };
+
   const updateJoystickFromPoint = (clientX: number, clientY: number) => {
-    const el = joyContainerRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-    const joyScale = Math.max(0.6, layout.joystick.scale || 1);
+    const { centerX, centerY, scale: joyScale } = joyMetricsRef.current;
     const scaledMaxRadius = baseMaxRadius * joyScale;
 
     const dx = clientX - centerX;
@@ -89,33 +96,57 @@ const MobileTouchControlsBase: React.FC<MobileTouchControlsProps> = ({
     const normDist = clampedDist / joyScale;
     const kx = Math.cos(angle) * normDist;
     const ky = Math.sin(angle) * normDist;
-    setKnobOffset({ x: kx, y: ky });
+
+    // Direct GPU-composited transform — zero React re-renders and zero layout reflow at 120Hz+
+    setKnobTransform(kx, ky, true);
 
     const normX = kx / baseMaxRadius;
     const normY = -ky / baseMaxRadius;
     const sprintActive = normY > 0.78;
-    setIsSprinting(sprintActive);
+    if (sprintRef.current !== sprintActive) {
+      sprintRef.current = sprintActive;
+      setIsSprinting(sprintActive);
+    }
     callbacksRef.current.onMove(normX, normY, sprintActive);
   };
 
   useEffect(() => {
+    const consumeLookSamples = (
+      e: PointerEvent,
+      lastRef: React.MutableRefObject<{ x: number; y: number }>
+    ) => {
+      const coalesced =
+        typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : null;
+      const samples = coalesced && coalesced.length > 0 ? coalesced : [e];
+      let sumDx = 0;
+      let sumDy = 0;
+      let lx = lastRef.current.x;
+      let ly = lastRef.current.y;
+      for (let i = 0; i < samples.length; i++) {
+        const s = samples[i];
+        const dx = s.clientX - lx;
+        const dy = s.clientY - ly;
+        lx = s.clientX;
+        ly = s.clientY;
+        if (Math.abs(dx) < 140 && Math.abs(dy) < 140) {
+          sumDx += dx;
+          sumDy += dy;
+        }
+      }
+      lastRef.current.x = lx;
+      lastRef.current.y = ly;
+      if (sumDx !== 0 || sumDy !== 0) {
+        callbacksRef.current.onLookDelta(sumDx, sumDy);
+      }
+    };
+
     const handleGlobalPointerMove = (e: PointerEvent) => {
       if (e.pointerId === joyPointerIdRef.current) {
         updateJoystickFromPoint(e.clientX, e.clientY);
       } else if (e.pointerId === lookPointerIdRef.current) {
-        const rawDx = e.clientX - lookLastPosRef.current.x;
-        const rawDy = e.clientY - lookLastPosRef.current.y;
-        lookLastPosRef.current = { x: e.clientX, y: e.clientY };
-        if (Math.abs(rawDx) < 140 && Math.abs(rawDy) < 140) {
-          callbacksRef.current.onLookDelta(rawDx, rawDy);
-        }
+        consumeLookSamples(e, lookLastPosRef);
       } else if (e.pointerId === firePointerIdRef.current) {
-        const rawDx = e.clientX - fireLastPosRef.current.x;
-        const rawDy = e.clientY - fireLastPosRef.current.y;
-        fireLastPosRef.current = { x: e.clientX, y: e.clientY };
-        if (Math.abs(rawDx) < 140 && Math.abs(rawDy) < 140) {
-          callbacksRef.current.onLookDelta(rawDx, rawDy);
-        }
+        consumeLookSamples(e, fireLastPosRef);
       }
     };
 
@@ -123,8 +154,11 @@ const MobileTouchControlsBase: React.FC<MobileTouchControlsProps> = ({
       if (e.pointerId === joyPointerIdRef.current) {
         joyPointerIdRef.current = null;
         setJoyActive(false);
-        setKnobOffset({ x: 0, y: 0 });
-        setIsSprinting(false);
+        setKnobTransform(0, 0, false);
+        if (sprintRef.current) {
+          sprintRef.current = false;
+          setIsSprinting(false);
+        }
         callbacksRef.current.onMove(0, 0, false);
       }
       if (e.pointerId === lookPointerIdRef.current) {
@@ -159,6 +193,15 @@ const MobileTouchControlsBase: React.FC<MobileTouchControlsProps> = ({
 
   const handleJoyPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     e.stopPropagation();
+    const el = joyContainerRef.current;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      joyMetricsRef.current = {
+        centerX: rect.left + rect.width / 2,
+        centerY: rect.top + rect.height / 2,
+        scale: Math.max(0.6, layout.joystick.scale || 1),
+      };
+    }
     joyPointerIdRef.current = e.pointerId;
     setJoyActive(true);
     updateJoystickFromPoint(e.clientX, e.clientY);
@@ -167,7 +210,8 @@ const MobileTouchControlsBase: React.FC<MobileTouchControlsProps> = ({
   const handleLookPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     e.stopPropagation();
     lookPointerIdRef.current = e.pointerId;
-    lookLastPosRef.current = { x: e.clientX, y: e.clientY };
+    lookLastPosRef.current.x = e.clientX;
+    lookLastPosRef.current.y = e.clientY;
   };
 
   const handleFirePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
@@ -227,12 +271,13 @@ const MobileTouchControlsBase: React.FC<MobileTouchControlsProps> = ({
           </svg>
 
           <div
-            className={`w-12 h-12 rounded-full border-2 pointer-events-none transition-transform duration-75 ${
+            ref={joyKnobRef}
+            className={`w-12 h-12 rounded-full border-2 pointer-events-none will-change-transform ${
               joyActive
-                ? 'bg-white/95 border-white scale-105 shadow-md'
+                ? 'bg-white/95 border-white shadow-md'
                 : 'bg-white/80 border-white/90'
             }`}
-            style={{ transform: `translate(${knobOffset.x}px, ${knobOffset.y}px)` }}
+            style={{ transform: 'translate3d(0px, 0px, 0)' }}
           />
         </div>
       </div>

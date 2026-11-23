@@ -84,15 +84,16 @@ export function applyMobileTextureBudget(
   root: THREE.Object3D,
   renderer: THREE.WebGLRenderer,
   isSoftwareGl: boolean,
-  maxMobileDim = 1024
+  maxMobileDim = 1024,
+  isHeroViewmodel = false
 ): void {
   const isMobile = isMobileGpuTarget();
   const hwMax = renderer.capabilities?.getMaxAnisotropy?.() || 1;
   const maxAniso = isSoftwareGl
     ? 1
     : isMobile
-      ? Math.min(4, hwMax)
-      : Math.min(8, hwMax);
+      ? Math.min(isHeroViewmodel ? 8 : 6, hwMax)
+      : Math.min(16, hwMax);
 
   root.traverse((obj) => {
     const mesh = obj as THREE.Mesh;
@@ -121,10 +122,12 @@ export function warmSubtreeOnGpu(
   scene: THREE.Scene,
   camera: THREE.Camera,
   renderer: THREE.WebGLRenderer | null | undefined,
-  isSoftwareGl: boolean
+  isSoftwareGl: boolean,
+  maxMobileDim = 1024,
+  isHeroViewmodel = false
 ): void {
   if (!renderer || isSoftwareGl) return;
-  applyMobileTextureBudget(root, renderer, isSoftwareGl, 1024);
+  applyMobileTextureBudget(root, renderer, isSoftwareGl, maxMobileDim, isHeroViewmodel);
 
   const seen = new Set<THREE.Texture>();
   root.traverse((obj) => {

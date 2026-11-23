@@ -253,7 +253,7 @@ export const HudBottomWeaponDock: React.FC<HudBottomWeaponDockProps> = ({
       >
         {/* Discreet Popup Menu Above Active Weapon Plate */}
         {arsenalOpen && (
-          <div className="mb-1.5 bg-[#0e131a]/95 border border-sky-400/45 rounded-xl p-2 shadow-[0_10px_30px_rgba(0,0,0,0.85)] backdrop-blur-md flex flex-col gap-1.5 min-w-[230px] sm:min-w-[260px] animate-in fade-in slide-in-from-bottom-2 duration-150">
+          <div className="mb-1.5 bg-[#0e131a]/96 border border-sky-400/45 rounded-xl p-2 shadow-[0_10px_30px_rgba(0,0,0,0.85)] flex flex-col gap-1.5 min-w-[230px] sm:min-w-[260px] animate-in fade-in slide-in-from-bottom-2 duration-150">
             <div className="flex items-center justify-between border-b border-white/10 pb-1 px-1">
               <span className="text-[9px] font-display font-black tracking-widest text-sky-300 uppercase">
                 ARSENAL & KIT DE CLASSE

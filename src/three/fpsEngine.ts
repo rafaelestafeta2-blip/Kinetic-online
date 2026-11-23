@@ -214,6 +214,7 @@ import {
   createTacticalPostFx,
   disposeTacticalPostFx,
   renderWithTacticalPostFx,
+  setTacticalPostFxBiome,
   TacticalPostFxState,
 } from '../graphics/tacticalPostFx';
 import { applyAimAssistToLookDelta } from './aimAssist';
@@ -628,7 +629,7 @@ export class TacticalFPSEngine {
     });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 0.95;
+    this.renderer.toneMappingExposure = 1.02;
     this.currentRenderScale = this.isSoftwareGl
       ? 1.0
       : Math.min(window.devicePixelRatio || 1, 1.65);
@@ -648,35 +649,38 @@ export class TacticalFPSEngine {
     this.scene.fog = new THREE.FogExp2(0x0d121a, 0.014);
 
     const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
-    this.scene.environment = pmremGenerator.fromScene(
+    const indoorEnvTex = pmremGenerator.fromScene(
       new RoomEnvironment(),
       0.04
     ).texture;
+    this.scene.environment = indoorEnvTex;
+    this.scene.userData.preferredEnvironmentTex = indoorEnvTex;
     pmremGenerator.dispose();
 
     // 3. Balanced 3-Point Warm/Cool Lighting Rig
-    // Outdoor desert maps dim hemi/rim via skySystem to avoid milky fill over map suns.
+    // Outdoor maps automatically swap to atmospheric sky PMREM IBL via skySystem.
     const hemiLight = new THREE.HemisphereLight(0x93c5fd, 0x1e293b, 0.75);
     this.hemiLight = hemiLight;
     hemiLight.position.set(0, 30, 0);
     this.scene.add(hemiLight);
 
-    const keyLight = new THREE.DirectionalLight(0xfffbeb, 1.85);
+    const keyLight = new THREE.DirectionalLight(0xfffbeb, 1.95);
     this.keyLight = keyLight;
     keyLight.position.set(22, 36, 18);
     keyLight.castShadow = !this.isSoftwareGl;
     if (!this.isSoftwareGl) {
       keyLight.shadow.mapSize.width = 1024;
       keyLight.shadow.mapSize.height = 1024;
-      const d = 42;
+      const d = 36;
       keyLight.shadow.camera.left = -d;
       keyLight.shadow.camera.right = d;
       keyLight.shadow.camera.top = d;
       keyLight.shadow.camera.bottom = -d;
       keyLight.shadow.camera.near = 1;
       keyLight.shadow.camera.far = 110;
-      keyLight.shadow.bias = -0.0005;
-      keyLight.shadow.normalBias = 0.02;
+      keyLight.shadow.bias = -0.00035;
+      keyLight.shadow.normalBias = 0.025;
+      keyLight.shadow.radius = 2.0;
     }
     this.scene.add(keyLight);
 
@@ -689,7 +693,9 @@ export class TacticalFPSEngine {
       this.scene,
       this.keyLight,
       this.hemiLight,
-      this.rimLight
+      this.rimLight,
+      this.isSoftwareGl ? null : this.renderer,
+      indoorEnvTex
     );
 
     // 4. First-Person Camera Hierarchy (Yaw -> Pitch -> Camera -> WeaponRig)
@@ -718,12 +724,15 @@ export class TacticalFPSEngine {
       this.textures,
       this.isSoftwareGl,
       (subtree) => {
+        // Keep 1P hero firearm textures razor-sharp (2048px + 8x anisotropy) even on mobile
         warmSubtreeOnGpu(
           subtree,
           this.scene,
           this.camera,
           this.renderer,
-          this.isSoftwareGl
+          this.isSoftwareGl,
+          2048,
+          true
         );
       }
     );
@@ -3241,6 +3250,7 @@ export class TacticalFPSEngine {
     configureTacticalPostFx(this.postFx, this.renderer, {
       enabled: opts.enabled,
       sharpen: opts.sharpen ?? 0.55,
+      biome: this.skySystem?.getPostFxBiome(),
     });
   }
 
@@ -3506,7 +3516,13 @@ export class TacticalFPSEngine {
       this.state,
       this.renderer,
       rawDt,
-      { isSoftwareGl: this.isSoftwareGl }
+      {
+        isSoftwareGl: this.isSoftwareGl,
+        suppressResize:
+          this.touchFireHeld ||
+          this.mouseButtonsHeld.has(0) ||
+          this.state.isAds,
+      }
     );
   }
 
@@ -3683,6 +3699,7 @@ export class TacticalFPSEngine {
     this.aimRaycastInitialized = false;
 
     this.skySystem.configureForMode(mode, this.scene.fog !== null);
+    setTacticalPostFxBiome(this.postFx, this.skySystem.getPostFxBiome());
 
     // Position player according to drill sector
     if (isDust2) {
@@ -4837,7 +4854,9 @@ export class TacticalFPSEngine {
         this.updatePlayingSimulation(dt);
       }
       if (this.keyLight?.castShadow && this.renderer.shadowMap.enabled) {
-        followKeyLightShadowFrustum(this.keyLight, this.playerPos);
+        followKeyLightShadowFrustum(this.keyLight, this.playerPos, {
+          sunDirection: this.skySystem.getSunDirection(),
+        });
         tickShadowBudget(this.renderer, this.shadowBudget, this.playerPos, dt);
       }
     }

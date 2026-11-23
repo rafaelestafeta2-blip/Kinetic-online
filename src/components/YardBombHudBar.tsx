@@ -204,7 +204,7 @@ export const YardBombHudBar: React.FC<YardBombHudBarProps> = ({
         Date.now() < (yardBomb.captureAlertUntilMs || 0) && (
           <div className="fixed top-19 left-1/2 -translate-x-1/2 z-40 pointer-events-none select-none w-[min(92vw,520px)]">
             <div
-              className={`px-4 py-2 rounded-xl border-2 text-center shadow-2xl backdrop-blur-md flex items-center justify-center gap-2.5 ${
+              className={`px-4 py-2 rounded-xl border-2 text-center shadow-2xl flex items-center justify-center gap-2.5 ${
                 yardBomb.captureAlertTeam === 'BLACKTHORN'
                   ? 'bg-gradient-to-r from-red-950/95 via-red-900/95 to-red-950/95 border-red-400 shadow-[0_0_30px_rgba(239,68,68,0.75)]'
                   : 'bg-gradient-to-r from-sky-950/95 via-cyan-900/95 to-sky-950/95 border-cyan-300 shadow-[0_0_30px_rgba(34,211,238,0.75)]'
