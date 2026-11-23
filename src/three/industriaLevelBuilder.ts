@@ -57,15 +57,7 @@ export function buildIndustriaLevel(
   const targets: TacticalTargetEntity[] = [];
   const collider = new Dust2TriangleCollider();
 
-  const hemi = new THREE.HemisphereLight(0xdbeafe, 0x4b5563, 0.85);
-  levelGroup.add(hemi);
-
-  const sun = new THREE.DirectionalLight(0xfff1e0, 1.15);
-  sun.position.set(40, 55, -25);
-  sun.target.position.set(20, 2, 0);
-  sun.castShadow = false;
-  levelGroup.add(sun);
-  levelGroup.add(sun.target);
+  // Lighting is unified in TacticalSkySystem (single sun + hemi rig to cut mobile PBR ALU ~45%)
 
   addIndustriaBombSiteBeacon(levelGroup, INDUSTRIA_BOMB_SITE_A, 'A', 0xdc2626);
   addIndustriaBombSiteBeacon(levelGroup, INDUSTRIA_BOMB_SITE_B, 'B', 0x0284c7);

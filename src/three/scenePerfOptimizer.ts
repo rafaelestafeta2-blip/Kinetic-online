@@ -5,6 +5,7 @@
  */
 
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 const SHARED_COLOR_MATERIALS = new Map<string, THREE.MeshStandardMaterial>();
 
@@ -282,4 +283,161 @@ export function consolidateDuplicateMeshesToInstances(
   });
 
   return consolidated;
+}
+
+/**
+ * Spatial-cell static geometry batching by Material (100% pixel-identical visuals).
+ * Merges static environment meshes sharing exact Material, shadow flags, renderOrder,
+ * and vertex attribute layout within `cellSize`-meter grid sectors so frustum culling
+ * remains sharp while dramatically cutting WebGL draw calls on mobile GPUs.
+ * Call AFTER triangle collider bake and AFTER consolidateDuplicateMeshesToInstances.
+ */
+export function mergeStaticMeshesByMaterial(
+  root: THREE.Object3D,
+  cellSize = 28
+): { mergedGroups: number; meshesEliminated: number } {
+  type MergeEntry = {
+    mesh: THREE.Mesh;
+    parent: THREE.Object3D;
+    vertexCount: number;
+  };
+
+  const buckets = new Map<string, MergeEntry[]>();
+  const geoRefCounts = new Map<string, number>();
+  const invRoot = new THREE.Matrix4();
+  const relMatrix = new THREE.Matrix4();
+  const worldCenter = new THREE.Vector3();
+
+  root.updateMatrixWorld(true);
+  invRoot.copy(root.matrixWorld).invert();
+
+  root.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (!mesh.isMesh || !mesh.geometry) return;
+    geoRefCounts.set(mesh.geometry.uuid, (geoRefCounts.get(mesh.geometry.uuid) ?? 0) + 1);
+    if (!mesh.visible || !mesh.parent) return;
+    if ((mesh as THREE.InstancedMesh).isInstancedMesh) return;
+    if ((mesh as THREE.SkinnedMesh).isSkinnedMesh) return;
+    if (Array.isArray(mesh.material) || !mesh.material) return;
+    if (mesh.userData?.targetId || mesh.userData?.skipStaticMerge) return;
+    if (mesh.morphTargetInfluences && mesh.morphTargetInfluences.length > 0) return;
+    if (isAnimatedOrBoneNode(mesh)) return;
+
+    const geo = mesh.geometry;
+    const posAttr = geo.attributes?.position;
+    if (!posAttr || posAttr.count === 0) return;
+
+    // Skip negative-scale mirrored meshes to guarantee triangle winding stays 100% identical
+    if (mesh.matrixWorld.determinant() < 0) return;
+
+    if (!geo.boundingSphere) geo.computeBoundingSphere();
+    if (!geo.boundingSphere) return;
+    worldCenter.copy(geo.boundingSphere.center).applyMatrix4(mesh.matrixWorld);
+
+    const cellX = Math.floor(worldCenter.x / cellSize);
+    const cellZ = Math.floor(worldCenter.z / cellSize);
+    const attrSig = Object.keys(geo.attributes).sort().join(',');
+    const mat = mesh.material;
+
+    const key = `${mat.uuid}|${mesh.castShadow ? 1 : 0}|${mesh.receiveShadow ? 1 : 0}|${mesh.renderOrder}|${attrSig}|${cellX}|${cellZ}`;
+    let list = buckets.get(key);
+    if (!list) {
+      list = [];
+      buckets.set(key, list);
+    }
+    list.push({ mesh, parent: mesh.parent, vertexCount: posAttr.count });
+  });
+
+  const MAX_VERTS_PER_BATCH = 60000;
+  let mergedGroups = 0;
+  let meshesEliminated = 0;
+
+  buckets.forEach((entries) => {
+    if (entries.length < 2) return;
+
+    // Chunk into batches <= MAX_VERTS_PER_BATCH so buffers stay mobile-friendly
+    let cursor = 0;
+    while (cursor < entries.length) {
+      const batch: MergeEntry[] = [];
+      let batchVerts = 0;
+      while (cursor < entries.length) {
+        const next = entries[cursor];
+        if (batch.length > 0 && batchVerts + next.vertexCount > MAX_VERTS_PER_BATCH) {
+          break;
+        }
+        batch.push(next);
+        batchVerts += next.vertexCount;
+        cursor += 1;
+      }
+
+      if (batch.length < 2) continue;
+
+      let anyIndexed = false;
+      let anyNonIndexed = false;
+      for (let i = 0; i < batch.length; i++) {
+        if (batch[i].mesh.geometry.index) anyIndexed = true;
+        else anyNonIndexed = true;
+      }
+      const forceNonIndexed = anyIndexed && anyNonIndexed;
+
+      const clones: THREE.BufferGeometry[] = [];
+      let prepFailed = false;
+      for (let i = 0; i < batch.length; i++) {
+        const srcMesh = batch[i].mesh;
+        try {
+          const g = forceNonIndexed
+            ? srcMesh.geometry.toNonIndexed()
+            : srcMesh.geometry.clone();
+          relMatrix.copy(srcMesh.matrixWorld).premultiply(invRoot);
+          g.applyMatrix4(relMatrix);
+          clones.push(g);
+        } catch {
+          prepFailed = true;
+          break;
+        }
+      }
+
+      if (prepFailed || clones.length < 2) {
+        for (let i = 0; i < clones.length; i++) clones[i].dispose();
+        continue;
+      }
+
+      const mergedGeo = mergeGeometries(clones, false);
+      for (let i = 0; i < clones.length; i++) clones[i].dispose();
+      if (!mergedGeo) continue;
+
+      mergedGeo.computeBoundingBox();
+      mergedGeo.computeBoundingSphere();
+
+      const first = batch[0].mesh;
+      const mergedMesh = new THREE.Mesh(mergedGeo, first.material);
+      mergedMesh.name = `StaticBatch_${mergedGroups}`;
+      mergedMesh.castShadow = first.castShadow;
+      mergedMesh.receiveShadow = first.receiveShadow;
+      mergedMesh.renderOrder = first.renderOrder;
+      mergedMesh.frustumCulled = true;
+      mergedMesh.userData.isEnvironment = true;
+      mergedMesh.userData.isStaticEnvironment = true;
+      mergedMesh.matrixAutoUpdate = false;
+      mergedMesh.updateMatrix();
+
+      root.add(mergedMesh);
+
+      for (let i = 0; i < batch.length; i++) {
+        const { mesh, parent } = batch[i];
+        parent.remove(mesh);
+        const geoUuid = mesh.geometry.uuid;
+        const remaining = (geoRefCounts.get(geoUuid) ?? 1) - 1;
+        geoRefCounts.set(geoUuid, remaining);
+        if (remaining <= 0) {
+          mesh.geometry.dispose();
+        }
+      }
+
+      mergedGroups += 1;
+      meshesEliminated += batch.length - 1;
+    }
+  });
+
+  return { mergedGroups, meshesEliminated };
 }

@@ -529,7 +529,7 @@ export class TacticalGrenadeSystem {
       this.bindViewmodelParts(this.vmFragVisual);
       this.bindViewmodelParts(this.vmSmokeVisual);
       this.lastBoundVmType = null;
-      return Promise.resolve();
+      return this.handRig.ensureHandsReady();
     }
     if (this.grenadeAssetsPromise) return this.grenadeAssetsPromise;
 
@@ -538,6 +538,7 @@ export class TacticalGrenadeSystem {
         this.loadGlbPromise(FRAG_GLB_LOCAL_URL, FRAG_GLB_GITHUB_URL),
         this.loadGlbPromise(S13_SMOKE_GLB_LOCAL_URL, S13_SMOKE_GLB_GITHUB_URL),
         this.loadGlbPromise(M18_SMOKE_GLB_LOCAL_URL, M18_SMOKE_GLB_GITHUB_URL),
+        this.handRig.ensureHandsReady(),
       ]);
 
       if (fragScene && !this.fragTemplate) {
@@ -788,42 +789,77 @@ export class TacticalGrenadeSystem {
   ): void {
     if (isSoftwareGl) return;
 
-    renderer.initTexture(this.softSmokeTexture);
-    this.viewmodelGroup.traverse((obj) => {
-      if ((obj as THREE.Mesh).isMesh) {
-        const mesh = obj as THREE.Mesh;
-        const mats = Array.isArray(mesh.material)
-          ? mesh.material
-          : [mesh.material];
-        for (let i = 0; i < mats.length; i++) {
-          const std = mats[i] as THREE.MeshStandardMaterial;
-          if (std?.map) renderer.initTexture(std.map);
-          if (std?.normalMap) renderer.initTexture(std.normalMap);
-          if (std?.roughnessMap) renderer.initTexture(std.roughnessMap);
-          if (std?.metalnessMap) renderer.initTexture(std.metalnessMap);
-          if (std?.emissiveMap) renderer.initTexture(std.emissiveMap);
+    const uploadSubtreeTextures = (rootObj: THREE.Object3D | null | undefined) => {
+      if (!rootObj) return;
+      rootObj.traverse((obj) => {
+        if ((obj as THREE.Mesh).isMesh) {
+          const mesh = obj as THREE.Mesh;
+          const mats = Array.isArray(mesh.material)
+            ? mesh.material
+            : [mesh.material];
+          for (let i = 0; i < mats.length; i++) {
+            const std = mats[i] as THREE.MeshStandardMaterial;
+            if (std?.map) renderer.initTexture(std.map);
+            if (std?.normalMap) renderer.initTexture(std.normalMap);
+            if (std?.roughnessMap) renderer.initTexture(std.roughnessMap);
+            if (std?.metalnessMap) renderer.initTexture(std.metalnessMap);
+            if (std?.emissiveMap) renderer.initTexture(std.emissiveMap);
+          }
         }
-      }
-    });
+      });
+    };
+
+    renderer.initTexture(this.softSmokeTexture);
+    uploadSubtreeTextures(this.viewmodelGroup);
+    uploadSubtreeTextures(this.fragTemplate);
+    uploadSubtreeTextures(this.s13SmokeTemplate);
+    uploadSubtreeTextures(this.m18SmokeTemplate);
+
+    // Place warmup VFX 5m directly in front of the camera so nothing is frustum-culled
+    this.camera.updateMatrixWorld(true);
+    this.camera.getWorldPosition(_simPos);
+    this.camera.getWorldDirection(_simVel);
+    const warmX = _simPos.x + _simVel.x * 5.0;
+    const warmY = _simPos.y + _simVel.y * 5.0;
+    const warmZ = _simPos.z + _simVel.z * 5.0;
 
     const prevVmVis = this.viewmodelGroup.visible;
     const prevSocketVis = this.handRig.grenadeSocket.visible;
     const prevFragVis = this.vmFragVisual.visible;
     const prevSmokeVis = this.vmSmokeVisual.visible;
     const prevTrajVis = this.trajectoryGroup.visible;
+    const prevTrajPos = this.trajectoryGroup.position.clone();
+    const prevLightIntensity = this.sharedExplosionLight.intensity;
+    const prevLightPos = this.sharedExplosionLight.position.clone();
 
     const exp0 = this.explosions[0];
     const cloud0 = this.smokeClouds[0];
     const prevExpVis = exp0 ? exp0.group.visible : false;
+    const prevExpPos = exp0 ? exp0.group.position.clone() : null;
     const prevCloudVis = cloud0 ? cloud0.group.visible : false;
+    const prevCloudPos = cloud0 ? cloud0.group.position.clone() : null;
+    const prevPuff0Opacity = cloud0?.puffs[0] ? cloud0.puffs[0].mat.opacity : 0;
+    const prevPuff0Scale = cloud0?.puffs[0] ? cloud0.puffs[0].sprite.scale.clone() : null;
+
+    // Temporarily mount world grenade templates so projectile PBR shaders compile in Loading 2
+    const worldProjWarmGroup = new THREE.Group();
+    worldProjWarmGroup.position.set(warmX, warmY, warmZ);
+    if (this.fragTemplate) worldProjWarmGroup.add(this.fragTemplate);
+    const smokeTemplate = this.m18SmokeTemplate || this.s13SmokeTemplate;
+    if (smokeTemplate) worldProjWarmGroup.add(smokeTemplate);
+    this.scene.add(worldProjWarmGroup);
 
     this.viewmodelGroup.visible = true;
     this.handRig.grenadeSocket.visible = true;
     this.vmFragVisual.visible = true;
     this.vmSmokeVisual.visible = true;
     this.trajectoryGroup.visible = true;
+    this.trajectoryGroup.position.set(warmX, warmY, warmZ);
+    this.sharedExplosionLight.position.set(warmX, warmY, warmZ);
+    this.sharedExplosionLight.intensity = 0.25;
 
     if (exp0) {
+      exp0.group.position.set(warmX, warmY, warmZ);
       exp0.group.visible = true;
       exp0.coreMesh.visible = true;
       exp0.fireballMesh.visible = true;
@@ -831,7 +867,12 @@ export class TacticalGrenadeSystem {
       exp0.scorchDecal.visible = true;
     }
     if (cloud0) {
+      cloud0.group.position.set(warmX, warmY, warmZ);
       cloud0.group.visible = true;
+      if (cloud0.puffs[0]) {
+        cloud0.puffs[0].mat.opacity = 0.08;
+        cloud0.puffs[0].sprite.scale.setScalar(2.0);
+      }
     }
 
     try {
@@ -841,13 +882,30 @@ export class TacticalGrenadeSystem {
       // Ignore software/context fallback
     }
 
+    // Detach world templates safely (do NOT dispose — they stay cached for cloning)
+    worldProjWarmGroup.clear();
+    this.scene.remove(worldProjWarmGroup);
+
     this.viewmodelGroup.visible = prevVmVis;
     this.handRig.grenadeSocket.visible = prevSocketVis;
     this.vmFragVisual.visible = prevFragVis;
     this.vmSmokeVisual.visible = prevSmokeVis;
     this.trajectoryGroup.visible = prevTrajVis;
-    if (exp0) exp0.group.visible = prevExpVis;
-    if (cloud0) cloud0.group.visible = prevCloudVis;
+    this.trajectoryGroup.position.copy(prevTrajPos);
+    this.sharedExplosionLight.intensity = prevLightIntensity;
+    this.sharedExplosionLight.position.copy(prevLightPos);
+    if (exp0 && prevExpPos) {
+      exp0.group.position.copy(prevExpPos);
+      exp0.group.visible = prevExpVis;
+    }
+    if (cloud0 && prevCloudPos) {
+      cloud0.group.position.copy(prevCloudPos);
+      cloud0.group.visible = prevCloudVis;
+      if (cloud0.puffs[0] && prevPuff0Scale) {
+        cloud0.puffs[0].mat.opacity = prevPuff0Opacity;
+        cloud0.puffs[0].sprite.scale.copy(prevPuff0Scale);
+      }
+    }
   }
 
   // =========================================================================

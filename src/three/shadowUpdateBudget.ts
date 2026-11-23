@@ -5,6 +5,7 @@
  */
 
 import * as THREE from 'three';
+import { isMobileGpuTarget } from './gpuBudget';
 
 export interface ShadowBudgetState {
   accumSec: number;
@@ -49,8 +50,9 @@ export function tickShadowBudget(
 ): void {
   if (!renderer.shadowMap.enabled) return;
 
-  const intervalSec = opts?.intervalSec ?? 0.14;
-  const moveThreshold = opts?.moveThreshold ?? 0.65;
+  const isMobile = isMobileGpuTarget();
+  const intervalSec = opts?.intervalSec ?? (isMobile ? 0.26 : 0.14);
+  const moveThreshold = opts?.moveThreshold ?? (isMobile ? 1.25 : 0.65);
   const moveThresholdSq = moveThreshold * moveThreshold;
 
   state.accumSec += dt;
@@ -100,8 +102,9 @@ export function followKeyLightShadowFrustum(
 ): void {
   if (!keyLight.castShadow) return;
 
-  const distance = opts?.distance ?? 56;
-  const radius = opts?.radius ?? 36;
+  const isMobile = isMobileGpuTarget();
+  const distance = opts?.distance ?? 52;
+  const radius = opts?.radius ?? (isMobile ? 30 : 36);
   const cam = keyLight.shadow.camera;
 
   if (opts?.sunDirection && opts.sunDirection.lengthSq() > 0.001) {

@@ -6,6 +6,7 @@
 
 import * as THREE from 'three';
 import { QualityPreset } from '../types/game';
+import { isMobileGpuTarget } from './gpuBudget';
 
 export interface DrsRuntimeState {
   accumTime: number;
@@ -63,18 +64,20 @@ export function updateDynamicResolutionGovernor(
     return;
   }
 
+  const isMobile = isMobileGpuTarget();
   const maxDpr = Math.min(
     typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
-    2.0
+    isMobile ? 1.6 : 2.0
   );
   const targetCeiling =
     hud.qualityPreset === 'COMPETITIVE_120'
-      ? Math.min(maxDpr, 1.45)
+      ? Math.min(maxDpr, isMobile ? 1.1 : 1.45)
       : hud.qualityPreset === 'BALANCED_60'
-        ? Math.min(maxDpr, 1.75)
-        : maxDpr;
-  const minScale =
-    maxDpr >= 1.5
+        ? Math.min(maxDpr, isMobile ? 1.32 : 1.75)
+        : Math.min(maxDpr, isMobile ? 1.55 : 2.0);
+  const minScale = isMobile
+    ? Math.max(0.85, maxDpr * 0.56)
+    : maxDpr >= 1.5
       ? Math.max(1.15, maxDpr * 0.65)
       : Math.max(0.88, maxDpr * 0.8);
 

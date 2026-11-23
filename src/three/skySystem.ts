@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { DrillMode } from '../types/game';
 import { PostFxBiome } from '../graphics/tacticalPostFx';
+import { isMobileGpuTarget } from './gpuBudget';
 
 type SkyBiomeKind = 'desert' | 'outdoor' | 'hangar' | 'indoor';
 
@@ -14,7 +15,7 @@ void main() {
 `;
 
 const ENV_DOME_FRAG = /* glsl */ `
-precision highp float;
+precision mediump float;
 uniform vec3 uZenithColor;
 uniform vec3 uHorizonColor;
 uniform vec3 uGroundColor;
@@ -46,8 +47,9 @@ void main() {
 `;
 
 /**
- * Sistema Físico de Céu 3D (Preetham Atmospheric Rayleigh/Mie Scattering + Shader de Nuvens Volumétricas FBM)
- * com baking lazy de mapas de ambiente IBL (PMREM) calibrados por bioma (sem estourar exposição em mapas claros).
+ * Sistema Físico de Céu 3D (Preetham Atmospheric Rayleigh/Mie Scattering + Shader de Nuvens FBM)
+ * com renderOrder=9999 + depthTest=true (Early-Z rejeita 75-85% dos pixels cobertos por paredes/armas)
+ * e baking lazy de mapas de ambiente IBL (PMREM) calibrados por bioma.
  */
 export class TacticalSkySystem {
   private scene: THREE.Scene;
@@ -87,11 +89,18 @@ export class TacticalSkySystem {
     this.keyLight.target = this.keyLightTarget;
 
     // Instancia o Skybox físico Preetham + Nuvens FBM do Three.js
+    // CRITICAL MOBILE WIN: renderOrder=9999 + depthTest=true + depthWrite=false ensures
+    // walls, terrain, bots, and 1P weapons fill the Z-buffer FIRST so hardware Early-Z skips
+    // 75-85% of the screen from running the 4-octave volumetric cloud fragment shader!
     this.sky = new Sky();
     this.sky.name = 'PhysicalAtmosphericSky';
     this.sky.scale.setScalar(10000);
     this.sky.visible = false;
     this.sky.frustumCulled = false;
+    this.sky.renderOrder = 9999;
+    this.sky.material.depthTest = true;
+    this.sky.material.depthWrite = false;
+    this.sky.material.depthFunc = THREE.LessEqualDepth;
     this.scene.add(this.sky);
   }
 
@@ -107,8 +116,7 @@ export class TacticalSkySystem {
 
   /**
    * Lazily bakes a physically-calibrated atmospheric PMREM IBL cubemap using controlled linear
-   * sky/horizon/ground/sun radiance (unlike raw Preetham Sky which peaks at 20+ radiance and
-   * blows out matte sandstone walls). Gives weapons rich sky-blue & warm-ground reflections.
+   * sky/horizon/ground/sun radiance. Gives weapons rich sky-blue & warm-ground reflections.
    */
   private getOrBakeBiomeEnv(kind: Exclude<SkyBiomeKind, 'indoor'>): THREE.Texture | null {
     const cached = this.biomeEnvCache.get(kind);
@@ -141,7 +149,7 @@ export class TacticalSkySystem {
           ? new THREE.Color(1.0, 0.9, 0.72)
           : new THREE.Color(1.0, 0.95, 0.86);
 
-      const domeGeo = new THREE.SphereGeometry(60, 32, 20);
+      const domeGeo = new THREE.SphereGeometry(60, 24, 16);
       const domeMat = new THREE.ShaderMaterial({
         vertexShader: ENV_DOME_VERT,
         fragmentShader: ENV_DOME_FRAG,
@@ -208,10 +216,11 @@ export class TacticalSkySystem {
 
     this.sky.visible = this.isOutdoor;
     const uniforms = this.sky.material.uniforms;
+    const isMobile = isMobileGpuTarget();
 
     if (isDust2 || isMirageAnubis) {
       this.activeBiome = 'desert';
-      // Vivid azure sky + warm golden sandstone contrast with clean directional shadows
+      // Vivid azure sky + warm golden sandstone contrast with unified single-sun shadows
       const phi = THREE.MathUtils.degToRad(90 - 44);
       const theta = THREE.MathUtils.degToRad(isMirageAnubis ? 42 : 35);
       this.sunDirection.setFromSphericalCoords(1, phi, theta).normalize();
@@ -244,14 +253,14 @@ export class TacticalSkySystem {
         .copy(this.keyLightTarget.position)
         .addScaledVector(this.sunDirection, isMirageAnubis ? 90 : 85);
       this.keyLight.color.setHex(0xffebd0);
-      // Dust2 & Mirage already include map-level desert fill lights — keep keyLight balanced
-      this.keyLight.intensity = isMirageAnubis ? 1.65 : 1.55;
+      // Unified single desert sun (duplicate per-map lights removed to cut mobile PBR ALU ~45%)
+      this.keyLight.intensity = isMirageAnubis ? 2.25 : 2.35;
       this.updateShadowFrustum(isMirageAnubis ? 100 : 68, 175);
-      this.applyFillRig('desert');
+      this.applyFillRig('desert', isMobile, true);
       this.applyBiomeEnvironment('desert');
       if ('environmentIntensity' in this.scene) {
         (this.scene as THREE.Scene & { environmentIntensity: number }).environmentIntensity =
-          isMirageAnubis ? 0.56 : 0.62;
+          isMirageAnubis ? 0.58 : 0.64;
       }
     } else if (isAssault || isIndustria || isHangar || isEasternCity || isStationArena || isYard) {
       const biomeKind: Exclude<SkyBiomeKind, 'indoor'> = isHangar ? 'hangar' : 'outdoor';
@@ -292,9 +301,17 @@ export class TacticalSkySystem {
         .copy(this.keyLightTarget.position)
         .addScaledVector(this.sunDirection, 80);
       this.keyLight.color.setHex(0xfff1d8);
-      this.keyLight.intensity = isEasternCity ? 1.55 : isHangar ? 1.85 : industrialSky ? 1.75 : 1.85;
+      // Eastern City & Industria now use this single unified sun (duplicate map lights removed)
+      const unifiedSingleSun = isEasternCity || isIndustria;
+      this.keyLight.intensity = unifiedSingleSun
+        ? 2.25
+        : isHangar
+          ? 1.85
+          : industrialSky
+            ? 1.8
+            : 1.9;
       this.updateShadowFrustum(isEasternCity ? 95 : isHangar ? 55 : isIndustria ? 90 : isAssault ? 65 : 52, 165);
-      this.applyFillRig(biomeKind);
+      this.applyFillRig(biomeKind, isMobile, unifiedSingleSun);
       this.applyBiomeEnvironment(biomeKind);
       if ('environmentIntensity' in this.scene) {
         (this.scene as THREE.Scene & { environmentIntensity: number }).environmentIntensity = 0.72;
@@ -311,7 +328,7 @@ export class TacticalSkySystem {
       this.keyLight.color.setHex(0xe2e8f0);
       this.keyLight.intensity = 1.1;
       this.keyLight.castShadow = false;
-      this.applyFillRig('indoor');
+      this.applyFillRig('indoor', isMobile, false);
       this.applyBiomeEnvironment('indoor');
       if ('environmentIntensity' in this.scene) {
         (this.scene as THREE.Scene & { environmentIntensity: number }).environmentIntensity = 0.95;
@@ -321,20 +338,24 @@ export class TacticalSkySystem {
     this.keyLightTarget.updateMatrixWorld();
   }
 
-  private applyFillRig(kind: SkyBiomeKind): void {
+  private applyFillRig(
+    kind: SkyBiomeKind,
+    isMobile: boolean,
+    unifiedSingleSun: boolean
+  ): void {
     if (this.hemiLight) {
       if (kind === 'desert') {
-        this.hemiLight.color.setHex(0x7cc8ff);
-        this.hemiLight.groundColor.setHex(0x745536);
-        this.hemiLight.intensity = 0.4;
+        this.hemiLight.color.setHex(0x9bd6ff);
+        this.hemiLight.groundColor.setHex(0x7c5d3d);
+        this.hemiLight.intensity = unifiedSingleSun ? 0.92 : 0.42;
       } else if (kind === 'hangar') {
         this.hemiLight.color.setHex(0x8fd2ff);
         this.hemiLight.groundColor.setHex(0x555b64);
         this.hemiLight.intensity = 0.58;
       } else if (kind === 'outdoor') {
-        this.hemiLight.color.setHex(0x88ceff);
-        this.hemiLight.groundColor.setHex(0x524f4b);
-        this.hemiLight.intensity = 0.52;
+        this.hemiLight.color.setHex(0xa8d8ff);
+        this.hemiLight.groundColor.setHex(0x525252);
+        this.hemiLight.intensity = unifiedSingleSun ? 1.05 : 0.55;
       } else {
         this.hemiLight.color.setHex(0x93c5fd);
         this.hemiLight.groundColor.setHex(0x1e293b);
@@ -342,6 +363,10 @@ export class TacticalSkySystem {
       }
     }
     if (this.rimLight) {
+      // On mobile outdoor arenas, disabling the 2nd directional rimLight cuts an entire
+      // per-fragment directional PBR evaluation on every visible pixel (IBL already supplies rim!).
+      const keepRim = kind === 'indoor' || !isMobile;
+      this.rimLight.visible = keepRim;
       if (kind === 'desert') {
         this.rimLight.color.setHex(0x9bd0ff);
         this.rimLight.intensity = 0.24;

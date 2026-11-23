@@ -1,6 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import {
+  buildTacticalStudioEnvTexture,
+  getContactShadowTexture,
+  upgradeOperatorForShowcase,
+} from '../three/operatorPbrEnhancer';
+import { isMobileGpuTarget } from '../three/gpuBudget';
 import {
   CharacterAvatarKind,
   cloneVanguardCharacterAvatar,
@@ -163,59 +168,62 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
     };
     renderer.domElement.addEventListener('webglcontextlost', onContextLost, false);
 
-    const pmremGenerator = new THREE.PMREMGenerator(renderer);
-    const envTex = pmremGenerator.fromScene(new RoomEnvironment(), 0.028).texture;
+    const envTex = buildTacticalStudioEnvTexture(renderer, isBlackthorn);
     scene.environment = envTex;
-    scene.environmentIntensity = 1.15;
-    pmremGenerator.dispose();
+    scene.environmentIntensity = 1.25;
 
-    // Premium studio: white key + soft colored rims (don't crush albedo with neon).
+    // Premium tactical studio: warm-white key + cool hemisphere fill + crisp team rim separation.
     const hemiLight = new THREE.HemisphereLight(
       isBlackthorn ? 0xfff1f2 : 0xf0f9ff,
       isBlackthorn ? 0x1c0a0d : 0x0b1220,
-      0.95
+      0.88
     );
     scene.add(hemiLight);
 
-    const keyLight = new THREE.DirectionalLight(0xfffaf5, 2.15);
-    keyLight.position.set(2.1, 3.4, 2.6);
+    const isMobileGpu = isMobileGpuTarget();
+    const keyLight = new THREE.DirectionalLight(0xfff9f0, 2.35);
+    keyLight.position.set(1.9, 3.35, 2.45);
     keyLight.castShadow = !isSoftwareGl;
     if (keyLight.castShadow) {
-      keyLight.shadow.mapSize.set(1024, 1024);
-      keyLight.shadow.camera.near = 0.5;
-      keyLight.shadow.camera.far = 12;
-      keyLight.shadow.camera.left = -2.5;
-      keyLight.shadow.camera.right = 2.5;
-      keyLight.shadow.camera.top = 3.2;
-      keyLight.shadow.camera.bottom = -0.4;
-      keyLight.shadow.bias = -0.00025;
+      const shadowRes = isMobileGpu ? 1024 : 2048;
+      keyLight.shadow.mapSize.set(shadowRes, shadowRes);
+      // Tight frustum around operator silhouette -> 3x sharper self-shadows on face, helmet, and chest
+      keyLight.shadow.camera.near = 0.8;
+      keyLight.shadow.camera.far = 8.5;
+      keyLight.shadow.camera.left = -1.35;
+      keyLight.shadow.camera.right = 1.35;
+      keyLight.shadow.camera.top = 2.35;
+      keyLight.shadow.camera.bottom = -0.15;
+      keyLight.shadow.bias = -0.0002;
+      keyLight.shadow.normalBias = 0.024;
+      keyLight.shadow.radius = 2.5;
     }
     scene.add(keyLight);
 
     const fillLight = new THREE.DirectionalLight(
       isBlackthorn ? 0xfecdd3 : 0xbae6fd,
-      0.55
+      0.62
     );
     fillLight.position.set(-1.6, 1.8, 2.4);
     scene.add(fillLight);
 
     const primaryRimLight = new THREE.PointLight(
       isBlackthorn ? 0xfb7185 : 0x38bdf8,
-      isBlackthorn ? 2.4 : 2.1,
+      isBlackthorn ? 2.6 : 2.35,
       8.5
     );
-    primaryRimLight.position.set(-1.5, 1.55, -1.15);
+    primaryRimLight.position.set(-1.5, 1.62, -1.15);
     scene.add(primaryRimLight);
 
     const secondaryRimLight = new THREE.PointLight(
       isBlackthorn ? 0xf87171 : 0x818cf8,
-      isBlackthorn ? 1.6 : 1.45,
+      isBlackthorn ? 1.75 : 1.55,
       8.0
     );
-    secondaryRimLight.position.set(1.45, 1.2, -1.2);
+    secondaryRimLight.position.set(1.45, 1.25, -1.2);
     scene.add(secondaryRimLight);
 
-    const frontBottomFill = new THREE.PointLight(0xfff7ed, 0.85, 5.5);
+    const frontBottomFill = new THREE.PointLight(0xfff7ed, 0.78, 5.5);
     frontBottomFill.position.set(0, 0.35, 2.15);
     scene.add(frontBottomFill);
 
@@ -259,6 +267,20 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
     innerDisc.position.y = -0.004;
     pedestalGroup.add(innerDisc);
 
+    // Soft radial contact shadow directly beneath operator boots for physical grounding
+    const contactShadowGeo = new THREE.PlaneGeometry(0.86, 0.86);
+    contactShadowGeo.rotateX(-Math.PI / 2);
+    const contactShadowMat = new THREE.MeshBasicMaterial({
+      map: getContactShadowTexture(),
+      transparent: true,
+      opacity: 0.62,
+      depthWrite: false,
+    });
+    const contactShadowMesh = new THREE.Mesh(contactShadowGeo, contactShadowMat);
+    contactShadowMesh.position.y = 0.002;
+    contactShadowMesh.renderOrder = 1;
+    pedestalGroup.add(contactShadowMesh);
+
     // Grupo raiz do Operador .glb
     const BASE_YAW = 0.22;
     const operatorPivot = new THREE.Group();
@@ -267,6 +289,7 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
     scene.add(operatorPivot);
 
     let currentModelRoot: THREE.Object3D | null = null;
+    let showcaseOwnedMats: THREE.Material[] = [];
     let currentAvatarKind: CharacterAvatarKind | null = null;
     let currentMountedOpId: string | null = null;
     let mountedWeaponId: WeaponId | null = null;
@@ -279,6 +302,14 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
     let currentYaw = BASE_YAW;
     let isDragging = false;
     let prevPointerX = 0;
+    const maxAnisotropy = isSoftwareGl ? 4 : renderer.capabilities.getMaxAnisotropy();
+
+    const disposeShowcaseOwnedMats = () => {
+      for (let i = 0; i < showcaseOwnedMats.length; i++) {
+        showcaseOwnedMats[i].dispose();
+      }
+      showcaseOwnedMats = [];
+    };
 
     void preloadSingleBotWeaponGlb(weaponRef.current, skinRef.current);
 
@@ -302,6 +333,7 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
         mixer?.stopAllAction();
         operatorPivot.remove(currentModelRoot);
       }
+      disposeShowcaseOwnedMats();
 
       const { modelRoot, clips, avatarKind } = cloned;
       const isCustomFemale = Boolean(opDef.customModelConfig);
@@ -328,72 +360,18 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
             b.matrixAutoUpdate = true;
           });
         }
-
-        if ((child as THREE.Mesh).isMesh) {
-          const m = child as THREE.Mesh;
-          m.castShadow = !isSoftwareGl;
-          m.receiveShadow = false;
-          m.frustumCulled = false;
-          if (isCustomFemale) {
-            const mats = Array.isArray(m.material) ? m.material : [m.material];
-            for (let mi = 0; mi < mats.length; mi++) {
-              const std = mats[mi] as THREE.MeshStandardMaterial;
-              if (!std?.isMeshStandardMaterial) continue;
-              if (std.map) {
-                std.map.anisotropy = 16;
-                std.map.colorSpace = THREE.SRGBColorSpace;
-                std.map.needsUpdate = true;
-              }
-              std.needsUpdate = true;
-            }
-            return;
-          }
-          const mats = Array.isArray(m.material) ? m.material : [m.material];
-          for (let mi = 0; mi < mats.length; mi++) {
-            const std = mats[mi] as THREE.MeshStandardMaterial;
-            if (!std?.isMeshStandardMaterial) continue;
-            // Keep 2K albedo readable — only a light team wash on DEFAULT pack.
-            if (avatarKind === 'DEFAULT') {
-              const customMat = std.clone();
-              customMat.color.setHex(isBlackthorn ? 0xf3e8e8 : 0xe8eef6);
-              customMat.roughness = Math.min(0.72, Math.max(0.28, customMat.roughness ?? 0.5));
-              customMat.metalness = Math.min(0.45, Math.max(0.08, customMat.metalness ?? 0.2));
-              customMat.envMapIntensity = 1.15;
-              if (customMat.map) {
-                customMat.map.anisotropy = 16;
-                customMat.map.colorSpace = THREE.SRGBColorSpace;
-                customMat.map.needsUpdate = true;
-              }
-              if (customMat.normalMap) {
-                customMat.normalMap.anisotropy = 16;
-                customMat.normalMap.needsUpdate = true;
-              }
-              customMat.needsUpdate = true;
-              mats[mi] = customMat;
-            } else {
-              std.color?.setHex(0xffffff);
-              std.envMapIntensity = Math.max(std.envMapIntensity || 0, 1.25);
-              std.roughness = Math.min(0.78, Math.max(0.32, std.roughness ?? 0.55));
-              std.metalness = Math.min(0.35, Math.max(0.05, std.metalness ?? 0.12));
-              std.side = THREE.FrontSide;
-              if (std.map) {
-                std.map.anisotropy = 16;
-                std.map.colorSpace = THREE.SRGBColorSpace;
-                std.map.needsUpdate = true;
-              }
-              if (std.normalMap) {
-                std.normalMap.anisotropy = 16;
-                std.normalMap.needsUpdate = true;
-              }
-              std.needsUpdate = true;
-            }
-          }
-          if (Array.isArray(m.material)) m.material = mats;
-          else m.material = mats[0];
-        }
       });
 
+      // Apply operator suit palette first, then upgrade showcase meshes to MeshPhysicalMaterial
+      // with self-shadowing, cloth sheen, eye/visor clearcoat, and tactical Fresnel rim.
       applyOperatorSuitToCharacter3D(modelRoot, opDef.id);
+      showcaseOwnedMats = upgradeOperatorForShowcase(modelRoot, {
+        isCustomFemale,
+        avatarKind,
+        isBlackthorn,
+        isSoftwareGl,
+        maxAnisotropy,
+      });
 
       // Plant feet on pedestal (Tripo medic / UE female bind can leave a tiny Y offset).
       modelRoot.updateMatrixWorld(true);
@@ -427,6 +405,9 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
 
       operatorPivot.updateMatrixWorld(true);
       alignWeaponPropToMixamoHands(weaponProp, operatorPivot, rHandBone, lHandBone);
+      if (!isSoftwareGl) {
+        renderer.compile(scene, camera);
+      }
       setIsLoaded(true);
     };
 
@@ -627,6 +608,7 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
       swapSelectionRef.current = null;
       nudgeYawRef.current = null;
       cancelAnimationFrame(frameId);
+      disposeShowcaseOwnedMats();
       domElem.removeEventListener('webglcontextlost', onContextLost);
       domElem.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointermove', onPointerMove);
@@ -640,6 +622,8 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
       ringMat.dispose();
       innerDiscGeo.dispose();
       innerDiscMat.dispose();
+      contactShadowGeo.dispose();
+      contactShadowMat.dispose();
       disposeSecondaryWebGLRenderer(renderer);
     };
   }, [team, framing, contextEpoch]);

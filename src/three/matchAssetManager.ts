@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { soundEngine } from '../audio/soundEngine';
-import { DrillMode } from '../types/game';
+import { DrillMode, WeaponId } from '../types/game';
+import { BallisticsFXPool } from './ballisticsPool';
+import type { TacticalWeaponRig } from './weaponBuilder';
 import {
   disposeAssaultMapGeometry,
   loadAssaultMapGeometry,
@@ -43,6 +45,7 @@ import {
 import {
   consolidateDuplicateMeshesToInstances,
   markGroupStatic,
+  mergeStaticMeshesByMaterial,
   optimizeSceneGraph,
   protectAnimatedSubtrees,
 } from './scenePerfOptimizer';
@@ -53,7 +56,8 @@ import {
 } from './standerTiroBuilder';
 import { YardBotEntity } from './yardPropsBuilder';
 import { arenaAssetMode, isMapSpawnHarness } from './mapModeUtils';
-import { applyMobileTextureBudget } from './gpuBudget';
+import { applyMobileTextureBudget, warmSubtreeOnGpu } from './gpuBudget';
+import { mobileHardware } from '../mobile/nativeHardware';
 
 /** Block match start when GLB bake produced an empty / unready floor (→ white void). */
 function assertGlbFloorReady(label: string, bundle: Dust2LevelBundle): void {
@@ -86,6 +90,9 @@ export interface MatchArenaPrepareParams {
   stationArenaLevelData: Dust2LevelBundle;
   skySystem: TacticalSkySystem;
   grenadeSystem: TacticalGrenadeSystem;
+  weaponRig?: TacticalWeaponRig;
+  ballisticsPool?: BallisticsFXPool;
+  loadoutWeaponIds?: WeaponId[];
   onProgress: (pct: number, statusLabel: string) => void;
 }
 
@@ -118,6 +125,9 @@ export async function prepareMatchArena(
     stationArenaLevelData,
     skySystem,
     grenadeSystem,
+    weaponRig,
+    ballisticsPool,
+    loadoutWeaponIds,
     onProgress,
   } = params;
 
@@ -134,7 +144,16 @@ export async function prepareMatchArena(
   const isFreeRange = assetMode === 'FREE_RANGE';
 
   enableMapAssetCache();
-  onProgress(3, 'INICIALIZANDO CACHE DE ARENA + DECODER DRACO...');
+  // Signal Android 13+ GameManager that heavy asset decompression/loading is active (boosts CPU clocks)
+  mobileHardware.setAndroidGameState(true, 'GAMEPLAY');
+  // CoD-style parallel kickoff: start downloading/decoding loadout 1P weapons, grenades & SFX
+  // concurrently while the map GLB streams in so first swap / first throw has zero hitch.
+  if (weaponRig && loadoutWeaponIds && loadoutWeaponIds.length > 0) {
+    weaponRig.prewarmLoadout(loadoutWeaponIds);
+  }
+  const parallelGrenadeAssets = grenadeSystem.ensureGrenadeAssetsReady();
+  const parallelGrenadeAudio = soundEngine.prewarmGrenadeAudio();
+  onProgress(3, 'INICIALIZANDO CACHE DE ARENA, LOADOUT E DECODER DRACO...');
   // CDN Draco warm can hang forever on Android egress — never block prepare.
   {
     let prefetchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -478,6 +497,7 @@ export async function prepareMatchArena(
 
   if (mapOnlyGroup) {
     consolidateDuplicateMeshesToInstances(mapOnlyGroup, 3);
+    mergeStaticMeshesByMaterial(mapOnlyGroup, 28);
     markGroupStatic(mapOnlyGroup);
     optimizeSceneGraph(mapOnlyGroup, {
       sharePlainMaterials: true,
@@ -528,23 +548,23 @@ export async function prepareMatchArena(
     }
   }
 
-  // Etapa 3: optional warmups — MUST NOT block match forever.
-  // Android WebView often stalls at 92% on compileAsync for Eastern/Hangar
-  // (~minutes, no progress). Floor/collider is already proven above.
-  reportProgress(90, 'PRÉ-DECODIFICANDO ÁUDIOS TÁTICOS...');
-  await withTimeout(soundEngine.prewarmGrenadeAudio(), 8000);
+  // Etapa 3: CoD-grade combat asset & shader warmup — bounded timeouts so Loading 2 never hangs.
+  reportProgress(90, 'PRÉ-DECODIFICANDO ÁUDIOS TÁTICOS E GRANADAS...');
+  await withTimeout(parallelGrenadeAudio, 8000);
 
-  reportProgress(92, 'AQUECENDO GRANADAS 3D (LIMITE 12s — NÃO BLOQUEIA)...');
-  const grenadeWarm = await withTimeout(
-    grenadeSystem.ensureGrenadeAssetsReady(),
-    12000
-  );
+  reportProgress(92, 'AQUECENDO GRANADAS 3D, BRAÇOS E LOADOUT...');
+  const grenadeWarm = await withTimeout(parallelGrenadeAssets, 12000);
   if (grenadeWarm === 'timeout') {
     reportProgress(93, 'GRANADAS AINDA EM BACKGROUND — SEGUINDO (FLOOR PRONTO)...');
   }
 
   if (!isSoftwareGl) {
-    reportProgress(94, 'COMPILANDO SHADERS GPU (LIMITE 15s)...');
+    // Upload 1P hero firearm & optic textures to GPU VRAM at full hero quality (2048px / 8x aniso)
+    if (weaponRig) {
+      warmSubtreeOnGpu(weaponRig.root, scene, camera, renderer, isSoftwareGl, 2048, true);
+    }
+
+    reportProgress(94, 'COMPILANDO SHADERS GPU (MAPA, ARMAS E EFEITOS)...');
     try {
       const compileWork =
         'compileAsync' in renderer &&
@@ -553,33 +573,37 @@ export async function prepareMatchArena(
           : Promise.resolve().then(() => {
               renderer.compile(scene, camera);
             });
-      const compileResult = await withTimeout(
+      await withTimeout(
         Promise.resolve(compileWork).then(() => undefined),
-        15000
+        12000
       );
-      if (compileResult === 'timeout') {
-        reportProgress(
-          97,
-          'COMPILE TIMEOUT — ENTRANDO NA ARENA (COLISOR JÁ PRONTO)...'
-        );
-      } else {
-        reportProgress(
-          96,
-          'AQUECENDO PIPELINE DE SOMBRAS, VIEWMODEL E GRANADAS NA GPU...'
-        );
-        grenadeSystem.prewarmShadersAndTextures(renderer, isSoftwareGl);
-        renderer.render(scene, camera);
-      }
     } catch {
       try {
         renderer.compile(scene, camera);
       } catch {
         /* optional warm */
       }
-      reportProgress(97, 'COMPILE FALHOU — SEGUINDO COM FLOOR PRONTO...');
     }
+
+    // ALWAYS warm grenades, ballistics (casings/sparks/decals/tracers), and muzzle flash/light
+    // even if compileAsync timed out — eliminates first-throw & first-shot shader stutter.
+    reportProgress(
+      96,
+      'AQUECENDO SHADERS DE GRANADAS, DISPARO E BALÍSTICA NA GPU...'
+    );
+    const prevMuzzleVis = weaponRig?.muzzleFlashGroup?.visible ?? false;
+    const prevMuzzleIntensity = weaponRig?.muzzleLight?.intensity ?? 0;
+    if (weaponRig?.muzzleFlashGroup) weaponRig.muzzleFlashGroup.visible = true;
+    if (weaponRig?.muzzleLight) weaponRig.muzzleLight.intensity = 0.2;
+
+    grenadeSystem.prewarmShadersAndTextures(renderer, isSoftwareGl);
+    ballisticsPool?.prewarm(renderer, scene, camera, isSoftwareGl);
+
+    if (weaponRig?.muzzleFlashGroup) weaponRig.muzzleFlashGroup.visible = prevMuzzleVis;
+    if (weaponRig?.muzzleLight) weaponRig.muzzleLight.intensity = prevMuzzleIntensity;
   }
 
+  mobileHardware.setAndroidGameState(false, 'GAMEPLAY');
   reportProgress(
     100,
     'ARENA PRONTA — LIBERANDO CÂMERA E CONTROLES DE COMBATE!'
@@ -630,4 +654,7 @@ export function cleanupMatchArenaAssets(
 
   // 4. Limpa renderLists internas do WebGLRenderer para liberar referências de memória na GPU
   renderer.renderLists.dispose();
+
+  // 5. Avisa Android GameManager que voltamos ao Lobby (permite resfriamento térmico entre partidas)
+  mobileHardware.setAndroidGameState(false, 'MENU');
 }

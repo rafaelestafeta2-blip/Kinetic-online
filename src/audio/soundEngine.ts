@@ -16,6 +16,7 @@ import {
   preloadSingleBank,
   SingleClipBank,
 } from './kinemationAudioBank';
+import { preloadNativeSfxUrl } from './nativeAudioBridge';
 
 export const DESERT_EAGLE_WAV_LOCAL_URL =
   '/sounds/151071__vabadus__desert-eagle.mp3';
@@ -1287,6 +1288,12 @@ class TacticalSoundEngine {
    */
   public async prewarmGrenadeAudio(): Promise<void> {
     this.init();
+    preloadNativeSfxUrl(GRENADE_PIN_PULL_LOCAL_URL);
+    preloadNativeSfxUrl(GRENADE_THROW_LOCAL_URL);
+    preloadNativeSfxUrl(GRENADE_EXPLOSION_LOCAL_URL);
+    preloadNativeSfxUrl(SMOKE_GRENADE_GAS_LOCAL_URL);
+    preloadNativeSfxUrl(SMOKE_GRENADE_VOICE_LOCAL_URL);
+    preloadNativeSfxUrl(FRAG_GRENADE_VOICE_LOCAL_URL);
     if (this.ctx) {
       this.tryDecodeGrenadeSamples(this.ctx);
     }

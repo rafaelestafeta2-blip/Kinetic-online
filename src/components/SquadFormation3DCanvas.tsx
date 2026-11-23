@@ -23,6 +23,7 @@ import {
   cloneFemaleOperatorAvatarSync,
   preloadFemaleOperatorAvatar,
 } from '../three/femaleOperatorModelLoader';
+import { upgradeOperatorForShowcase } from '../three/operatorPbrEnhancer';
 import { WeaponId } from '../types/game';
 import { WarfaceClassId } from './WarfaceClassIcons';
 
@@ -131,6 +132,7 @@ interface MountedSquadSlotRuntime {
   opId: string;
   pivot: THREE.Group;
   modelRoot: THREE.Object3D;
+  ownedMats: THREE.Material[];
   weaponProp: THREE.Group;
   rHandBone: THREE.Object3D | null;
   lHandBone: THREE.Object3D | null;
@@ -247,7 +249,9 @@ export const SquadFormation3DCanvas: React.FC<SquadFormation3DCanvasProps> = ({
       keyLight.shadow.camera.right = 3.2;
       keyLight.shadow.camera.top = 3.2;
       keyLight.shadow.camera.bottom = -0.5;
-      keyLight.shadow.bias = -0.0003;
+      keyLight.shadow.bias = -0.00025;
+      keyLight.shadow.normalBias = 0.024;
+      keyLight.shadow.radius = 2.2;
     }
     scene.add(keyLight);
 
@@ -299,6 +303,9 @@ export const SquadFormation3DCanvas: React.FC<SquadFormation3DCanvasProps> = ({
 
       if (existing) {
         existing.mixer.stopAllAction();
+        for (let mi = 0; mi < existing.ownedMats.length; mi++) {
+          existing.ownedMats[mi].dispose();
+        }
         formationRoot.remove(existing.pivot);
         activeRuntimes.delete(slotIdx);
       }
@@ -345,16 +352,16 @@ export const SquadFormation3DCanvas: React.FC<SquadFormation3DCanvasProps> = ({
             b.matrixAutoUpdate = true;
           });
         }
-
-        if ((child as THREE.Mesh).isMesh) {
-          const m = child as THREE.Mesh;
-          m.castShadow = !isSoftwareGl;
-          m.receiveShadow = false;
-          m.frustumCulled = false;
-        }
       });
 
       applyOperatorSuitToCharacter3D(modelRoot, opDef.id);
+      const ownedMats = upgradeOperatorForShowcase(modelRoot, {
+        isCustomFemale: Boolean(opDef.customModelConfig),
+        avatarKind,
+        isBlackthorn: false,
+        isSoftwareGl,
+        maxAnisotropy: isSoftwareGl ? 4 : Math.min(8, renderer.capabilities.getMaxAnisotropy()),
+      });
 
       modelRoot.updateMatrixWorld(true);
       const footBox = new THREE.Box3().setFromObject(modelRoot);
@@ -407,6 +414,7 @@ export const SquadFormation3DCanvas: React.FC<SquadFormation3DCanvasProps> = ({
         opId: opDef.id,
         pivot,
         modelRoot,
+        ownedMats,
         weaponProp,
         rHandBone,
         lHandBone,
@@ -540,6 +548,9 @@ export const SquadFormation3DCanvas: React.FC<SquadFormation3DCanvasProps> = ({
       resizeObserver?.disconnect();
       for (const rt of activeRuntimes.values()) {
         rt.mixer.stopAllAction();
+        for (let mi = 0; mi < rt.ownedMats.length; mi++) {
+          rt.ownedMats[mi].dispose();
+        }
       }
       activeRuntimes.clear();
       envTex.dispose();

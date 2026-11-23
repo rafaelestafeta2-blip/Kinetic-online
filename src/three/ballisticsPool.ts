@@ -224,17 +224,73 @@ export class BallisticsFXPool {
     isSoftwareGl = false
   ): void {
     if (isSoftwareGl) return;
-    const prevShell = this.shells[0]?.mesh.visible ?? false;
-    const prevTracer = this.tracers[0]?.line.visible ?? false;
-    if (this.shells[0]) this.shells[0].mesh.visible = true;
-    if (this.tracers[0]) this.tracers[0].line.visible = true;
+
+    camera.updateMatrixWorld(true);
+    camera.getWorldPosition(_jitterVec);
+    camera.getWorldDirection(_sparkTarget);
+    const warmX = _jitterVec.x + _sparkTarget.x * 4.0;
+    const warmY = _jitterVec.y + _sparkTarget.y * 4.0;
+    const warmZ = _jitterVec.z + _sparkTarget.z * 4.0;
+
+    const shell0 = this.shells[0];
+    const mag0 = this.droppedMags[0];
+    const tracer0 = this.tracers[0];
+
+    const prevShellVis = shell0?.mesh.visible ?? false;
+    const prevShellPos = shell0 ? shell0.mesh.position.clone() : null;
+    const prevMagVis = mag0?.mesh.visible ?? false;
+    const prevMagPos = mag0 ? mag0.mesh.position.clone() : null;
+    const prevTracerVis = tracer0?.line.visible ?? false;
+    const prevTracerPos = tracer0 ? tracer0.line.position.clone() : null;
+
+    if (shell0) {
+      shell0.mesh.position.set(warmX, warmY, warmZ);
+      shell0.mesh.visible = true;
+    }
+    if (mag0) {
+      mag0.mesh.position.set(warmX, warmY, warmZ);
+      mag0.mesh.visible = true;
+    }
+    if (tracer0) {
+      tracer0.line.position.set(warmX, warmY, warmZ);
+      tracer0.line.visible = true;
+    }
+
+    // Temporarily reveal 1 spark instance + 1 bullet decal instance so InstancedMesh shaders compile
+    _dummy.position.set(warmX, warmY, warmZ);
+    _dummy.rotation.set(0, 0, 0);
+    _dummy.scale.set(1, 1, 1);
+    _dummy.updateMatrix();
+    this.sparkMesh.setMatrixAt(0, _dummy.matrix);
+    this.sparkMesh.instanceMatrix.needsUpdate = true;
+    this.decalMesh.setMatrixAt(0, _dummy.matrix);
+    this.decalMesh.instanceMatrix.needsUpdate = true;
+
     try {
       renderer.compile(scene, camera);
+      renderer.render(scene, camera);
     } catch {
       // non-fatal
     }
-    if (this.shells[0]) this.shells[0].mesh.visible = prevShell;
-    if (this.tracers[0]) this.tracers[0].line.visible = prevTracer;
+
+    if (shell0 && prevShellPos) {
+      shell0.mesh.position.copy(prevShellPos);
+      shell0.mesh.visible = prevShellVis;
+    }
+    if (mag0 && prevMagPos) {
+      mag0.mesh.position.copy(prevMagPos);
+      mag0.mesh.visible = prevMagVis;
+    }
+    if (tracer0 && prevTracerPos) {
+      tracer0.line.position.copy(prevTracerPos);
+      tracer0.line.visible = prevTracerVis;
+    }
+    if (!this.sparks[0]?.active) {
+      this.sparkMesh.setMatrixAt(0, _zeroMatrix);
+      this.sparkMesh.instanceMatrix.needsUpdate = true;
+    }
+    this.decalMesh.setMatrixAt(0, _zeroMatrix);
+    this.decalMesh.instanceMatrix.needsUpdate = true;
   }
 
   public spawnBrassCasing(

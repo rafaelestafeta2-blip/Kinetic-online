@@ -67,7 +67,7 @@ import {
   getOpticAdsTransform,
   TacticalWeaponRig,
 } from './weaponBuilder';
-import { warmSubtreeOnGpu } from './gpuBudget';
+import { isMobileGpuTarget, warmSubtreeOnGpu } from './gpuBudget';
 import { runtimeTelemetry } from '../telemetry/runtimeTelemetry';
 import { AssetPreloader } from './preloader';
 import { buildYardLevel } from './yardLevelBuilder';
@@ -626,13 +626,14 @@ export class TacticalFPSEngine {
     this.renderer = new THREE.WebGLRenderer({
       antialias: !this.isSoftwareGl,
       powerPreference: 'high-performance',
+      stencil: false,
     });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 0.92;
     this.currentRenderScale = this.isSoftwareGl
       ? 1.0
-      : Math.min(window.devicePixelRatio || 1, 1.65);
+      : Math.min(window.devicePixelRatio || 1, isMobileGpuTarget() ? 1.32 : 1.65);
     this.renderer.setPixelRatio(this.currentRenderScale);
     this.renderer.setSize(container.clientWidth, container.clientHeight);
     attachCompressedTextureSupport(this.renderer);
@@ -923,6 +924,12 @@ export class TacticalFPSEngine {
   ): Promise<void> {
     this.stopLoop();
     const loadStartMs = performance.now();
+    const loadoutMod = getClassCombatModifiers();
+    const loadoutWeaponIds: WeaponId[] = [
+      loadoutMod.primaryWeapon || this.primaryWeapon || 'M4_CARBINE',
+      loadoutMod.secondaryWeapon || this.secondaryWeapon || 'P50_PISTOL',
+      'KNIFE_TACTICAL',
+    ];
     await prepareMatchArena({
       mode,
       renderer: this.renderer,
@@ -941,6 +948,9 @@ export class TacticalFPSEngine {
       stationArenaLevelData: this.stationArenaLevelData,
       skySystem: this.skySystem,
       grenadeSystem: this.grenadeSystem,
+      weaponRig: this.weaponRig,
+      ballisticsPool: this.fxPool,
+      loadoutWeaponIds,
       onProgress,
     });
     runtimeTelemetry.recordMatchLoad(mode, performance.now() - loadStartMs);
@@ -5384,7 +5394,7 @@ export class TacticalFPSEngine {
       !this.playerDeathTp?.isActive();
     if (!isPlayerAliveForOutline) {
       this.clearEnemyAimOutline();
-    } else if (this.enemyOutlineTimer >= 0.035) {
+    } else if (this.enemyOutlineTimer >= 0.08) {
       this.enemyOutlineTimer = 0;
       this.camera.getWorldPosition(_rayOrigin);
       this.camera.getWorldDirection(_rayDir);

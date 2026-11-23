@@ -1,4 +1,9 @@
 import { GameSettings, loadGameSettings } from '../graphics/graphicsSettings';
+import {
+  initNativeAudioBridge,
+  setNativeAudioShellshockActive,
+  syncNativeAudioVolumes,
+} from './nativeAudioBridge';
 
 // Intercepta e gerencia o áudio sem modificar soundEngine.ts
 let masterGainNode: GainNode | null = null;
@@ -93,6 +98,12 @@ function interceptMediaElements(): void {
 
 export function initAudioSystem(initialSettings: GameSettings): void {
   currentSettings = initialSettings;
+  initNativeAudioBridge();
+  syncNativeAudioVolumes(
+    initialSettings.volumeMaster,
+    initialSettings.volumeEffects,
+    initialSettings.volumeMusic
+  );
   if (isAudioInitialized || typeof window === 'undefined') return;
   isAudioInitialized = true;
 
@@ -202,8 +213,10 @@ export function setMasterShellshockLowpassHz(
   cutoffHz: number,
   rampTimeConstantSec = 0.04
 ): void {
-  if (!masterLowpassFilterNode || !activeAudioContext) return;
   const clamped = Math.max(320, Math.min(20000, cutoffHz));
+  // Route through Web Audio while shellshock muffle filter is active so concussion lowpass stays intact
+  setNativeAudioShellshockActive(clamped < 14000);
+  if (!masterLowpassFilterNode || !activeAudioContext) return;
   try {
     masterLowpassFilterNode.frequency.setTargetAtTime(
       clamped,
@@ -217,6 +230,11 @@ export function setMasterShellshockLowpassHz(
 
 export function applyAudioSettings(settings: GameSettings): void {
   currentSettings = settings;
+  syncNativeAudioVolumes(
+    settings.volumeMaster,
+    settings.volumeEffects,
+    settings.volumeMusic
+  );
 
   // Todos os sons Web Audio são efeitos: volumeMaster/100 * volumeEffects/100
   if (masterGainNode && activeAudioContext) {

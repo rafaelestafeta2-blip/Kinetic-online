@@ -22,6 +22,12 @@ import {
   ensureMeshoptDecoder,
 } from './gltfLoaderFactory';
 import { applyAnimPackOverlayToBotClips } from './mixamoAnimPackLoader';
+import {
+  applyOperatorRimLight,
+  DerivedPbrDetailMaps,
+  deriveDetailMapsFromAlbedo,
+  OperatorSurfaceProfile,
+} from './operatorPbrEnhancer';
 
 const FEMALE_TEX_BASE = '/models/characters/female_ops/tex';
 const MAX_CACHED_SILHOUETTES = 4;
@@ -44,6 +50,14 @@ interface CachedCamoPack {
     headgear: THREE.Texture | null;
     pouches: THREE.Texture | null;
   };
+  details: {
+    shirt: DerivedPbrDetailMaps | null;
+    pants: DerivedPbrDetailMaps | null;
+    leggings: DerivedPbrDetailMaps | null;
+    unloading: DerivedPbrDetailMaps | null;
+    headgear: DerivedPbrDetailMaps | null;
+    pouches: DerivedPbrDetailMaps | null;
+  };
   lastUsedMs: number;
 }
 
@@ -54,9 +68,20 @@ const camoCache = new Map<string, CachedCamoPack>();
 const camoInFlight = new Map<string, Promise<CachedCamoPack>>();
 
 const sharedBaseTexCache = new Map<string, THREE.Texture>();
+const sharedBaseDetailCache = new Map<string, DerivedPbrDetailMaps>();
 const sharedBaseTexInFlight = new Map<string, Promise<THREE.Texture | null>>();
 
 const texLoader = new THREE.TextureLoader();
+
+const BASE_TEX_DETAIL_PROFILE: Record<string, OperatorSurfaceProfile> = {
+  'head_b.webp': 'skin',
+  'arms_b.webp': 'skin',
+  'patches_b.webp': 'fabric',
+  'glove_a.webp': 'leather',
+  'glove_b.webp': 'leather',
+  'glove_c.webp': 'leather',
+  'glove_d.webp': 'leather',
+};
 
 function loadSingleWebpTexture(relativePath: string): Promise<THREE.Texture | null> {
   const url = resolveAssetUrl(relativePath);
@@ -89,6 +114,11 @@ function getSharedBaseTexture(fileName: string): Promise<THREE.Texture | null> {
     sharedBaseTexInFlight.delete(fileName);
     if (tex) {
       sharedBaseTexCache.set(fileName, tex);
+      const profile = BASE_TEX_DETAIL_PROFILE[fileName];
+      if (profile && !sharedBaseDetailCache.has(fileName)) {
+        const derived = deriveDetailMapsFromAlbedo(tex, profile, 512);
+        if (derived) sharedBaseDetailCache.set(fileName, derived);
+      }
     }
     return tex;
   });
@@ -130,6 +160,12 @@ function evictCamoCacheIfNeeded(keepCode: string): void {
       victim.textures.unloading?.dispose();
       victim.textures.headgear?.dispose();
       victim.textures.pouches?.dispose();
+      const detailSlots = Object.values(victim.details);
+      for (let i = 0; i < detailSlots.length; i++) {
+        const d = detailSlots[i];
+        d?.normalMap.dispose();
+        d?.roughnessMap.dispose();
+      }
     }
   }
 }
@@ -156,6 +192,14 @@ async function ensureCamoPack(camoCode: string): Promise<CachedCamoPack> {
     const pack: CachedCamoPack = {
       camoCode,
       textures: { shirt, pants, leggings, unloading, headgear, pouches },
+      details: {
+        shirt: deriveDetailMapsFromAlbedo(shirt, 'fabric', 512),
+        pants: deriveDetailMapsFromAlbedo(pants, 'fabric', 512),
+        leggings: deriveDetailMapsFromAlbedo(leggings, 'leather', 512),
+        unloading: deriveDetailMapsFromAlbedo(unloading, 'armor', 512),
+        headgear: deriveDetailMapsFromAlbedo(headgear, 'armor', 512),
+        pouches: deriveDetailMapsFromAlbedo(pouches, 'fabric', 512),
+      },
       lastUsedMs: performance.now(),
     };
     camoCache.set(camoCode, pack);
@@ -305,32 +349,44 @@ function buildFemaleMaterialForSlot(
   };
 
   if (name === 'MFS_HEAD') {
-    return new THREE.MeshStandardMaterial({
+    const det = sharedBaseDetailCache.get('head_b.webp') || null;
+    const mat = new THREE.MeshStandardMaterial({
       ...baseParams,
       map: sharedBaseTexCache.get('head_b.webp') || null,
-      roughness: 0.64,
-      metalness: 0.02,
-      envMapIntensity: 0.36,
+      normalMap: det?.normalMap || null,
+      normalScale: new THREE.Vector2(0.28, 0.28),
+      roughnessMap: det?.roughnessMap || null,
+      roughness: det ? 1.0 : 0.60,
+      metalness: 0.01,
+      envMapIntensity: 0.44,
     });
+    applyOperatorRimLight(mat, { colorHex: 0xffe4d4, intensity: 0.10, power: 3.4 });
+    return mat;
   }
 
   if (name === 'MFS_ARMS') {
-    return new THREE.MeshStandardMaterial({
+    const det = sharedBaseDetailCache.get('arms_b.webp') || null;
+    const mat = new THREE.MeshStandardMaterial({
       ...baseParams,
       map: sharedBaseTexCache.get('arms_b.webp') || null,
-      roughness: 0.64,
-      metalness: 0.02,
-      envMapIntensity: 0.36,
+      normalMap: det?.normalMap || null,
+      normalScale: new THREE.Vector2(0.28, 0.28),
+      roughnessMap: det?.roughnessMap || null,
+      roughness: det ? 1.0 : 0.60,
+      metalness: 0.01,
+      envMapIntensity: 0.44,
     });
+    applyOperatorRimLight(mat, { colorHex: 0xffe4d4, intensity: 0.10, power: 3.4 });
+    return mat;
   }
 
   if (name === 'MFS_EYE') {
     return new THREE.MeshStandardMaterial({
       ...baseParams,
       map: sharedBaseTexCache.get('eye_b.webp') || null,
-      roughness: 0.14,
+      roughness: 0.10,
       metalness: 0.04,
-      envMapIntensity: 1.05,
+      envMapIntensity: 1.25,
     });
   }
 
@@ -364,10 +420,11 @@ function buildFemaleMaterialForSlot(
       alphaTest: 0.34,
       transparent: false,
       side: THREE.DoubleSide,
-      roughness: 0.56,
+      roughness: 0.50,
       metalness: 0.04,
-      envMapIntensity: 0.42,
+      envMapIntensity: 0.52,
     });
+    applyOperatorRimLight(mat, { colorHex: 0xfff0dd, intensity: 0.14, power: 2.9 });
     mat.userData.preserveFemaleMat = true;
     return mat;
   }
@@ -377,11 +434,11 @@ function buildFemaleMaterialForSlot(
       ...baseParams,
       color: 0x0b1626,
       transparent: true,
-      opacity: 0.44,
+      opacity: 0.46,
       depthWrite: false,
-      roughness: 0.08,
-      metalness: 0.9,
-      envMapIntensity: 1.35,
+      roughness: 0.06,
+      metalness: 0.88,
+      envMapIntensity: 1.55,
       side: THREE.DoubleSide,
     });
     mat.userData.preserveFemaleMat = true;
@@ -389,92 +446,160 @@ function buildFemaleMaterialForSlot(
   }
 
   if (name === 'MFS_SHIRT') {
-    return new THREE.MeshStandardMaterial({
+    const det = camoPack.details.shirt;
+    const mat = new THREE.MeshStandardMaterial({
       ...baseParams,
       map: camoPack.textures.shirt,
-      roughness: 0.84,
+      normalMap: det?.normalMap || null,
+      normalScale: new THREE.Vector2(0.78, 0.78),
+      roughnessMap: det?.roughnessMap || null,
+      aoMap: det?.roughnessMap || null,
+      aoMapIntensity: 0.48,
+      roughness: det ? 1.0 : 0.84,
       metalness: 0.03,
-      envMapIntensity: 0.38,
+      envMapIntensity: 0.48,
     });
+    applyOperatorRimLight(mat, { colorHex: 0xd8ebff, intensity: 0.14, power: 3.2 });
+    return mat;
   }
 
   if (name === 'MFS_PANTS') {
-    return new THREE.MeshStandardMaterial({
+    const det = camoPack.details.pants;
+    const mat = new THREE.MeshStandardMaterial({
       ...baseParams,
       map: camoPack.textures.pants,
-      roughness: 0.84,
+      normalMap: det?.normalMap || null,
+      normalScale: new THREE.Vector2(0.78, 0.78),
+      roughnessMap: det?.roughnessMap || null,
+      aoMap: det?.roughnessMap || null,
+      aoMapIntensity: 0.48,
+      roughness: det ? 1.0 : 0.84,
       metalness: 0.03,
-      envMapIntensity: 0.38,
+      envMapIntensity: 0.48,
     });
+    applyOperatorRimLight(mat, { colorHex: 0xd8ebff, intensity: 0.14, power: 3.2 });
+    return mat;
   }
 
   if (name === 'MFS_LEGGINGS') {
-    return new THREE.MeshStandardMaterial({
+    const det = camoPack.details.leggings;
+    const mat = new THREE.MeshStandardMaterial({
       ...baseParams,
       map: camoPack.textures.leggings,
-      roughness: 0.68,
-      metalness: 0.08,
-      envMapIntensity: 0.48,
+      normalMap: det?.normalMap || null,
+      normalScale: new THREE.Vector2(0.84, 0.84),
+      roughnessMap: det?.roughnessMap || null,
+      aoMap: det?.roughnessMap || null,
+      aoMapIntensity: 0.52,
+      roughness: det ? 1.0 : 0.66,
+      metalness: 0.09,
+      envMapIntensity: 0.62,
     });
+    applyOperatorRimLight(mat, { colorHex: 0xd8ebff, intensity: 0.16, power: 3.0 });
+    return mat;
   }
 
   if (name === 'MFS_UNLOADING') {
-    return new THREE.MeshStandardMaterial({
+    const det = camoPack.details.unloading;
+    const mat = new THREE.MeshStandardMaterial({
       ...baseParams,
       map: camoPack.textures.unloading,
-      roughness: 0.66,
-      metalness: 0.1,
-      envMapIntensity: 0.52,
+      normalMap: det?.normalMap || null,
+      normalScale: new THREE.Vector2(0.92, 0.92),
+      roughnessMap: det?.roughnessMap || null,
+      aoMap: det?.roughnessMap || null,
+      aoMapIntensity: 0.58,
+      roughness: det ? 1.0 : 0.62,
+      metalness: 0.12,
+      envMapIntensity: 0.68,
     });
+    applyOperatorRimLight(mat, { colorHex: 0xd8ebff, intensity: 0.18, power: 3.0 });
+    return mat;
   }
 
   if (name === 'MFS_HEADGEAR') {
-    return new THREE.MeshStandardMaterial({
+    const det = camoPack.details.headgear;
+    const mat = new THREE.MeshStandardMaterial({
       ...baseParams,
       map: camoPack.textures.headgear,
-      roughness: 0.6,
-      metalness: 0.14,
-      envMapIntensity: 0.55,
+      normalMap: det?.normalMap || null,
+      normalScale: new THREE.Vector2(0.90, 0.90),
+      roughnessMap: det?.roughnessMap || null,
+      aoMap: det?.roughnessMap || null,
+      aoMapIntensity: 0.56,
+      roughness: det ? 1.0 : 0.58,
+      metalness: 0.16,
+      envMapIntensity: 0.74,
     });
+    applyOperatorRimLight(mat, { colorHex: 0xd8ebff, intensity: 0.19, power: 2.9 });
+    return mat;
   }
 
   if (name === 'MFS_POUCHES') {
-    return new THREE.MeshStandardMaterial({
+    const det = camoPack.details.pouches;
+    const mat = new THREE.MeshStandardMaterial({
       ...baseParams,
       map: camoPack.textures.pouches,
-      roughness: 0.68,
+      normalMap: det?.normalMap || null,
+      normalScale: new THREE.Vector2(0.84, 0.84),
+      roughnessMap: det?.roughnessMap || null,
+      aoMap: det?.roughnessMap || null,
+      aoMapIntensity: 0.55,
+      roughness: det ? 1.0 : 0.68,
       metalness: 0.08,
-      envMapIntensity: 0.48,
+      envMapIntensity: 0.58,
     });
+    applyOperatorRimLight(mat, { colorHex: 0xd8ebff, intensity: 0.16, power: 3.1 });
+    return mat;
   }
 
   if (name === 'MFS_GLOVE') {
-    return new THREE.MeshStandardMaterial({
+    const gloveKey = `glove_${cfg.gloveVariant}.webp`;
+    const det = sharedBaseDetailCache.get(gloveKey) || null;
+    const mat = new THREE.MeshStandardMaterial({
       ...baseParams,
-      map: sharedBaseTexCache.get(`glove_${cfg.gloveVariant}.webp`) || null,
-      roughness: 0.66,
+      map: sharedBaseTexCache.get(gloveKey) || null,
+      normalMap: det?.normalMap || null,
+      normalScale: new THREE.Vector2(0.86, 0.86),
+      roughnessMap: det?.roughnessMap || null,
+      aoMap: det?.roughnessMap || null,
+      aoMapIntensity: 0.52,
+      roughness: det ? 1.0 : 0.62,
       metalness: 0.08,
-      envMapIntensity: 0.48,
+      envMapIntensity: 0.62,
     });
+    applyOperatorRimLight(mat, { colorHex: 0xd8ebff, intensity: 0.15, power: 3.1 });
+    return mat;
   }
 
   if (name === 'MFS_PATCHES') {
-    return new THREE.MeshStandardMaterial({
+    const det = sharedBaseDetailCache.get('patches_b.webp') || null;
+    const mat = new THREE.MeshStandardMaterial({
       ...baseParams,
       map: sharedBaseTexCache.get('patches_b.webp') || null,
-      roughness: 0.7,
+      normalMap: det?.normalMap || null,
+      normalScale: new THREE.Vector2(0.75, 0.75),
+      roughnessMap: det?.roughnessMap || null,
+      roughness: det ? 1.0 : 0.70,
       metalness: 0.06,
-      envMapIntensity: 0.45,
+      envMapIntensity: 0.52,
     });
+    return mat;
   }
 
-  return new THREE.MeshStandardMaterial({
+  const fallbackDet = camoPack.details.unloading || camoPack.details.shirt;
+  const fallbackMat = new THREE.MeshStandardMaterial({
     ...baseParams,
     map: camoPack.textures.unloading || camoPack.textures.shirt,
-    roughness: 0.72,
+    normalMap: fallbackDet?.normalMap || null,
+    normalScale: new THREE.Vector2(0.82, 0.82),
+    roughnessMap: fallbackDet?.roughnessMap || null,
+    roughness: fallbackDet ? 1.0 : 0.70,
     metalness: 0.08,
-    envMapIntensity: 0.45,
+    envMapIntensity: 0.58,
   });
+  applyOperatorRimLight(fallbackMat, { colorHex: 0xd8ebff, intensity: 0.15, power: 3.1 });
+  return fallbackMat;
 }
 
 function avatarKindForClass(opDef: OperatorDefinition): CharacterAvatarKind {

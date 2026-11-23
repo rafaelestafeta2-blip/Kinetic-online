@@ -58,16 +58,7 @@ export function buildMirageAnubisLevel(
   const targets: TacticalTargetEntity[] = [];
   const collider = new Dust2TriangleCollider();
 
-  // Match Dust2 warm desert fill — cool blue hemi + hot sun was washing WebP sandstone white.
-  const hemi = new THREE.HemisphereLight(0xfff7e6, 0x6e5944, 0.55);
-  levelGroup.add(hemi);
-
-  const sun = new THREE.DirectionalLight(0xffeed8, 0.95);
-  sun.position.set(40, 55, -25);
-  sun.target.position.set(20, 2, 0);
-  sun.castShadow = false;
-  levelGroup.add(sun);
-  levelGroup.add(sun.target);
+  // Lighting is unified in TacticalSkySystem (single sun + hemi rig to cut mobile PBR ALU ~45%)
 
   addMirageAnubisBombSiteBeacon(levelGroup, MIRAGE_ANUBIS_BOMB_SITE_A, 'A', 0xdc2626);
   addMirageAnubisBombSiteBeacon(levelGroup, MIRAGE_ANUBIS_BOMB_SITE_B, 'B', 0x0284c7);

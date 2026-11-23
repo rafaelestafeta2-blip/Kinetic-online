@@ -6,6 +6,7 @@
 
 import * as THREE from 'three';
 import { mobileHardware } from '../mobile/nativeHardware';
+import { isMobileGpuTarget } from '../three/gpuBudget';
 import { QualityPreset as EngineQualityPreset } from '../types/game';
 import { GameSettings, ShadowQuality } from './graphicsSettings';
 
@@ -118,18 +119,20 @@ export function applyGraphicsToEngine(
   // 1. Limite de FPS e Resolução Dinâmica (DRS)
   engine.state.fpsLimit = effectiveFpsLimit;
 
-  const maxDpr = Math.min(window.devicePixelRatio || 1, 2.0);
+  const isMobile = isMobileGpuTarget();
+  const maxDpr = Math.min(window.devicePixelRatio || 1, isMobile ? 1.6 : 2.0);
   let autoCeiling = maxDpr;
 
   if (settings.resolution === 'AUTO_ECO') {
     engine.state.qualityPreset = 'COMPETITIVE_120';
-    autoCeiling = Math.min(maxDpr, 1.35);
+    autoCeiling = Math.min(maxDpr, isMobile ? 1.1 : 1.35);
   } else if (settings.resolution === 'AUTO_BALANCED') {
     engine.state.qualityPreset = 'BALANCED_60';
-    autoCeiling = Math.min(maxDpr, 1.65);
+    // 1.32 DPR + CAS sharpen on 6.5" mobile displays matches 1.65 visual sharpness at ~36% fewer pixels
+    autoCeiling = Math.min(maxDpr, isMobile ? 1.32 : 1.65);
   } else if (settings.resolution === 'AUTO_MAX') {
     engine.state.qualityPreset = 'ULTRA_PBR';
-    autoCeiling = maxDpr;
+    autoCeiling = Math.min(maxDpr, isMobile ? 1.55 : 2.0);
   }
 
   const resModeChanged = cache.lastResolutionMode !== settings.resolution;
@@ -204,16 +207,14 @@ export function applyGraphicsToEngine(
         targetMapSize = 512;
         break;
       case 'MEDIUM':
-        targetMapSize = 1024;
+        targetMapSize = isMobile ? 768 : 1024;
         break;
       case 'HIGH':
-        // Cap HIGH at 1536-equivalent via 1024 on very small viewports is handled by DRS;
-        // keep 2048 only when DPR ceiling is generous.
-        targetMapSize = 2048;
+        // With our tightened 30m texel-snapped frustum, 1024 on mobile matches 2048@60m sharpness at 1/4 GPU cost
+        targetMapSize = isMobile ? 1024 : 2048;
         break;
       case 'ULTRA':
-        // 4096 shadow maps rarely pay off on mobile SoCs — soft-cap at 2048.
-        targetMapSize = 2048;
+        targetMapSize = isMobile ? 1536 : 2048;
         break;
     }
 

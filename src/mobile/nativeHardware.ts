@@ -1,4 +1,9 @@
-// Mobile Native Hardware Layer: Haptics, Gyroscope Sensor Fusion & Fullscreen Immersive Landscape Lock
+// Mobile Native Hardware Layer: Haptics, Gyroscope Sensor Fusion, KeepAwake, Android Game Mode & Fullscreen Lock
+import { Capacitor } from '@capacitor/core';
+import { Device, type DeviceInfo } from '@capacitor/device';
+import { KeepAwake } from '@capacitor-community/keep-awake';
+
+export type AndroidGameModeType = 'PERFORMANCE' | 'BATTERY' | 'STANDARD' | 'UNSUPPORTED';
 
 type DeviceOrientationEventCtor = typeof DeviceOrientationEvent & {
   requestPermission?: () => Promise<'granted' | 'denied' | string>;
@@ -17,6 +22,7 @@ export class MobileHardwareManager {
     null;
   private capacitorTried = false;
   private lastGunshotVibrateMs = 0;
+  private cachedDeviceInfo: DeviceInfo | null = null;
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -27,6 +33,64 @@ export class MobileHardwareManager {
       };
       window.addEventListener('touchend', enforceImmersiveOnGesture, { passive: true });
       window.addEventListener('click', enforceImmersiveOnGesture, { passive: true });
+      this.initNativePlugins();
+    }
+  }
+
+  private initNativePlugins(): void {
+    if (!Capacitor.isNativePlatform()) return;
+    void KeepAwake.keepAwake().catch(() => {});
+    void Device.getInfo()
+      .then((info) => {
+        this.cachedDeviceInfo = info;
+      })
+      .catch(() => {});
+    // Report initial lobby/menu state to Android 13+ GameManager
+    this.setAndroidGameState(false, 'MENU');
+  }
+
+  public getNativeDeviceInfo(): DeviceInfo | null {
+    return this.cachedDeviceInfo;
+  }
+
+  public getAndroidGameMode(): AndroidGameModeType {
+    if (typeof window === 'undefined') return 'UNSUPPORTED';
+    try {
+      const bridge = (
+        window as unknown as {
+          KineticNativeAuth?: { getAndroidGameMode?: () => string };
+        }
+      ).KineticNativeAuth;
+      const mode = bridge?.getAndroidGameMode?.();
+      if (mode === 'PERFORMANCE' || mode === 'BATTERY' || mode === 'STANDARD') {
+        return mode;
+      }
+    } catch {
+      // ignore on Web / older Android
+    }
+    return 'UNSUPPORTED';
+  }
+
+  /**
+   * Signals Android 13+ GameManager / Game Booster to boost CPU/GPU clocks during
+   * map loading and active 3D combat, and relax thermals in menus.
+   */
+  public setAndroidGameState(
+    isLoading: boolean,
+    mode: 'GAMEPLAY' | 'MENU' | 'NONE'
+  ): void {
+    if (typeof window === 'undefined') return;
+    try {
+      const bridge = (
+        window as unknown as {
+          KineticNativeAuth?: {
+            setAndroidGameState?: (loading: boolean, modeName: string) => void;
+          };
+        }
+      ).KineticNativeAuth;
+      bridge?.setAndroidGameState?.(isLoading, mode);
+    } catch {
+      // ignore on Web / pre-Android 13
     }
   }
 

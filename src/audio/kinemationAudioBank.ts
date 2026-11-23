@@ -1,4 +1,5 @@
 import { resolveAssetUrl } from '../utils/assetUrl';
+import { preloadNativeSfxUrl, tryPlayNativeSfxUrl } from './nativeAudioBridge';
 
 export interface MultiVariationBank {
   urls: string[];
@@ -163,6 +164,7 @@ export function preloadMultiBank(
   if (typeof window === 'undefined') return;
   for (let i = 0; i < bank.urls.length; i++) {
     const url = bank.urls[i];
+    preloadNativeSfxUrl(url);
     if (withHtmlPool) {
       const audio = new Audio(url);
       audio.preload = 'auto';
@@ -200,6 +202,7 @@ export function preloadSingleBank(
   htmlCopies = 2
 ): void {
   if (typeof window === 'undefined') return;
+  preloadNativeSfxUrl(bank.url);
   for (let i = 0; i < htmlCopies; i++) {
     const audio = new Audio(bank.url);
     audio.preload = 'auto';
@@ -271,6 +274,20 @@ export function playMultiBankSample(
     delaySec = 0,
   } = options;
 
+  // Fast-path: ultra-low-latency native Android SoundPool for immediate, unsuppressed combat SFX
+  if (!suppressed && delaySec <= 0 && bank.urls.length > 0) {
+    const len = bank.urls.length;
+    let pick = Math.floor(Math.random() * len);
+    if (len > 1 && pick === bank.lastPickIdx) {
+      pick = (pick + 1 + Math.floor(Math.random() * (len - 1))) % len;
+    }
+    const rate = Math.max(0.5, pitch + (Math.random() - 0.5) * pitchJitter);
+    if (tryPlayNativeSfxUrl(bank.urls[pick], volume, rate)) {
+      bank.lastPickIdx = pick;
+      return true;
+    }
+  }
+
   if (ctx) {
     decodeMultiBank(bank, ctx);
     const buf = pickMultiDecodedBuffer(bank);
@@ -323,6 +340,14 @@ export function playSingleBankSample(
   } = {}
 ): boolean {
   const { volume = 0.95, pitch = 1.0, pitchJitter = 0.03, delaySec = 0 } = options;
+
+  // Fast-path: ultra-low-latency native Android SoundPool for immediate single combat cues
+  if (delaySec <= 0) {
+    const rate = Math.max(0.5, pitch + (Math.random() - 0.5) * pitchJitter);
+    if (tryPlayNativeSfxUrl(bank.url, volume, rate)) {
+      return true;
+    }
+  }
 
   if (ctx) {
     decodeSingleBank(bank, ctx);

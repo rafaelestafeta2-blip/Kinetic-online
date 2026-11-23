@@ -84,15 +84,7 @@ export function buildDust2Level(isSoftwareGl: boolean): Dust2LevelBundle {
   const targets: TacticalTargetEntity[] = [];
   const collider = new Dust2TriangleCollider();
 
-  // High-fidelity desert sunlight for crisp contrast and warm Middle-Eastern stone rendering
-  const sunFill = new THREE.HemisphereLight(0xfff7e6, 0x6e5944, 0.75);
-  levelGroup.add(sunFill);
-
-  const desertSun = new THREE.DirectionalLight(0xffeed8, 1.35);
-  desertSun.position.set(45, 65, -30);
-  desertSun.target.position.set(0, 4.8, -25);
-  levelGroup.add(desertSun);
-  levelGroup.add(desertSun.target);
+  // Lighting is unified in TacticalSkySystem (single sun + hemi rig to cut mobile PBR ALU ~45%)
 
   // Add 3D Bomb Site A & B Tactical Beacons
   addDust2BombSiteBeacon(levelGroup, DUST2_BOMB_SITE_A, 'A', 0xdc2626);

@@ -60,12 +60,17 @@ export class GrenadeFirstPersonHandRig {
   private fallbackHandGroup = new THREE.Group();
 
   private armsLoaded = false;
+  private handsReadyPromise: Promise<void>;
+  private resolveHandsReady: (() => void) | null = null;
   private mixer: THREE.AnimationMixer | null = null;
   private actions: Record<string, THREE.AnimationAction> = {};
   private activeClipName: string | null = null;
   private lastThrowTime = -1;
 
   constructor() {
+    this.handsReadyPromise = new Promise<void>((resolve) => {
+      this.resolveHandsReady = resolve;
+    });
     this.armsRotateY.rotation.y = Math.PI;
     this.armsMount.add(this.armsRotateY);
     this.root.add(this.armsMount);
@@ -77,8 +82,19 @@ export class GrenadeFirstPersonHandRig {
     this.loadUnifiedKinemationHands();
   }
 
+  public ensureHandsReady(): Promise<void> {
+    return this.armsLoaded ? Promise.resolve() : this.handsReadyPromise;
+  }
+
   private loadUnifiedKinemationHands(): void {
     const loader = createGameGltfLoader();
+    const markDone = () => {
+      if (this.resolveHandsReady) {
+        const fn = this.resolveHandsReady;
+        this.resolveHandsReady = null;
+        fn();
+      }
+    };
     loader.load(
       resolveAssetUrl(KINEMATION_ARMS_BASE_URL),
       (gltf) => {
@@ -111,10 +127,12 @@ export class GrenadeFirstPersonHandRig {
         this.fallbackHandGroup.visible = false;
         this.armsLoaded = true;
         this.playPoseClip('Grenade_Pose', 0);
+        markDone();
       },
       undefined,
       () => {
         // Keep lightweight fallback grenade socket visible if load fails
+        markDone();
       }
     );
   }

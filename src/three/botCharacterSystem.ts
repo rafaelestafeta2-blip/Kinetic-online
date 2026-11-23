@@ -15,6 +15,7 @@ import {
 } from './mixamoAnimPackLoader';
 
 import { resolveAssetUrl } from '../utils/assetUrl';
+import { applyOperatorRimLight } from './operatorPbrEnhancer';
 
 const PRO_RIFLE_LOCAL_URL = resolveAssetUrl('/models/characters/pro_rifle_pack.glb');
 const PRO_RIFLE_FALLBACK_URL = 'https://github.com/rafaelestafeta2-blip/Gamesfps/releases/download/V1/Pro.Rifle.Pack.glb';
@@ -278,14 +279,20 @@ export function preloadProRifleBotCharacter(loadingManager?: THREE.LoadingManage
           }
           const allyMat = std.clone();
           allyMat.color.setHex(0xb8d4f8);
-          allyMat.roughness = 0.62;
-          allyMat.metalness = 0.18;
+          allyMat.roughness = 0.60;
+          allyMat.metalness = 0.14;
+          allyMat.envMapIntensity = 0.85;
+          if (allyMat.normalMap) allyMat.normalScale.set(1.22, 1.22);
+          applyOperatorRimLight(allyMat, { colorHex: 0xbfe3ff, intensity: 0.16, power: 3.1 });
           allyMatMap!.set(std.name, allyMat);
 
           const enemyMat = std.clone();
           enemyMat.color.setHex(0xf2b6a0);
-          enemyMat.roughness = 0.65;
-          enemyMat.metalness = 0.16;
+          enemyMat.roughness = 0.62;
+          enemyMat.metalness = 0.14;
+          enemyMat.envMapIntensity = 0.85;
+          if (enemyMat.normalMap) enemyMat.normalScale.set(1.22, 1.22);
+          applyOperatorRimLight(enemyMat, { colorHex: 0xffe4d0, intensity: 0.18, power: 3.0 });
           enemyMatMap!.set(std.name, enemyMat);
         });
       });
@@ -387,10 +394,29 @@ export function preloadProRifleBotCharacter(loadingManager?: THREE.LoadingManage
               std.metalnessMap.needsUpdate = true;
             }
 
+            const isMedic = label === 'VanguardMedicCharacter';
+            const isEngineer = label === 'VanguardEngineerCharacter';
+            const applyClassPbrCalibration = (mat: THREE.MeshStandardMaterial) => {
+              if (isMedic) {
+                // Tripo medic shipped with roughness=0.996 and metalness=0.404 across cloth/skin
+                mat.roughness = 0.68;
+                mat.metalness = 0.08;
+                if (mat.normalMap) mat.normalScale.set(1.30, 1.30);
+              } else if (isEngineer) {
+                mat.roughness = 0.62;
+                mat.metalness = 0.11;
+                if (mat.normalMap) mat.normalScale.set(1.24, 1.24);
+              } else {
+                // Sniper & Rifleman ship with 2K albedo + 1K normal + 1K metallicRoughnessMap
+                if (mat.normalMap) mat.normalScale.set(1.22, 1.22);
+              }
+            };
+
             const showcaseMat = std.clone();
             showcaseMat.color.setHex(0xffffff);
+            applyClassPbrCalibration(showcaseMat);
             // Menu/inventory showcase — punchier env response; match bots stay on ally/enemy maps.
-            showcaseMat.envMapIntensity = 1.25;
+            showcaseMat.envMapIntensity = 1.30;
             if (showcaseMat.map) {
               showcaseMat.map.anisotropy = 16;
               showcaseMat.map.colorSpace = THREE.SRGBColorSpace;
@@ -405,13 +431,17 @@ export function preloadProRifleBotCharacter(loadingManager?: THREE.LoadingManage
 
             const allyMat = std.clone();
             allyMat.color.setHex(allyTintHex);
-            allyMat.envMapIntensity = 0.72;
+            applyClassPbrCalibration(allyMat);
+            allyMat.envMapIntensity = 0.88;
+            applyOperatorRimLight(allyMat, { colorHex: 0xc8e7ff, intensity: 0.15, power: 3.2 });
             allyMat.needsUpdate = true;
             aMap.set(std.name, allyMat);
 
             const enemyMat = std.clone();
             enemyMat.color.setHex(0xffffff);
-            enemyMat.envMapIntensity = 0.72;
+            applyClassPbrCalibration(enemyMat);
+            enemyMat.envMapIntensity = 0.88;
+            applyOperatorRimLight(enemyMat, { colorHex: 0xffe6d4, intensity: 0.18, power: 3.0 });
             enemyMat.needsUpdate = true;
             eMap.set(std.name, enemyMat);
           });

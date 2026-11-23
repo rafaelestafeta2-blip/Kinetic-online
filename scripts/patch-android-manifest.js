@@ -122,6 +122,18 @@ if (fs.existsSync(manifestPath)) {
     }
   }
 
+  // Register Android 12+ Game Mode API config (enables Samsung Game Booster / Xiaomi Game Turbo / Pixel Game Dashboard)
+  if (!content.includes('android.app.game_mode_config')) {
+    const gameModeMeta = `
+        <meta-data
+            android:name="android.app.game_mode_config"
+            android:resource="@xml/game_mode_config" />
+`;
+    if (content.includes('</application>')) {
+      content = content.replace('</application>', `${gameModeMeta}    </application>`);
+    }
+  }
+
   // Deep-link / custom-scheme return path (Custom Tabs / external browser fallback).
   if (!content.includes('android:scheme="com.kineticlabs.tacticalfps"')) {
     content = content.replace(
@@ -172,6 +184,22 @@ if (fs.existsSync(stylesPath)) {
 }
 
 // ============================================================================
+// 2b. Write res/xml/game_mode_config.xml (Android 12+ Game Mode / Game Booster)
+// ============================================================================
+const androidXmlDir = path.resolve('android/app/src/main/res/xml');
+if (fs.existsSync(path.resolve('android/app/src/main/res'))) {
+  fs.mkdirSync(androidXmlDir, { recursive: true });
+  const gameModeXml = `<?xml version="1.0" encoding="utf-8"?>
+<game-mode-config
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:supportsBatteryGameMode="true"
+    android:supportsPerformanceGameMode="true" />
+`;
+  fs.writeFileSync(path.join(androidXmlDir, 'game_mode_config.xml'), gameModeXml, 'utf8');
+  console.log('[patch-manifest] Wrote res/xml/game_mode_config.xml (Android 12+ Game Mode API)');
+}
+
+// ============================================================================
 // 3. Patch / write MainActivity.java + GoogleOAuthActivity.java
 // ============================================================================
 const mainActivityPath = findJavaFile(javaSrcRoot, 'MainActivity.java');
@@ -185,11 +213,16 @@ if (mainActivityPath) {
 
 import android.Manifest;
 import android.annotation.SuppressLint;
+import android.app.GameManager;
+import android.app.GameState;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.content.res.AssetFileDescriptor;
+import android.media.AudioAttributes;
 import android.media.AudioManager;
+import android.media.SoundPool;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -211,12 +244,16 @@ import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebChromeClient;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Capacitor shell. Google OAuth runs in GoogleOAuthActivity (not a Dialog on this
  * Activity) so Account Picker / trust prompts do not destroy the in-app WebView
  * mid-flow. Pending tokens are persisted to SharedPreferences and flushed on resume.
- * Also handles WebRTC RECORD_AUDIO runtime permissions for Squad Voice Chat.
+ * Also handles WebRTC RECORD_AUDIO runtime permissions, Android 12+ Game Mode API,
+ * and low-latency native SoundPool combat audio.
  */
 public class MainActivity extends BridgeActivity {
     public static final String PREFS = "kinetic_oauth_prefs";
@@ -229,6 +266,10 @@ public class MainActivity extends BridgeActivity {
     private PermissionRequest pendingWebAudioRequest = null;
     private boolean bridgeReady = false;
     private boolean chromeClientWired = false;
+    private SoundPool nativeSoundPool = null;
+    private final ConcurrentHashMap<String, Integer> nativeSfxIds = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Integer, Boolean> nativeSfxLoaded = new ConcurrentHashMap<>();
+    private final ExecutorService sfxLoadExecutor = Executors.newFixedThreadPool(2);
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -270,11 +311,51 @@ public class MainActivity extends BridgeActivity {
             getWindow().setAttributes(lp);
         }
         enableNativeGamePerformanceHints();
+        initNativeSoundPool();
         hideSystemBarsImmersive();
         wireBridge();
         handleAuthDeepLink(getIntent());
         // Cold start after process death: flush any persisted OAuth result.
         getWindow().getDecorView().postDelayed(() -> deliverPendingOAuthToJs(true), 700);
+    }
+
+    private void initNativeSoundPool() {
+        try {
+            if (nativeSoundPool != null) return;
+            AudioAttributes attrs =
+                new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_GAME)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build();
+            nativeSoundPool =
+                new SoundPool.Builder()
+                    .setMaxStreams(16)
+                    .setAudioAttributes(attrs)
+                    .build();
+            nativeSoundPool.setOnLoadCompleteListener(
+                (pool, sampleId, status) -> {
+                    if (status == 0) {
+                        nativeSfxLoaded.put(sampleId, Boolean.TRUE);
+                    }
+                });
+        } catch (Exception ignored) {
+            nativeSoundPool = null;
+        }
+    }
+
+    @Override
+    public void onDestroy() {
+        try {
+            sfxLoadExecutor.shutdownNow();
+            if (nativeSoundPool != null) {
+                nativeSoundPool.release();
+                nativeSoundPool = null;
+            }
+            nativeSfxIds.clear();
+            nativeSfxLoaded.clear();
+        } catch (Exception ignored) {
+        }
+        super.onDestroy();
     }
 
     private void enableNativeGamePerformanceHints() {
@@ -398,8 +479,9 @@ public class MainActivity extends BridgeActivity {
             });
             chromeClientWired = true;
         }
-        // Re-add interface every resume (safe; same name replaces).
+        // Re-add interfaces every resume (safe; same name replaces).
         mainWebView.addJavascriptInterface(new KineticNativeAuthBridge(), "KineticNativeAuth");
+        mainWebView.addJavascriptInterface(new KineticNativeAudioBridge(), "KineticNativeAudio");
         bridgeReady = true;
     }
 
@@ -499,6 +581,92 @@ public class MainActivity extends BridgeActivity {
                 } catch (Exception ignored) {
                 }
             });
+        }
+
+        /**
+         * Returns the active Android 12+ Game Mode selected by the user/Game Booster:
+         * PERFORMANCE, BATTERY, STANDARD, or UNSUPPORTED.
+         */
+        @JavascriptInterface
+        public String getAndroidGameMode() {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    GameManager gm = getSystemService(GameManager.class);
+                    if (gm != null) {
+                        int mode = gm.getGameMode();
+                        if (mode == GameManager.GAME_MODE_PERFORMANCE) return "PERFORMANCE";
+                        if (mode == GameManager.GAME_MODE_BATTERY) return "BATTERY";
+                        if (mode == GameManager.GAME_MODE_STANDARD) return "STANDARD";
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+            return "UNSUPPORTED";
+        }
+
+        /**
+         * Reports active gameplay/loading/menu state to Android 13+ GameManager so the OS
+         * scheduler & Game Booster sustain peak CPU/GPU clocks during loading and combat.
+         */
+        @JavascriptInterface
+        public void setAndroidGameState(final boolean isLoading, final String modeName) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return;
+            runOnUiThread(() -> {
+                try {
+                    GameManager gm = getSystemService(GameManager.class);
+                    if (gm == null) return;
+                    int stateMode = GameState.MODE_CONTENT;
+                    if ("GAMEPLAY".equals(modeName)) {
+                        stateMode = GameState.MODE_GAMEPLAY_UNINTERRUPTIBLE;
+                    } else if ("NONE".equals(modeName)) {
+                        stateMode = GameState.MODE_NONE;
+                    }
+                    gm.setGameState(new GameState(isLoading, stateMode));
+                } catch (Exception ignored) {
+                }
+            });
+        }
+    }
+
+    /**
+     * Ultra-low-latency native Android SoundPool bridge for gunshots, footsteps,
+     * jumps, and tactical combat cues bundled under assets/public/.
+     */
+    public class KineticNativeAudioBridge {
+        @JavascriptInterface
+        public void preloadSfx(final String key, final String assetPath) {
+            if (nativeSoundPool == null || key == null || assetPath == null) return;
+            if (nativeSfxIds.containsKey(key)) return;
+            sfxLoadExecutor.execute(() -> {
+                try {
+                    if (nativeSoundPool == null || nativeSfxIds.containsKey(key)) return;
+                    AssetFileDescriptor afd = getAssets().openFd(assetPath);
+                    int sampleId = nativeSoundPool.load(afd, 1);
+                    afd.close();
+                    if (sampleId > 0) {
+                        nativeSfxIds.put(key, sampleId);
+                    }
+                } catch (Exception ignored) {
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public boolean isSfxReady(final String key) {
+            if (nativeSoundPool == null || key == null) return false;
+            Integer id = nativeSfxIds.get(key);
+            return id != null && Boolean.TRUE.equals(nativeSfxLoaded.get(id));
+        }
+
+        @JavascriptInterface
+        public boolean playSfx(final String key, final float volume, final float rate) {
+            if (nativeSoundPool == null || key == null) return false;
+            Integer id = nativeSfxIds.get(key);
+            if (id == null || !Boolean.TRUE.equals(nativeSfxLoaded.get(id))) return false;
+            float vol = Math.max(0f, Math.min(1f, volume));
+            float clampedRate = Math.max(0.5f, Math.min(2.0f, rate));
+            int streamId = nativeSoundPool.play(id, vol, vol, 1, 0, clampedRate);
+            return streamId != 0;
         }
     }
 

@@ -47,19 +47,23 @@ export function ensureMeshoptDecoder(): Promise<void> {
   return meshoptReady;
 }
 
-/** Call once the match renderer exists, before any cooked GLB is parsed. */
-export function attachCompressedTextureSupport(renderer: THREE.WebGLRenderer): void {
+function getSharedKtx2Loader(): KTX2Loader {
   if (!ktx2Loader) {
     ktx2Loader = new KTX2Loader();
     ktx2Loader.setTranscoderPath(KTX2_TRANSCODER_PATH);
   }
-  ktx2Loader.detectSupport(renderer);
+  return ktx2Loader;
+}
+
+/** Call once the match renderer exists, before any cooked GLB is parsed. */
+export function attachCompressedTextureSupport(renderer: THREE.WebGLRenderer): void {
+  getSharedKtx2Loader().detectSupport(renderer);
 }
 
 export function createGameGltfLoader(loadingManager?: THREE.LoadingManager): GLTFLoader {
   const loader = new GLTFLoader(loadingManager) as LoaderWithDraco;
   loader.setMeshoptDecoder(MeshoptDecoder);
-  if (ktx2Loader) loader.setKTX2Loader(ktx2Loader);
+  loader.setKTX2Loader(getSharedKtx2Loader());
   if (loadingManager) {
     const draco = new DRACOLoader(loadingManager);
     draco.setDecoderPath(DRACO_DECODER_PATH);
