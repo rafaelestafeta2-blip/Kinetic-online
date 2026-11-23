@@ -494,6 +494,10 @@ export const WarfaceDiamondStoreModal: React.FC<WarfaceDiamondStoreModalProps> =
     'ALL' | WarfaceClassId
   >('ALL');
   const [onlyFemaleOperators, setOnlyFemaleOperators] = useState<boolean>(true);
+  const [operatorRotateSignal, setOperatorRotateSignal] = useState<{
+    nonce: number;
+    delta: number;
+  }>({ nonce: 0, delta: 0 });
   const [previewSkinWeaponId, setPreviewSkinWeaponId] =
     useState<WeaponId>('SHOTGUN_12');
 
@@ -1202,16 +1206,22 @@ export const WarfaceDiamondStoreModal: React.FC<WarfaceDiamondStoreModalProps> =
       {/* =================================================================== */}
       {/* RIGHT MAIN STORE CONTENT                                            */}
       {/* =================================================================== */}
-      <div className="flex-1 min-w-0 h-full overflow-y-auto bg-[radial-gradient(ellipse_at_top_right,rgba(153,27,27,0.16),transparent_48%),radial-gradient(ellipse_at_bottom_left,rgba(15,23,42,0.5),#05070b_70%)] p-2.5 sm:p-3.5 lg:p-4 flex flex-col gap-3">
+      <div
+        className={`flex-1 min-w-0 h-full bg-[radial-gradient(ellipse_at_top_right,rgba(153,27,27,0.16),transparent_48%),radial-gradient(ellipse_at_bottom_left,rgba(15,23,42,0.5),#05070b_70%)] flex flex-col ${
+          section === 'OPERADORES'
+            ? 'overflow-hidden p-2 sm:p-2.5 lg:p-3.5 gap-2'
+            : 'overflow-y-auto p-2.5 sm:p-3.5 lg:p-4 gap-3'
+        }`}
+      >
         {/* Global Action / Purchase Status Banner */}
         {statusBanner && (
           <div
-            className={`px-3.5 py-2 rounded-lg border text-[11px] font-mono flex flex-wrap items-center justify-between gap-2 shrink-0 ${
+            className={`sticky top-0 z-30 backdrop-blur-md shadow-lg px-3.5 py-2 rounded-lg border text-[11px] font-mono flex flex-wrap items-center justify-between gap-2 shrink-0 ${
               statusBanner.kind === 'ok'
-                ? 'bg-emerald-500/15 border-emerald-400/50 text-emerald-200'
+                ? 'bg-emerald-950/90 border-emerald-400/60 text-emerald-200'
                 : statusBanner.kind === 'err'
-                  ? 'bg-red-500/15 border-red-400/50 text-red-200'
-                  : 'bg-sky-500/15 border-sky-400/45 text-sky-200'
+                  ? 'bg-red-950/90 border-red-400/60 text-red-200'
+                  : 'bg-sky-950/90 border-sky-400/55 text-sky-200'
             }`}
           >
             <span>{statusBanner.text}</span>
@@ -1687,7 +1697,7 @@ export const WarfaceDiamondStoreModal: React.FC<WarfaceDiamondStoreModalProps> =
         )}
 
         {/* ================================================================= */}
-        {/* TAB 2A: OPERADORES 3D (16 OPERADORAS FEMININAS POR CLASSE + ELITE) */}
+        {/* TAB 2A: OPERADORES 3D (SHOWCASE 3D CENTRALIZADO + LISTA LATERAL)  */}
         {/* ================================================================= */}
         {section === 'OPERADORES' && (() => {
           const selectedMeta = WARFACE_CLASS_META[selectedOperatorDef.preferredClass];
@@ -1701,73 +1711,40 @@ export const WarfaceDiamondStoreModal: React.FC<WarfaceDiamondStoreModalProps> =
             'MEDICO',
             'FRANCO_ATIRADOR',
           ];
+          const selectedEquipped =
+            opState.activeOperatorId === selectedOperatorDef.id;
+          const selectedUnlocked = opState.unlockedOperatorIds.includes(
+            selectedOperatorDef.id
+          );
+
+          const rarityTextClass = (rarity: string) =>
+            rarity === 'LENDARIO'
+              ? 'text-amber-300'
+              : rarity === 'ELITE'
+                ? 'text-rose-300'
+                : 'text-sky-300';
 
           return (
-            <div className="flex flex-col gap-3.5">
-              {/* Cabeçalho e Filtros por Classe com Ícone Oficial */}
-              <div className="rounded-xl border border-amber-400/35 bg-gradient-to-r from-[#1c0c12] via-[#0e1320] to-[#0a0f18] p-3 sm:p-3.5 flex flex-col gap-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 rounded bg-amber-400 text-slate-950 font-display font-black text-[9px] uppercase tracking-wider">
-                        DIVISÃO FEMININA · 16 SKINS 3D
-                      </span>
-                      <span className="text-[10px] font-mono text-sky-300 font-bold">
-                        4 POR CLASSE · EXCLUSIVO COM DIAMANTES 💎
-                      </span>
-                    </div>
-                    <h3 className="font-display font-black text-base sm:text-lg text-white uppercase mt-1 tracking-wide">
-                      SKINS DE OPERADORES TÁTICOS POR CLASSE
-                    </h3>
-                  </div>
-
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        soundEngine.playMenuHover();
-                        setOnlyFemaleOperators(true);
-                      }}
-                      className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono font-bold uppercase cursor-pointer border transition-colors ${
-                        onlyFemaleOperators
-                          ? 'bg-amber-400/20 border-amber-400 text-amber-200'
-                          : 'bg-white/[0.04] border-white/10 text-slate-300 hover:bg-white/10'
-                      }`}
-                    >
-                      FEMININAS (16)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        soundEngine.playMenuHover();
-                        setOnlyFemaleOperators(false);
-                      }}
-                      className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono font-bold uppercase cursor-pointer border transition-colors ${
-                        !onlyFemaleOperators
-                          ? 'bg-sky-500/20 border-sky-400 text-sky-200'
-                          : 'bg-white/[0.04] border-white/10 text-slate-300 hover:bg-white/10'
-                      }`}
-                    >
-                      TODOS ({OPERATOR_CATALOG.length})
-                    </button>
-                  </div>
-                </div>
-
-                {/* Barra de Filtro por Classe com Ícone Oficial */}
-                <div className="flex flex-wrap items-center gap-1.5">
+            <div className="flex-1 min-h-0 flex flex-col gap-2 overflow-hidden">
+              {/* Barra Superior Compacta: Filtros por Classe + Alternador FEM / TODOS */}
+              <div className="shrink-0 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar min-w-0 py-0.5">
                   <button
                     type="button"
                     onClick={() => {
                       soundEngine.playMenuHover();
                       setOperatorClassFilter('ALL');
                     }}
-                    className={`px-3 py-1.5 rounded-lg text-[10px] font-display font-black uppercase tracking-wider cursor-pointer border transition-all ${
+                    className={`whitespace-nowrap shrink-0 px-2.5 py-1 rounded-md text-[10px] font-display font-black uppercase tracking-wider cursor-pointer border transition-colors ${
                       operatorClassFilter === 'ALL'
-                        ? 'bg-white text-slate-950 border-white shadow-[0_0_12px_rgba(255,255,255,0.3)]'
+                        ? 'bg-white text-slate-950 border-white'
                         : 'bg-white/[0.04] text-slate-300 border-white/15 hover:border-white/35'
                     }`}
                   >
-                    TODAS AS CLASSES ({onlyFemaleOperators ? 16 : OPERATOR_CATALOG.length})
+                    TODAS{' '}
+                    <span className="font-mono opacity-80 tabular-nums">
+                      ({onlyFemaleOperators ? 16 : OPERATOR_CATALOG.length})
+                    </span>
                   </button>
 
                   {allClasses.map((cls) => {
@@ -1790,24 +1767,24 @@ export const WarfaceDiamondStoreModal: React.FC<WarfaceDiamondStoreModalProps> =
                           );
                           if (firstOfClass) setPreviewOpId(firstOfClass.id);
                         }}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-display font-black uppercase tracking-wider cursor-pointer border transition-all ${
+                        className={`whitespace-nowrap shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-display font-black uppercase tracking-wider cursor-pointer border transition-colors ${
                           active
-                            ? 'bg-white/15 text-white shadow-md'
+                            ? 'bg-white/15 text-white'
                             : 'bg-white/[0.04] text-slate-300 border-white/15 hover:border-white/35'
                         }`}
                         style={
                           active
                             ? {
                                 borderColor: meta.accentHex,
-                                boxShadow: `0 0 14px ${meta.accentHex}33`,
+                                boxShadow: `0 0 12px ${meta.accentHex}30`,
                               }
                             : undefined
                         }
                       >
-                        <WarfaceClassIcon classId={cls} className="w-4 h-4 shrink-0" />
-                        <span>{meta.label}</span>
+                        <WarfaceClassIcon classId={cls} className="w-3.5 h-3.5 shrink-0" />
+                        <span>{meta.shortLabel || meta.label}</span>
                         <span
-                          className="text-[9px] font-mono px-1 rounded bg-black/50"
+                          className="text-[9px] font-mono font-bold tabular-nums"
                           style={{ color: meta.accentHex }}
                         >
                           {count}
@@ -1816,244 +1793,281 @@ export const WarfaceDiamondStoreModal: React.FC<WarfaceDiamondStoreModalProps> =
                     );
                   })}
                 </div>
+
+                {/* Toggle compacto FEM (16) / TODOS */}
+                <div className="shrink-0 flex items-center gap-0.5 p-0.5 rounded-lg bg-black/55 border border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundEngine.playMenuHover();
+                      setOnlyFemaleOperators(true);
+                      if (!selectedOperatorDef.customModelConfig) {
+                        const firstFem = OPERATOR_CATALOG.find(
+                          (o) =>
+                            Boolean(o.customModelConfig) &&
+                            (operatorClassFilter === 'ALL' ||
+                              o.preferredClass === operatorClassFilter)
+                        );
+                        if (firstFem) setPreviewOpId(firstFem.id);
+                      }
+                    }}
+                    className={`whitespace-nowrap px-2 py-1 rounded-md text-[9px] font-mono font-bold uppercase cursor-pointer transition-colors ${
+                      onlyFemaleOperators
+                        ? 'bg-amber-400/20 text-amber-200 border border-amber-400/55'
+                        : 'text-slate-400 hover:text-white border border-transparent'
+                    }`}
+                  >
+                    FEM <span className="tabular-nums">(16)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundEngine.playMenuHover();
+                      setOnlyFemaleOperators(false);
+                    }}
+                    className={`whitespace-nowrap px-2 py-1 rounded-md text-[9px] font-mono font-bold uppercase cursor-pointer transition-colors ${
+                      !onlyFemaleOperators
+                        ? 'bg-sky-500/20 text-sky-200 border border-sky-400/55'
+                        : 'text-slate-400 hover:text-white border border-transparent'
+                    }`}
+                  >
+                    TODOS <span className="tabular-nums">({OPERATOR_CATALOG.length})</span>
+                  </button>
+                </div>
               </div>
 
-              {/* Showcase 3D Interativo (Esquerda) + Grid de Cards por Classe (Direita) */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 items-start">
-                {/* Painel Esquerdo: Preview 3D do Operador Selecionado */}
+              {/* Workspace Travado na Altura da Tela: Palco 3D Central + Lista Rolável Lateral */}
+              <div className="flex-1 min-h-0 flex flex-row gap-2 sm:gap-3 overflow-hidden">
+                {/* PALCO CENTRAL: OPERADOR 3D SEMPRE VISÍVEL SEM ROLAR */}
                 <div
-                  className="lg:col-span-5 lg:sticky lg:top-0 rounded-xl border bg-gradient-to-b from-[#170b12]/90 via-[#0b101b]/95 to-[#06080d] p-3.5 flex flex-col justify-between gap-2"
-                  style={{ borderColor: `${selectedMeta.accentHex}75` }}
+                  className="flex-1 min-w-0 h-full relative rounded-xl border bg-[radial-gradient(ellipse_at_50%_42%,rgba(255,255,255,0.06),rgba(10,14,24,0.92)_62%,#05070c_100%)] overflow-hidden"
+                  style={{ borderColor: `${selectedMeta.accentHex}55` }}
                 >
-                  <div>
-                    <div className="flex items-center justify-between gap-2">
-                      {/* Badge Oficial da Classe no Preview */}
-                      <div
-                        className="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg border bg-black/60"
-                        style={{ borderColor: `${selectedMeta.accentHex}88` }}
-                      >
-                        <WarfaceClassIcon
-                          classId={selectedOperatorDef.preferredClass}
-                          className="w-5 h-5 shrink-0"
-                        />
-                        <div className="leading-none">
-                          <div
-                            className="text-[10px] font-display font-black uppercase tracking-wider"
-                            style={{ color: selectedMeta.accentHex }}
-                          >
-                            {selectedMeta.label}
-                          </div>
-                          <div className="text-[8px] font-mono text-slate-400 uppercase mt-0.5">
-                            {selectedMeta.roleDesc}
-                          </div>
-                        </div>
-                      </div>
+                  {/* Brilho sutil da classe atrás do operador */}
+                  <div
+                    className="absolute inset-0 pointer-events-none opacity-25"
+                    style={{
+                      background: `radial-gradient(circle at 50% 48%, ${selectedMeta.accentHex}44 0%, transparent 58%)`,
+                    }}
+                  />
 
+                  {/* Canvas 3D ocupando 100% do palco central */}
+                  <div className="absolute inset-0">
+                    <RankedOperator3DCanvas
+                      activeWeapon={previewWeaponForOp}
+                      operatorSkinId={selectedOperatorDef.id}
+                      externalRotateSignal={operatorRotateSignal}
+                      framing="store"
+                    />
+                  </div>
+
+                  {/* Overlay Superior Esquerdo: Identidade do Operador + Classe + Camuflagem */}
+                  <div className="absolute top-2 left-2 sm:top-3 sm:left-3 z-10 pointer-events-none max-w-[70%] bg-black/55 backdrop-blur-sm border border-white/10 rounded-lg px-2.5 py-1.5">
+                    <div className="flex items-center gap-1.5 text-[9px] sm:text-[10px] font-mono uppercase">
+                      <WarfaceClassIcon
+                        classId={selectedOperatorDef.preferredClass}
+                        className="w-3.5 h-3.5 shrink-0"
+                      />
                       <span
-                        className={`px-2 py-0.5 rounded text-[9px] font-display font-black uppercase ${
-                          selectedOperatorDef.rarity === 'LENDARIO'
-                            ? 'bg-amber-400 text-slate-950'
-                            : selectedOperatorDef.rarity === 'ELITE'
-                              ? 'bg-rose-600 text-white'
-                              : 'bg-sky-600/80 text-white'
-                        }`}
+                        className="font-display font-black tracking-wider truncate"
+                        style={{ color: selectedMeta.accentHex }}
                       >
+                        {selectedMeta.label}
+                      </span>
+                      <span className="text-slate-500">·</span>
+                      <span className={`font-bold ${rarityTextClass(selectedOperatorDef.rarity)}`}>
                         {selectedOperatorDef.rarity}
+                      </span>
+                      <span className="hidden sm:inline text-slate-500">·</span>
+                      <span className="hidden sm:inline text-slate-400">
+                        {selectedOperatorDef.codename}
                       </span>
                     </div>
 
-                    <h4 className="font-display font-black text-lg text-white uppercase mt-2 leading-tight">
+                    <h3 className="font-display font-black text-sm sm:text-base lg:text-lg text-white uppercase leading-tight truncate mt-0.5">
                       {selectedOperatorDef.name}
-                    </h4>
-                    <div className="flex flex-wrap items-center gap-2 mt-1">
-                      <span className="text-[10px] font-mono text-amber-300">
+                    </h3>
+
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <div className="flex items-center gap-1 shrink-0">
+                        {selectedOperatorDef.swatchColors.map((hex, i) => (
+                          <span
+                            key={i}
+                            className="w-3 h-2 rounded-[2px] border border-white/30"
+                            style={{ backgroundColor: hex }}
+                          />
+                        ))}
+                      </div>
+                      <span className="text-[9px] font-mono text-amber-300/90 truncate">
                         {selectedOperatorDef.customModelConfig?.silhouetteLabel ||
                           selectedOperatorDef.perkLabel}
                       </span>
                     </div>
-                    <div className="flex items-center gap-1.5 mt-1.5">
-                      <span className="text-[9px] font-mono text-slate-400 uppercase">
-                        CAMUFLAGEM:
-                      </span>
-                      {selectedOperatorDef.swatchColors.map((hex, i) => (
-                        <span
-                          key={i}
-                          className="w-4 h-2.5 rounded-xs border border-white/30"
-                          style={{ backgroundColor: hex }}
-                        />
-                      ))}
-                      <span className="ml-auto text-[10px] font-mono text-slate-400">
-                        {selectedOperatorDef.codename}
-                      </span>
+                  </div>
+
+                  {/* Overlay Superior Direito: Controles rápidos de rotação 360° */}
+                  <div className="absolute top-2 right-2 sm:top-3 sm:right-3 z-10 flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playMenuHover();
+                        setOperatorRotateSignal((prev) => ({
+                          nonce: prev.nonce + 1,
+                          delta: -0.75,
+                        }));
+                      }}
+                      title="Girar operador para esquerda"
+                      className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-black/55 hover:bg-black/80 border border-white/15 hover:border-white/35 text-slate-200 hover:text-white flex items-center justify-center text-xs font-mono cursor-pointer transition-colors backdrop-blur-sm"
+                    >
+                      ↺
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playMenuHover();
+                        setOperatorRotateSignal((prev) => ({
+                          nonce: prev.nonce + 1,
+                          delta: 0.75,
+                        }));
+                      }}
+                      title="Girar operador para direita"
+                      className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-black/55 hover:bg-black/80 border border-white/15 hover:border-white/35 text-slate-200 hover:text-white flex items-center justify-center text-xs font-mono cursor-pointer transition-colors backdrop-blur-sm"
+                    >
+                      ↻
+                    </button>
+                  </div>
+
+                  {/* Barra Inferior do Palco: Descrição + Botão Comprar / Equipar */}
+                  <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-[#04060a]/95 via-[#060911]/75 to-transparent pt-7 pb-2.5 px-2.5 sm:px-3.5 flex items-end justify-between gap-2.5 pointer-events-none">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[9px] sm:text-[10px] font-mono text-slate-300/90 leading-snug line-clamp-2 max-w-[360px]">
+                        {selectedOperatorDef.description}
+                      </p>
+                    </div>
+
+                    <div className="pointer-events-auto shrink-0 w-[162px] sm:w-[198px]">
+                      <GoldSlantedButton
+                        label={
+                          selectedEquipped
+                            ? 'EQUIPADO ✓'
+                            : selectedUnlocked
+                              ? 'EQUIPAR OPERADOR'
+                              : `COMPRAR · ${selectedOperatorDef.diamondPrice} 💎`
+                        }
+                        variant={selectedEquipped ? 'equipped' : 'gold'}
+                        disabled={busy}
+                        onClick={() =>
+                          void handleBuyOrEquipOperator(selectedOperatorDef.id)
+                        }
+                        className="py-2"
+                      />
                     </div>
                   </div>
-
-                  <div className="h-[270px] sm:h-[300px] my-1 rounded-lg bg-radial from-white/[0.04] via-transparent to-transparent border border-white/5 overflow-hidden">
-                    <RankedOperator3DCanvas
-                      activeWeapon={previewWeaponForOp}
-                      operatorSkinId={selectedOperatorDef.id}
-                    />
-                  </div>
-
-                  <p className="text-[10px] font-mono text-slate-300 leading-relaxed">
-                    {selectedOperatorDef.description}
-                  </p>
-
-                  <GoldSlantedButton
-                    label={
-                      opState.activeOperatorId === selectedOperatorDef.id
-                        ? 'OPERADOR EQUIPADO ✓'
-                        : opState.unlockedOperatorIds.includes(selectedOperatorDef.id)
-                          ? 'EQUIPAR OPERADOR'
-                          : `COMPRAR · ${selectedOperatorDef.diamondPrice} 💎`
-                    }
-                    variant={
-                      opState.activeOperatorId === selectedOperatorDef.id
-                        ? 'equipped'
-                        : 'gold'
-                    }
-                    disabled={busy}
-                    onClick={() =>
-                      void handleBuyOrEquipOperator(selectedOperatorDef.id)
-                    }
-                    className="py-2.5"
-                  />
                 </div>
 
-                {/* Painel Direito: Grid de Cards com Ícone da Classe em Destaque */}
-                <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {filteredOperators.map((op) => {
-                    const clsMeta = WARFACE_CLASS_META[op.preferredClass];
-                    const unlocked = opState.unlockedOperatorIds.includes(op.id);
-                    const equipped = opState.activeOperatorId === op.id;
-                    const selected = previewOpId === op.id;
+                {/* LISTA LATERAL DIREITA ROLÁVEL: SELEÇÃO RÁPIDA COM ÍCONE DA CLASSE */}
+                <div className="w-[215px] sm:w-[255px] lg:w-[295px] xl:w-[325px] shrink-0 h-full rounded-xl border border-white/10 bg-[#080c14]/90 flex flex-col overflow-hidden">
+                  <div className="shrink-0 px-2.5 py-1.5 border-b border-white/10 bg-black/40 flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-display font-black uppercase tracking-wider text-slate-200">
+                      CATÁLOGO
+                    </span>
+                    <span className="text-[9px] font-mono text-slate-400 tabular-nums">
+                      {filteredOperators.length} SKINS
+                    </span>
+                  </div>
 
-                    return (
-                      <div
-                        key={op.id}
-                        onClick={() => {
-                          soundEngine.playMenuHover();
-                          setPreviewOpId(op.id);
-                        }}
-                        className={`rounded-xl border p-3 flex flex-col justify-between gap-2.5 cursor-pointer transition-all ${
-                          selected
-                            ? 'bg-gradient-to-b from-[#1f131b] via-[#101420] to-[#0a0d14] shadow-lg'
-                            : 'border-white/15 bg-white/[0.03] hover:border-white/35 hover:bg-white/[0.05]'
-                        }`}
-                        style={
-                          selected
-                            ? {
-                                borderColor: clsMeta.accentHex,
-                                boxShadow: `0 0 18px ${clsMeta.accentHex}28`,
-                              }
-                            : undefined
-                        }
-                      >
-                        <div>
-                          {/* Barra Superior: Ícone Oficial da Classe + Nome da Classe + Preço em Diamantes */}
-                          <div className="flex items-center justify-between gap-2 pb-2 mb-2 border-b border-white/10">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <div
-                                className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border bg-black/60"
-                                style={{
-                                  borderColor: `${clsMeta.accentHex}70`,
-                                  boxShadow: `inset 0 0 10px ${clsMeta.accentHex}22`,
-                                }}
-                                title={`Classe: ${clsMeta.label}`}
-                              >
-                                <WarfaceClassIcon
-                                  classId={op.preferredClass}
-                                  className="w-5 h-5"
-                                />
-                              </div>
-                              <div className="min-w-0 leading-tight">
-                                <div
-                                  className="text-[10px] font-display font-black uppercase tracking-wider truncate"
-                                  style={{ color: clsMeta.accentHex }}
-                                >
-                                  {clsMeta.label}
-                                </div>
-                                <div className="flex items-center gap-1 mt-0.5">
-                                  <span
-                                    className={`px-1.5 py-0.2 rounded text-[8px] font-mono font-bold uppercase ${
-                                      op.rarity === 'LENDARIO'
-                                        ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40'
-                                        : op.rarity === 'ELITE'
-                                          ? 'bg-rose-500/20 text-rose-300 border border-rose-400/40'
-                                          : 'bg-sky-500/15 text-sky-300 border border-sky-400/30'
-                                    }`}
-                                  >
-                                    {op.rarity}
-                                  </span>
-                                  {op.customModelConfig && (
-                                    <span className="text-[8px] font-mono text-pink-300 uppercase">
-                                      FEM
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
+                  <div className="flex-1 min-h-0 overflow-y-auto p-1.5 flex flex-col gap-1.5">
+                    {filteredOperators.map((op) => {
+                      const clsMeta = WARFACE_CLASS_META[op.preferredClass];
+                      const unlocked = opState.unlockedOperatorIds.includes(op.id);
+                      const equipped = opState.activeOperatorId === op.id;
+                      const selected = previewOpId === op.id;
 
-                            <div className="text-right shrink-0">
-                              {unlocked ? (
-                                <span className="text-[9px] font-mono font-bold text-emerald-400 uppercase">
-                                  {equipped ? 'ATIVA' : 'LIBERADA'}
-                                </span>
-                              ) : (
-                                <div className="flex items-center gap-1 text-xs font-display font-black text-sky-300">
-                                  <DiamondGemIcon className="w-3.5 h-3.5" />
-                                  <span>{op.diamondPrice}</span>
-                                </div>
-                              )}
-                            </div>
+                      return (
+                        <button
+                          key={op.id}
+                          type="button"
+                          onClick={() => {
+                            soundEngine.playMenuHover();
+                            setPreviewOpId(op.id);
+                          }}
+                          className={`w-full text-left rounded-lg border px-2 py-2 flex items-center gap-2 cursor-pointer transition-all min-h-[54px] shrink-0 ${
+                            selected
+                              ? 'bg-white/[0.09] shadow-md'
+                              : 'border-white/10 bg-white/[0.025] hover:bg-white/[0.06] hover:border-white/25'
+                          }`}
+                          style={
+                            selected
+                              ? {
+                                  borderColor: clsMeta.accentHex,
+                                  boxShadow: `inset 0 0 14px ${clsMeta.accentHex}22`,
+                                }
+                              : undefined
+                          }
+                        >
+                          {/* Ícone Oficial da Classe */}
+                          <div
+                            className="w-8 h-8 rounded-md flex items-center justify-center shrink-0 border bg-black/65"
+                            style={{
+                              borderColor: `${clsMeta.accentHex}70`,
+                            }}
+                            title={`Classe: ${clsMeta.label}`}
+                          >
+                            <WarfaceClassIcon
+                              classId={op.preferredClass}
+                              className="w-5 h-5"
+                            />
                           </div>
 
-                          {/* Nome da Skin + Swatches reais de camuflagem */}
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="font-display font-black text-xs sm:text-sm text-white uppercase truncate">
+                          {/* Nome, Classe, Raridade e Cores */}
+                          <div className="flex-1 min-w-0">
+                            <div className="font-display font-black text-[11px] sm:text-xs text-white uppercase truncate leading-tight">
                               {op.name}
                             </div>
-                            <div className="flex items-center gap-1 shrink-0">
+                            <div className="flex items-center gap-1 mt-0.5 text-[9px] font-mono truncate">
+                              <span
+                                className="font-bold uppercase truncate"
+                                style={{ color: clsMeta.accentHex }}
+                              >
+                                {clsMeta.shortLabel || clsMeta.label}
+                              </span>
+                              <span className="text-slate-600">·</span>
+                              <span className={`font-bold ${rarityTextClass(op.rarity)}`}>
+                                {op.rarity}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1 mt-1">
                               {op.swatchColors.map((hex, i) => (
                                 <span
                                   key={i}
-                                  className="w-3 h-3 rounded-full border border-white/30"
+                                  className="w-2.5 h-1.5 rounded-[1px] border border-white/25"
                                   style={{ backgroundColor: hex }}
                                 />
                               ))}
                             </div>
                           </div>
 
-                          <div className="text-[9px] font-mono text-amber-300/90 mt-0.5 truncate">
-                            {op.customModelConfig?.silhouetteLabel || op.perkLabel}
+                          {/* Preço ou Status de Posse */}
+                          <div className="shrink-0 text-right pl-1">
+                            {unlocked ? (
+                              <span
+                                className={`text-[9px] font-mono font-bold uppercase ${
+                                  equipped ? 'text-emerald-400' : 'text-sky-300'
+                                }`}
+                              >
+                                {equipped ? 'ATIVA' : 'LIBERADA'}
+                              </span>
+                            ) : (
+                              <div className="flex items-center justify-end gap-0.5 text-[11px] sm:text-xs font-display font-black text-sky-300 tabular-nums">
+                                <DiamondGemIcon className="w-3 h-3 shrink-0" />
+                                <span>{op.diamondPrice}</span>
+                              </div>
+                            )}
                           </div>
-
-                          <p className="text-[10px] font-mono text-slate-400 mt-1 line-clamp-2">
-                            {op.description}
-                          </p>
-                        </div>
-
-                        <div
-                          onClick={(e) => {
-                            e.stopPropagation();
-                          }}
-                        >
-                          <GoldSlantedButton
-                            label={
-                              equipped
-                                ? 'EQUIPADA ✓'
-                                : unlocked
-                                  ? 'EQUIPAR'
-                                  : `COMPRAR · ${op.diamondPrice} 💎`
-                            }
-                            variant={equipped ? 'equipped' : 'gold'}
-                            disabled={busy}
-                            onClick={() => void handleBuyOrEquipOperator(op.id)}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             </div>

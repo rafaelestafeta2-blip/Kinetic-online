@@ -139,8 +139,15 @@ service cloud.firestore {
         ]);
     }
 
+    function isFounderClaimPreserved() {
+      return !('founderDiamondsClaimed' in existing())
+        || existing().founderDiamondsClaimed != true
+        || (('founderDiamondsClaimed' in incoming()) && incoming().founderDiamondsClaimed == true);
+    }
+
     function isPlayerVipPurchaseAction() {
       return ('diamonds' in existing())
+        && existing().diamonds is number
         && existing().diamonds >= 800
         && ('diamonds' in incoming())
         && incoming().diamonds == existing().diamonds - 800
@@ -151,49 +158,25 @@ service cloud.firestore {
         && incoming().vipBattlePass.activeUntilIso is string
         && incoming().vipBattlePass.activeUntilIso.size() >= 10
         && incoming().vipBattlePass.activeUntilIso.size() <= 40
-        && incoming().diff(existing()).affectedKeys().hasOnly([
-          'callsign', 'callsignLocked', 'email', 'avatarDataUrl',
-          'playerXp', 'rankLevel', 'rankTitle', 'playerCash',
-          'activeWeapon', 'unlockedWeapons',
-          'totalKills', 'totalDeaths', 'totalAssists', 'totalHeadshots',
-          'matchesPlayed', 'matchesWon', 'bombsPlanted',
-          'unlockedAchievements', 'economyVersion', 'mmr',
-          'equippedWeaponOptics', 'equippedWeaponSkins', 'equippedWeaponGunsmith',
-          'unlockedWeaponSkins', 'unlockedGearIds', 'selectedClass', 'classLoadouts',
-          'equippedCallingCardId', 'clanId', 'clanTokens', 'purchasedClanOfferIds',
-          'dailyContracts', 'diamonds', 'vipBattlePass',
-          'activeOperatorId', 'unlockedOperators', 'founderDiamondsClaimed',
-          'updatedAt'
-        ]);
+        && isFounderClaimPreserved()
+        && !incoming().diff(existing()).affectedKeys().hasAny(['uid', 'createdAt']);
     }
 
     function isPlayerFounderGrantAction() {
-      return (!('founderDiamondsClaimed' in existing()) || existing().founderDiamondsClaimed == false)
+      return (!('founderDiamondsClaimed' in existing()) || existing().founderDiamondsClaimed != true)
         && ('founderDiamondsClaimed' in incoming())
         && incoming().founderDiamondsClaimed == true
         && ('diamonds' in incoming())
         && (
-          (!('diamonds' in existing()) && incoming().diamonds <= 1500)
-          || (('diamonds' in existing()) && incoming().diamonds <= existing().diamonds + 1500)
+          ((!('diamonds' in existing()) || !(existing().diamonds is number)) && incoming().diamonds <= 1500)
+          || (('diamonds' in existing()) && existing().diamonds is number && incoming().diamonds <= existing().diamonds + 1500)
         )
-        && incoming().diff(existing()).affectedKeys().hasOnly([
-          'callsign', 'callsignLocked', 'email', 'avatarDataUrl',
-          'playerXp', 'rankLevel', 'rankTitle', 'playerCash',
-          'activeWeapon', 'unlockedWeapons',
-          'totalKills', 'totalDeaths', 'totalAssists', 'totalHeadshots',
-          'matchesPlayed', 'matchesWon', 'bombsPlanted',
-          'unlockedAchievements', 'economyVersion', 'mmr',
-          'equippedWeaponOptics', 'equippedWeaponSkins', 'equippedWeaponGunsmith',
-          'unlockedWeaponSkins', 'unlockedGearIds', 'selectedClass', 'classLoadouts',
-          'equippedCallingCardId', 'clanId', 'clanTokens', 'purchasedClanOfferIds',
-          'dailyContracts', 'diamonds', 'vipBattlePass',
-          'activeOperatorId', 'unlockedOperators', 'founderDiamondsClaimed',
-          'updatedAt'
-        ]);
+        && !incoming().diff(existing()).affectedKeys().hasAny(['uid', 'createdAt']);
     }
 
     function isPlayerDiamondStoreAction() {
       return ('diamonds' in existing())
+        && existing().diamonds is number
         && ('diamonds' in incoming())
         && incoming().diamonds < existing().diamonds
         && incoming().diamonds >= 0
@@ -201,43 +184,19 @@ service cloud.firestore {
         && incoming().playerXp <= existing().playerXp + 50000
         && incoming().playerCash >= existing().playerCash
         && incoming().playerCash <= existing().playerCash + 50000
-        && incoming().diff(existing()).affectedKeys().hasOnly([
-          'callsign', 'callsignLocked', 'email', 'avatarDataUrl',
-          'playerXp', 'rankLevel', 'rankTitle', 'playerCash',
-          'activeWeapon', 'unlockedWeapons',
-          'totalKills', 'totalDeaths', 'totalAssists', 'totalHeadshots',
-          'matchesPlayed', 'matchesWon', 'bombsPlanted',
-          'unlockedAchievements', 'economyVersion', 'mmr',
-          'equippedWeaponOptics', 'equippedWeaponSkins', 'equippedWeaponGunsmith',
-          'unlockedWeaponSkins', 'unlockedGearIds', 'selectedClass', 'classLoadouts',
-          'equippedCallingCardId', 'clanId', 'clanTokens', 'purchasedClanOfferIds',
-          'dailyContracts', 'diamonds', 'vipBattlePass',
-          'activeOperatorId', 'unlockedOperators', 'founderDiamondsClaimed',
-          'updatedAt'
-        ]);
+        && isFounderClaimPreserved()
+        && !incoming().diff(existing()).affectedKeys().hasAny(['uid', 'createdAt']);
     }
 
     function isPlayerDiamondPackTopupAction() {
       return ('diamonds' in incoming())
         && incoming().diamonds <= 1000000
         && (
-          (!('diamonds' in existing()) && incoming().diamonds in [400, 880, 2050, 4800])
-          || (('diamonds' in existing()) && (incoming().diamonds - existing().diamonds) in [400, 880, 2050, 4800])
+          ((!('diamonds' in existing()) || !(existing().diamonds is number)) && incoming().diamonds in [400, 880, 2050, 4800])
+          || (('diamonds' in existing()) && existing().diamonds is number && (incoming().diamonds - existing().diamonds) in [400, 880, 2050, 4800])
         )
-        && incoming().diff(existing()).affectedKeys().hasOnly([
-          'callsign', 'callsignLocked', 'email', 'avatarDataUrl',
-          'playerXp', 'rankLevel', 'rankTitle', 'playerCash',
-          'activeWeapon', 'unlockedWeapons',
-          'totalKills', 'totalDeaths', 'totalAssists', 'totalHeadshots',
-          'matchesPlayed', 'matchesWon', 'bombsPlanted',
-          'unlockedAchievements', 'economyVersion', 'mmr',
-          'equippedWeaponOptics', 'equippedWeaponSkins', 'equippedWeaponGunsmith',
-          'unlockedWeaponSkins', 'unlockedGearIds', 'selectedClass', 'classLoadouts',
-          'equippedCallingCardId', 'clanId', 'clanTokens', 'purchasedClanOfferIds',
-          'dailyContracts', 'diamonds', 'vipBattlePass',
-          'activeOperatorId', 'unlockedOperators', 'founderDiamondsClaimed',
-          'updatedAt'
-        ]);
+        && isFounderClaimPreserved()
+        && !incoming().diff(existing()).affectedKeys().hasAny(['uid', 'createdAt']);
     }
 
     function isPlayerProgressionUpdateAction() {
@@ -247,13 +206,13 @@ service cloud.firestore {
         && incoming().playerCash <= existing().playerCash + 50000
         && (
           !('clanTokens' in incoming())
-          || (!('clanTokens' in existing()) && incoming().clanTokens <= 5000)
-          || (('clanTokens' in existing()) && incoming().clanTokens <= existing().clanTokens + 5000)
+          || ((!('clanTokens' in existing()) || !(existing().clanTokens is number)) && incoming().clanTokens <= 5000)
+          || (('clanTokens' in existing()) && existing().clanTokens is number && incoming().clanTokens <= existing().clanTokens + 5000)
         )
         && (
           !('diamonds' in incoming())
-          || (!('diamonds' in existing()) && incoming().diamonds == 0)
-          || (('diamonds' in existing()) && incoming().diamonds == existing().diamonds)
+          || ((!('diamonds' in existing()) || !(existing().diamonds is number)) && incoming().diamonds == 0)
+          || (('diamonds' in existing()) && existing().diamonds is number && incoming().diamonds == existing().diamonds)
         )
         && (
           !('vipBattlePass' in incoming())
@@ -265,6 +224,7 @@ service cloud.firestore {
               incoming().vipBattlePass.activeUntilIso == ''
               || (
                 ('vipBattlePass' in existing())
+                && existing().vipBattlePass is map
                 && ('activeUntilIso' in existing().vipBattlePass)
                 && incoming().vipBattlePass.activeUntilIso == existing().vipBattlePass.activeUntilIso
               )
@@ -274,6 +234,7 @@ service cloud.firestore {
         && (
           !('mmr' in incoming())
           || !('mmr' in existing())
+          || !(existing().mmr is number)
           || (existing().mmr == 1000 && incoming().mmr == 2450)
           || (incoming().mmr >= existing().mmr - 250 && incoming().mmr <= existing().mmr + 250)
         )
@@ -291,20 +252,8 @@ service cloud.firestore {
         && incoming().matchesWon <= existing().matchesWon + 20
         && incoming().bombsPlanted >= existing().bombsPlanted
         && incoming().bombsPlanted <= existing().bombsPlanted + 50
-        && incoming().diff(existing()).affectedKeys().hasOnly([
-          'callsign', 'callsignLocked', 'email', 'avatarDataUrl',
-          'playerXp', 'rankLevel', 'rankTitle', 'playerCash',
-          'activeWeapon', 'unlockedWeapons',
-          'totalKills', 'totalDeaths', 'totalAssists', 'totalHeadshots',
-          'matchesPlayed', 'matchesWon', 'bombsPlanted',
-          'unlockedAchievements', 'economyVersion', 'mmr',
-          'equippedWeaponOptics', 'equippedWeaponSkins', 'equippedWeaponGunsmith',
-          'unlockedWeaponSkins', 'unlockedGearIds', 'selectedClass', 'classLoadouts',
-          'equippedCallingCardId', 'clanId', 'clanTokens', 'purchasedClanOfferIds',
-          'dailyContracts', 'diamonds', 'vipBattlePass',
-          'activeOperatorId', 'unlockedOperators', 'founderDiamondsClaimed',
-          'updatedAt'
-        ]);
+        && isFounderClaimPreserved()
+        && !incoming().diff(existing()).affectedKeys().hasAny(['uid', 'createdAt']);
     }
 
     function isValidUsernameRegistry(data, usernameLower) {
@@ -431,8 +380,8 @@ service cloud.firestore {
         && isValidId(userId)
         && isValidPlayerProfile(incoming())
         && incoming().uid == existing().uid
-        && incoming().createdAt == existing().createdAt
-        && (!('callsignLocked' in existing()) || !existing().callsignLocked || (incoming().callsign == existing().callsign && incoming().callsignLocked))
+        && (!('createdAt' in existing()) || !(existing().createdAt is string) || incoming().createdAt == existing().createdAt)
+        && (!('callsignLocked' in existing()) || existing().callsignLocked != true || (incoming().callsign == existing().callsign && incoming().callsignLocked == true))
         && (isPlayerEconomyMigrationAction() || isPlayerAccountResetAction() || isPlayerVipPurchaseAction() || isPlayerFounderGrantAction() || isPlayerDiamondPackTopupAction() || isPlayerDiamondStoreAction() || isPlayerProgressionUpdateAction());
       allow delete: if isOwner(userId) && isValidId(userId);
     }

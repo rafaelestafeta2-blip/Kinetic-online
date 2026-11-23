@@ -3,10 +3,12 @@ import {
   doc,
   getDoc,
   getDocFromCache,
+  getDocFromServer,
   onSnapshot,
   setDoc,
   Unsubscribe,
 } from 'firebase/firestore';
+import { WarfaceClassId } from '../components/WarfaceClassIcons';
 import { evaluateUnlockedAchievements } from '../progression/achievementsData';
 import {
   applyCloudCallingCardSnapshot,
@@ -19,6 +21,7 @@ import {
   recordDailyContractProgress,
   registerCloudDailyContractsHook,
   resetDailyContractsLocal,
+  sanitizeDailyContractsState,
 } from '../progression/dailyContractsSystem';
 import {
   DIAMOND_EXCLUSIVE_WEAPON_OFFERS,
@@ -50,6 +53,7 @@ import {
   commitActivatedVipStateLocal,
   getVipBattlePassState,
   registerCloudVipClaimHook,
+  sanitizeVipBattlePassState,
   VIP_PASS_DIAMOND_PRICE,
 } from '../progression/vipBattlePassSystem';
 import { getSkinDefinition } from '../progression/weaponSkins';
@@ -94,8 +98,63 @@ const listeners = new Set<SyncListener>();
 let firestoreUnsub: Unsubscribe | null = null;
 let saveTimeoutId: number | null = null;
 let lastLocalLoadoutMutationMs = 0;
+let lastLocalDiamondMutationMs = 0;
+let pendingDiamondMutationCount = 0;
+let cloudWriteEpoch = 0;
+let cloudWriteChain: Promise<void> = Promise.resolve();
 let cloudHydrationPromise: Promise<void> | null = null;
 let hydratedCloudUid: string | null = null;
+
+function enqueueCloudWrite<T>(task: () => Promise<T>): Promise<T> {
+  const next = cloudWriteChain.then(task, task);
+  cloudWriteChain = next.then(
+    () => undefined,
+    () => undefined
+  );
+  return next;
+}
+
+function clampInt(
+  value: unknown,
+  min: number,
+  max: number,
+  fallback = min
+): number {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  return Math.max(min, Math.min(max, Math.floor(num)));
+}
+
+function clampRecordEntries<T>(
+  input: Record<string, T> | undefined | null,
+  maxEntries: number
+): Record<string, T> {
+  const out: Record<string, T> = {};
+  if (!input || typeof input !== 'object') return out;
+  let count = 0;
+  for (const [k, v] of Object.entries(input)) {
+    if (count >= maxEntries) break;
+    if (v !== undefined) {
+      out[k] = v;
+      count++;
+    }
+  }
+  return out;
+}
+
+const VALID_CLASSES = new Set<WarfaceClassId>([
+  'FUZILEIRO',
+  'MEDICO',
+  'ENGENHEIRO',
+  'FRANCO_ATIRADOR',
+]);
+
+function normalizeIsoTimestamp(value: unknown, fallback: string): string {
+  if (typeof value === 'string' && value.length >= 10 && value.length <= 40) {
+    return value;
+  }
+  return fallback;
+}
 
 function emitState(): void {
   const snapshot: CloudSyncState = {
@@ -116,80 +175,199 @@ function buildCloudSafeProfilePayload(
   profile: PlayerCloudProfile,
   uid: string
 ): Omit<PlayerCloudProfile, 'email'> {
-  const { email: _omitEmail, ...restProfile } = profile;
+  const nowIso = new Date().toISOString();
   const loadoutSnap = getCloudLoadoutSnapshot();
   const opSnap = getOperatorOwnershipState();
-  const matchesPlayed = Math.max(0, Math.floor(Number(restProfile.matchesPlayed) || 0));
-  const matchesWon = Math.min(
-    matchesPlayed,
-    Math.max(0, Math.floor(Number(restProfile.matchesWon) || 0))
-  );
-  const equippedSkins =
-    restProfile.equippedWeaponSkins || loadoutSnap.equippedWeaponSkins;
+
+  const matchesPlayed = clampInt(profile.matchesPlayed, 0, 500_000, 0);
+  const matchesWon = Math.min(matchesPlayed, clampInt(profile.matchesWon, 0, 500_000, 0));
+
+  const equippedOptics = clampRecordEntries(
+    (profile.equippedWeaponOptics || loadoutSnap.equippedWeaponOptics) as Record<
+      string,
+      NonNullable<PlayerCloudProfile['equippedWeaponOptics']>[WeaponId]
+    >,
+    25
+  ) as PlayerCloudProfile['equippedWeaponOptics'];
+
+  const rawSkins = (profile.equippedWeaponSkins || loadoutSnap.equippedWeaponSkins) as Record<
+    string,
+    string
+  >;
+  const equippedSkins: Partial<Record<WeaponId, string>> = {};
+  let skinMapCount = 0;
+  for (const [k, v] of Object.entries(rawSkins || {})) {
+    if (skinMapCount >= 25) break;
+    if (typeof v === 'string' && v.length > 0) {
+      equippedSkins[k as WeaponId] = v.slice(0, 48);
+      skinMapCount++;
+    }
+  }
+
+  const equippedGunsmith = clampRecordEntries(
+    (profile.equippedWeaponGunsmith || loadoutSnap.equippedWeaponGunsmith) as Record<
+      string,
+      NonNullable<PlayerCloudProfile['equippedWeaponGunsmith']>[WeaponId]
+    >,
+    25
+  ) as PlayerCloudProfile['equippedWeaponGunsmith'];
+
+  const unlockedWeaponsList = Array.from(
+    new Set(
+      (profile.unlockedWeapons || []).filter(
+        (w): w is WeaponId => typeof w === 'string' && w.length > 0 && w.length <= 40
+      )
+    )
+  ).slice(0, 25);
+  if (unlockedWeaponsList.length === 0) {
+    unlockedWeaponsList.push('M4_CARBINE');
+  }
+
+  const unlockedAchievements = Array.from(
+    new Set(
+      (profile.unlockedAchievements || []).filter(
+        (a): a is string => typeof a === 'string' && a.length > 0
+      )
+    )
+  ).slice(0, 50);
+
   const unlockedWeaponSkins = Array.from(
     new Set([
-      ...(restProfile.unlockedWeaponSkins || []),
+      ...(profile.unlockedWeaponSkins || []),
       ...(loadoutSnap.purchasedSkinIds || []),
-      ...Object.values(equippedSkins || {}).filter(
+      ...Object.values(equippedSkins).filter(
         (v): v is string => typeof v === 'string' && v.length > 0
       ),
     ])
   )
+    .filter((s): s is string => typeof s === 'string' && s.length > 0)
     .map((s) => s.slice(0, 48))
     .slice(0, 60);
 
   const unlockedGearIds = Array.from(
     new Set([
-      ...(restProfile.unlockedGearIds || []),
+      ...(profile.unlockedGearIds || []),
       ...(loadoutSnap.purchasedGearIds || []),
     ])
   )
+    .filter((g): g is string => typeof g === 'string' && g.length > 0)
     .map((g) => g.slice(0, 48))
     .slice(0, 40);
 
+  const rawSelectedClass =
+    profile.selectedClass || loadoutSnap.selectedClass || 'FUZILEIRO';
+  const selectedClass: WarfaceClassId = VALID_CLASSES.has(rawSelectedClass)
+    ? rawSelectedClass
+    : 'FUZILEIRO';
+
+  const rawClassLoadouts = profile.classLoadouts || loadoutSnap.classLoadouts || {};
+  const classLoadouts: PlayerCloudProfile['classLoadouts'] = {};
+  (['FUZILEIRO', 'MEDICO', 'ENGENHEIRO', 'FRANCO_ATIRADOR'] as WarfaceClassId[]).forEach(
+    (cId) => {
+      const cfg = rawClassLoadouts[cId] || loadoutSnap.classLoadouts?.[cId];
+      if (cfg) {
+        classLoadouts[cId] = { ...cfg };
+      }
+    }
+  );
+
   const cleanClanId =
-    typeof restProfile.clanId === 'string'
-      ? restProfile.clanId.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 24)
+    typeof profile.clanId === 'string'
+      ? profile.clanId.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 24)
       : '';
 
+  const callsign = (
+    typeof profile.callsign === 'string' && profile.callsign.trim().length > 0
+      ? profile.callsign.trim()
+      : 'OPERADOR-01'
+  ).slice(0, 32);
+
+  const rankTitle = (
+    typeof profile.rankTitle === 'string' && profile.rankTitle.trim().length > 0
+      ? profile.rankTitle.trim()
+      : 'RECRUTA'
+  ).slice(0, 64);
+
+  const activeWeapon = (
+    typeof profile.activeWeapon === 'string' && profile.activeWeapon.length > 0
+      ? profile.activeWeapon
+      : 'M4_CARBINE'
+  ).slice(0, 40) as WeaponId;
+
+  const activeOperatorId = (
+    typeof profile.activeOperatorId === 'string' && profile.activeOperatorId.length > 0
+      ? profile.activeOperatorId
+      : opSnap.activeOperatorId || 'op_vanguard_default'
+  ).slice(0, 40);
+
+  const unlockedOperators = Array.from(
+    new Set([
+      'op_vanguard_default',
+      ...(profile.unlockedOperators || opSnap.unlockedOperatorIds || []).filter(
+        (id): id is string => typeof id === 'string' && id.length > 0 && id.length <= 40
+      ),
+    ])
+  ).slice(0, 40);
+
+  const purchasedClanOfferIds = Array.from(
+    new Set(
+      (profile.purchasedClanOfferIds || []).filter(
+        (id): id is string => typeof id === 'string' && id.length > 0
+      )
+    )
+  ).slice(0, 30);
+
   return {
-    ...restProfile,
+    uid,
+    callsign,
+    callsignLocked: Boolean(profile.callsignLocked),
+    avatarDataUrl:
+      typeof profile.avatarDataUrl === 'string'
+        ? profile.avatarDataUrl.slice(0, 58000)
+        : '',
+    playerXp: clampInt(profile.playerXp, 0, 50_000_000, 0),
+    rankLevel: clampInt(profile.rankLevel, 1, 70, 1),
+    rankTitle,
+    playerCash: clampInt(profile.playerCash, 0, 50_000_000, 3000),
+    activeWeapon,
+    unlockedWeapons: unlockedWeaponsList,
+    totalKills: clampInt(profile.totalKills, 0, 1_000_000, 0),
+    totalDeaths: clampInt(profile.totalDeaths, 0, 1_000_000, 0),
+    totalAssists: clampInt(profile.totalAssists, 0, 1_000_000, 0),
+    totalHeadshots: clampInt(profile.totalHeadshots, 0, 1_000_000, 0),
     matchesPlayed,
     matchesWon,
-    equippedWeaponOptics:
-      restProfile.equippedWeaponOptics || loadoutSnap.equippedWeaponOptics,
+    bombsPlanted: clampInt(profile.bombsPlanted, 0, 500_000, 0),
+    unlockedAchievements,
+    economyVersion: clampInt(profile.economyVersion, 1, 100, 2),
+    mmr: clampInt(profile.mmr, 100, 10_000, 2450),
+    equippedWeaponOptics: equippedOptics,
     equippedWeaponSkins: equippedSkins,
-    equippedWeaponGunsmith:
-      restProfile.equippedWeaponGunsmith || loadoutSnap.equippedWeaponGunsmith,
+    equippedWeaponGunsmith: equippedGunsmith,
     unlockedWeaponSkins,
     unlockedGearIds,
-    selectedClass:
-      restProfile.selectedClass || loadoutSnap.selectedClass || 'FUZILEIRO',
-    classLoadouts: restProfile.classLoadouts || loadoutSnap.classLoadouts,
+    selectedClass,
+    classLoadouts,
     equippedCallingCardId: (
-      restProfile.equippedCallingCardId ||
+      profile.equippedCallingCardId ||
       getEquippedCallingCardId() ||
       'obsidian_vanguard'
     ).slice(0, 48),
     clanId: cleanClanId,
-    clanTokens: Math.max(0, Math.min(1000000, Math.floor(Number(restProfile.clanTokens) || 0))),
-    purchasedClanOfferIds: Array.from(
-      new Set(restProfile.purchasedClanOfferIds || [])
-    ).slice(0, 30),
-    dailyContracts:
-      restProfile.dailyContracts || getDailyContractsSnapshot().state,
-    diamonds: Math.max(0, Math.floor(Number(restProfile.diamonds) || 0)),
-    vipBattlePass: restProfile.vipBattlePass || getVipBattlePassState(),
-    activeOperatorId:
-      restProfile.activeOperatorId || opSnap.activeOperatorId || 'op_vanguard_default',
-    unlockedOperators: Array.from(
-      new Set([
-        'op_vanguard_default',
-        ...(restProfile.unlockedOperators || opSnap.unlockedOperatorIds || []),
-      ])
-    ).slice(0, 40),
-    founderDiamondsClaimed: Boolean(restProfile.founderDiamondsClaimed),
-    uid,
+    clanTokens: clampInt(profile.clanTokens, 0, 1_000_000, 0),
+    purchasedClanOfferIds,
+    dailyContracts: sanitizeDailyContractsState(
+      profile.dailyContracts || getDailyContractsSnapshot().state
+    ),
+    diamonds: clampInt(profile.diamonds, 0, 1_000_000, 0),
+    vipBattlePass: sanitizeVipBattlePassState(
+      profile.vipBattlePass || getVipBattlePassState()
+    ),
+    activeOperatorId,
+    unlockedOperators,
+    founderDiamondsClaimed: Boolean(profile.founderDiamondsClaimed),
+    createdAt: normalizeIsoTimestamp(profile.createdAt, nowIso),
+    updatedAt: normalizeIsoTimestamp(profile.updatedAt, nowIso),
   };
 }
 
@@ -207,33 +385,42 @@ export async function pushProfileToFirestoreNow(): Promise<void> {
   if (!user) return;
   await ensureCloudProfileHydrated();
   if (!auth.currentUser || hydratedCloudUid !== user.uid) return;
+  if (pendingDiamondMutationCount > 0) return;
 
-  const path = `players/${user.uid}`;
-  state.isSyncing = true;
-  emitState();
+  const capturedEpoch = cloudWriteEpoch;
+  await enqueueCloudWrite(async () => {
+    const activeUser = auth.currentUser;
+    if (!activeUser || activeUser.uid !== user.uid) return;
+    if (pendingDiamondMutationCount > 0 || capturedEpoch !== cloudWriteEpoch) return;
 
-  const payload = {
-    ...buildCloudSafeProfilePayload(state.profile, user.uid),
-    updatedAt: new Date().toISOString(),
-  };
-
-  try {
-    await setDoc(doc(db, 'players', user.uid), payload);
-    state.lastSyncedAt = payload.updatedAt;
-    state.syncError = null;
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, path);
-    if (!isFirestoreOfflineError(err)) {
-      state.syncError = 'Falha ao sincronizar com a nuvem.';
-    }
-  } finally {
-    state.isSyncing = false;
+    const path = `players/${activeUser.uid}`;
+    state.isSyncing = true;
     emitState();
-  }
+
+    const payload = {
+      ...buildCloudSafeProfilePayload(state.profile, activeUser.uid),
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      await setDoc(doc(db, 'players', activeUser.uid), payload);
+      state.lastSyncedAt = payload.updatedAt;
+      state.syncError = null;
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, path);
+      if (!isFirestoreOfflineError(err)) {
+        state.syncError = 'Falha ao sincronizar com a nuvem.';
+      }
+    } finally {
+      state.isSyncing = false;
+      emitState();
+    }
+  });
 }
 
 function scheduleCloudPush(): void {
   if (!auth.currentUser || hydratedCloudUid !== auth.currentUser.uid) return;
+  if (pendingDiamondMutationCount > 0) return;
   if (saveTimeoutId !== null) {
     window.clearTimeout(saveTimeoutId);
   }
@@ -285,10 +472,25 @@ onAuthStateChanged(auth, async (user) => {
       applyCloudDailyContractsSnapshot(merged.dailyContracts);
       applyCloudVipBattlePassSnapshot(merged.vipBattlePass);
       applyCloudOperatorSnapshot(merged);
+
+      const hydrateEpoch = cloudWriteEpoch;
       const cloudSafeProfile = buildCloudSafeProfilePayload(merged, user.uid);
-      void setDoc(playerRef, cloudSafeProfile).catch((err) => {
-        handleFirestoreError(err, OperationType.WRITE, `players/${user.uid}`);
+      void enqueueCloudWrite(async () => {
+        if (
+          !auth.currentUser ||
+          auth.currentUser.uid !== user.uid ||
+          pendingDiamondMutationCount > 0 ||
+          hydrateEpoch !== cloudWriteEpoch
+        ) {
+          return;
+        }
+        try {
+          await setDoc(playerRef, cloudSafeProfile);
+        } catch (err) {
+          handleFirestoreError(err, OperationType.WRITE, `players/${user.uid}`);
+        }
       });
+
       state.lastSyncedAt = merged.updatedAt;
       state.syncError = null;
     } catch (err) {
@@ -332,16 +534,45 @@ onAuthStateChanged(auth, async (user) => {
         merged.equippedWeaponGunsmith = state.profile.equippedWeaponGunsmith;
         merged.equippedCallingCardId = state.profile.equippedCallingCardId;
       }
+
+      // Protect in-flight / recently committed diamond & store mutations from
+      // being reverted by stale Firestore snapshots (especially under long-polling on mobile).
+      const hasRecentDiamondMutation =
+        pendingDiamondMutationCount > 0 ||
+        Date.now() - lastLocalDiamondMutationMs < 6000;
+      if (hasRecentDiamondMutation) {
+        const remoteDiamonds = Math.max(0, Math.floor(Number(remote.diamonds) || 0));
+        const localDiamonds = Math.max(0, Math.floor(Number(state.profile.diamonds) || 0));
+        const remoteFounder = Boolean(remote.founderDiamondsClaimed);
+        const localFounder = Boolean(state.profile.founderDiamondsClaimed);
+        if (
+          pendingDiamondMutationCount > 0 ||
+          remoteDiamonds !== localDiamonds ||
+          remoteFounder !== localFounder
+        ) {
+          merged.diamonds = state.profile.diamonds;
+          merged.founderDiamondsClaimed = state.profile.founderDiamondsClaimed;
+          merged.activeOperatorId = state.profile.activeOperatorId;
+          merged.unlockedOperators = state.profile.unlockedOperators;
+          merged.unlockedWeapons = state.profile.unlockedWeapons;
+          merged.unlockedWeaponSkins = state.profile.unlockedWeaponSkins;
+          merged.equippedWeaponSkins = state.profile.equippedWeaponSkins;
+          merged.vipBattlePass = state.profile.vipBattlePass;
+        }
+      }
+
       state.profile = merged;
       state.lastSyncedAt = merged.updatedAt;
       persistLocalProfile(merged);
-      if (!hasRecentLocalLoadoutEdit) {
+      if (!hasRecentLocalLoadoutEdit && !hasRecentDiamondMutation) {
         applyCloudLoadoutSnapshot(merged);
         applyCloudCallingCardSnapshot(merged.equippedCallingCardId);
       }
       applyCloudDailyContractsSnapshot(merged.dailyContracts);
-      applyCloudVipBattlePassSnapshot(merged.vipBattlePass);
-      applyCloudOperatorSnapshot(merged);
+      if (!hasRecentDiamondMutation) {
+        applyCloudVipBattlePassSnapshot(merged.vipBattlePass);
+        applyCloudOperatorSnapshot(merged);
+      }
       emitState();
     },
     (err) => {
@@ -570,6 +801,78 @@ registerCloudOperatorHook((opState) => {
 
 export const FOUNDER_WELCOME_DIAMONDS = 1500;
 
+function anchorProfileToServerBaseline(
+  candidate: PlayerCloudProfile,
+  serverData: Partial<PlayerCloudProfile> | null
+): PlayerCloudProfile {
+  if (!serverData) return candidate;
+  const serverCreatedAt =
+    typeof serverData.createdAt === 'string' &&
+    serverData.createdAt.length >= 10 &&
+    serverData.createdAt.length <= 40
+      ? serverData.createdAt
+      : candidate.createdAt;
+  const serverCallsign =
+    typeof serverData.callsign === 'string' && serverData.callsign.trim().length > 0
+      ? serverData.callsign.slice(0, 32)
+      : candidate.callsign;
+  const serverCallsignLocked = Boolean(serverData.callsignLocked);
+  const serverXp = Math.max(0, Math.floor(Number(serverData.playerXp) || 0));
+  const serverCash = Math.max(0, Math.floor(Number(serverData.playerCash) || 0));
+  const nextXp = Math.max(candidate.playerXp, serverXp);
+  const nextCash = Math.max(candidate.playerCash, serverCash);
+  const nextRank = getRankForXp(nextXp);
+  const serverMatchesPlayed = Math.max(0, Math.floor(Number(serverData.matchesPlayed) || 0));
+  const nextMatchesPlayed = Math.max(candidate.matchesPlayed, serverMatchesPlayed);
+  const nextMatchesWon = Math.min(
+    nextMatchesPlayed,
+    Math.max(candidate.matchesWon, Math.max(0, Math.floor(Number(serverData.matchesWon) || 0)))
+  );
+
+  return {
+    ...candidate,
+    createdAt: serverCreatedAt,
+    callsign: serverCallsignLocked ? serverCallsign : candidate.callsign,
+    callsignLocked: serverCallsignLocked || Boolean(candidate.callsignLocked),
+    playerXp: nextXp,
+    rankLevel: nextRank.level,
+    rankTitle: nextRank.title,
+    playerCash: nextCash,
+    totalKills: Math.max(candidate.totalKills, Math.max(0, Math.floor(Number(serverData.totalKills) || 0))),
+    totalDeaths: Math.max(candidate.totalDeaths, Math.max(0, Math.floor(Number(serverData.totalDeaths) || 0))),
+    totalAssists: Math.max(candidate.totalAssists, Math.max(0, Math.floor(Number(serverData.totalAssists) || 0))),
+    totalHeadshots: Math.max(candidate.totalHeadshots, Math.max(0, Math.floor(Number(serverData.totalHeadshots) || 0))),
+    matchesPlayed: nextMatchesPlayed,
+    matchesWon: nextMatchesWon,
+    bombsPlanted: Math.max(candidate.bombsPlanted, Math.max(0, Math.floor(Number(serverData.bombsPlanted) || 0))),
+    mmr:
+      typeof serverData.mmr === 'number' && serverData.mmr >= 100 && serverData.mmr <= 10000
+        ? serverData.mmr
+        : candidate.mmr,
+    founderDiamondsClaimed:
+      Boolean(serverData.founderDiamondsClaimed) || Boolean(candidate.founderDiamondsClaimed),
+  };
+}
+
+async function fetchAuthoritativeServerProfile(
+  uid: string
+): Promise<Partial<PlayerCloudProfile> | null> {
+  const playerRef = doc(db, 'players', uid);
+  try {
+    const snap = await getDocFromServer(playerRef);
+    return snap.exists() ? (snap.data() as Partial<PlayerCloudProfile>) : null;
+  } catch {
+    try {
+      const fallbackSnap = await getDoc(playerRef);
+      return fallbackSnap.exists()
+        ? (fallbackSnap.data() as Partial<PlayerCloudProfile>)
+        : null;
+    } catch {
+      return null;
+    }
+  }
+}
+
 export async function claimFounderWelcomeDiamonds(): Promise<{
   ok: boolean;
   error?: string;
@@ -584,6 +887,10 @@ export async function claimFounderWelcomeDiamonds(): Promise<{
   }
 
   clearPendingCloudPushTimer();
+  cloudWriteEpoch++;
+  pendingDiamondMutationCount++;
+  lastLocalDiamondMutationMs = Date.now();
+
   const prevProfile = { ...state.profile };
   const currentDiamonds = Math.max(0, Math.floor(Number(state.profile.diamonds) || 0));
   const nextDiamonds = currentDiamonds + FOUNDER_WELCOME_DIAMONDS;
@@ -601,30 +908,81 @@ export async function claimFounderWelcomeDiamonds(): Promise<{
   emitState();
 
   const user = auth.currentUser;
-  if (user) {
-    const cloudSafePayload = buildCloudSafeProfilePayload(updatedProfile, user.uid);
-    try {
-      state.isSyncing = true;
-      emitState();
-      await setDoc(doc(db, 'players', user.uid), cloudSafePayload);
-      state.lastSyncedAt = nowIso;
-      state.syncError = null;
-    } catch (err) {
-      state.profile = prevProfile;
-      persistLocalProfile(prevProfile);
-      emitState();
-      handleFirestoreError(err, OperationType.WRITE, `players/${user.uid}`);
-      return {
-        ok: false,
-        error: 'Não foi possível sincronizar o resgate de Diamantes com a nuvem.',
-      };
-    } finally {
-      state.isSyncing = false;
-      emitState();
-    }
+  if (!user) {
+    pendingDiamondMutationCount = Math.max(0, pendingDiamondMutationCount - 1);
+    lastLocalDiamondMutationMs = Date.now();
+    return { ok: true, granted: FOUNDER_WELCOME_DIAMONDS };
   }
 
-  return { ok: true, granted: FOUNDER_WELCOME_DIAMONDS };
+  try {
+    return await enqueueCloudWrite(async () => {
+      const playerRef = doc(db, 'players', user.uid);
+      const cloudSafePayload = buildCloudSafeProfilePayload(updatedProfile, user.uid);
+      try {
+        state.isSyncing = true;
+        emitState();
+        await setDoc(playerRef, cloudSafePayload);
+        lastLocalDiamondMutationMs = Date.now();
+        state.lastSyncedAt = nowIso;
+        state.syncError = null;
+        return { ok: true, granted: FOUNDER_WELCOME_DIAMONDS };
+      } catch (firstErr) {
+        // Reconcile against authoritative server doc (handles stale createdAt, locked callsign, or prior commit)
+        const serverData = await fetchAuthoritativeServerProfile(user.uid);
+        if (serverData && serverData.founderDiamondsClaimed === true) {
+          const adopted = mergeLocalAndCloudProfiles(updatedProfile, serverData, user);
+          state.profile = adopted;
+          persistLocalProfile(adopted);
+          lastLocalDiamondMutationMs = Date.now();
+          state.lastSyncedAt = adopted.updatedAt;
+          state.syncError = null;
+          emitState();
+          return { ok: true, granted: FOUNDER_WELCOME_DIAMONDS };
+        }
+
+        try {
+          const retryNowIso = new Date().toISOString();
+          const serverDiamonds = Math.max(
+            0,
+            Math.floor(Number(serverData?.diamonds) || 0)
+          );
+          const anchored = anchorProfileToServerBaseline(
+            {
+              ...updatedProfile,
+              diamonds: Math.min(1_000_000, serverDiamonds + FOUNDER_WELCOME_DIAMONDS),
+              founderDiamondsClaimed: true,
+              updatedAt: retryNowIso,
+            },
+            serverData
+          );
+          const retryPayload = buildCloudSafeProfilePayload(anchored, user.uid);
+          await setDoc(playerRef, retryPayload);
+          state.profile = anchored;
+          persistLocalProfile(anchored);
+          lastLocalDiamondMutationMs = Date.now();
+          state.lastSyncedAt = retryNowIso;
+          state.syncError = null;
+          emitState();
+          return { ok: true, granted: FOUNDER_WELCOME_DIAMONDS };
+        } catch (retryErr) {
+          lastLocalDiamondMutationMs = 0;
+          state.profile = prevProfile;
+          persistLocalProfile(prevProfile);
+          emitState();
+          handleFirestoreError(retryErr || firstErr, OperationType.WRITE, `players/${user.uid}`);
+          return {
+            ok: false,
+            error: 'Não foi possível sincronizar o resgate de Diamantes com a nuvem. Verifique sua conexão e tente novamente.',
+          };
+        }
+      } finally {
+        state.isSyncing = false;
+        emitState();
+      }
+    });
+  } finally {
+    pendingDiamondMutationCount = Math.max(0, pendingDiamondMutationCount - 1);
+  }
 }
 
 const ALLOWED_DIAMOND_PACK_AMOUNTS: Record<string, number> = {
@@ -653,6 +1011,10 @@ export async function creditPurchasedDiamondPack(params: {
   }
 
   clearPendingCloudPushTimer();
+  cloudWriteEpoch++;
+  pendingDiamondMutationCount++;
+  lastLocalDiamondMutationMs = Date.now();
+
   const prevProfile = { ...state.profile };
   const currentDiamonds = Math.max(0, Math.floor(Number(state.profile.diamonds) || 0));
   const nextDiamonds = Math.min(1_000_000, currentDiamonds + creditedAmount);
@@ -669,34 +1031,67 @@ export async function creditPurchasedDiamondPack(params: {
   emitState();
 
   const user = auth.currentUser;
-  if (user) {
-    const cloudSafePayload = buildCloudSafeProfilePayload(updatedProfile, user.uid);
-    try {
-      state.isSyncing = true;
-      emitState();
-      await setDoc(doc(db, 'players', user.uid), cloudSafePayload);
-      state.lastSyncedAt = nowIso;
-      state.syncError = null;
-    } catch (err) {
-      state.profile = prevProfile;
-      persistLocalProfile(prevProfile);
-      emitState();
-      handleFirestoreError(err, OperationType.WRITE, `players/${user.uid}`);
-      return {
-        ok: false,
-        error: 'Não foi possível salvar os Diamantes comprados na nuvem.',
-      };
-    } finally {
-      state.isSyncing = false;
-      emitState();
-    }
+  if (!user) {
+    pendingDiamondMutationCount = Math.max(0, pendingDiamondMutationCount - 1);
+    return { ok: true, credited: creditedAmount, newBalance: nextDiamonds };
   }
 
-  return {
-    ok: true,
-    credited: creditedAmount,
-    newBalance: nextDiamonds,
-  };
+  try {
+    return await enqueueCloudWrite(async () => {
+      const playerRef = doc(db, 'players', user.uid);
+      const cloudSafePayload = buildCloudSafeProfilePayload(updatedProfile, user.uid);
+      try {
+        state.isSyncing = true;
+        emitState();
+        await setDoc(playerRef, cloudSafePayload);
+        lastLocalDiamondMutationMs = Date.now();
+        state.lastSyncedAt = nowIso;
+        state.syncError = null;
+        return { ok: true, credited: creditedAmount, newBalance: nextDiamonds };
+      } catch (firstErr) {
+        try {
+          const serverData = await fetchAuthoritativeServerProfile(user.uid);
+          const serverDiamonds = Math.max(
+            0,
+            Math.floor(Number(serverData?.diamonds) || 0)
+          );
+          const reconciledBalance = Math.min(1_000_000, serverDiamonds + creditedAmount);
+          const retryNowIso = new Date().toISOString();
+          const anchored = anchorProfileToServerBaseline(
+            {
+              ...updatedProfile,
+              diamonds: reconciledBalance,
+              updatedAt: retryNowIso,
+            },
+            serverData
+          );
+          await setDoc(playerRef, buildCloudSafeProfilePayload(anchored, user.uid));
+          state.profile = anchored;
+          persistLocalProfile(anchored);
+          lastLocalDiamondMutationMs = Date.now();
+          state.lastSyncedAt = retryNowIso;
+          state.syncError = null;
+          emitState();
+          return { ok: true, credited: creditedAmount, newBalance: reconciledBalance };
+        } catch (retryErr) {
+          lastLocalDiamondMutationMs = 0;
+          state.profile = prevProfile;
+          persistLocalProfile(prevProfile);
+          emitState();
+          handleFirestoreError(retryErr || firstErr, OperationType.WRITE, `players/${user.uid}`);
+          return {
+            ok: false,
+            error: 'Não foi possível salvar os Diamantes comprados na nuvem.',
+          };
+        }
+      } finally {
+        state.isSyncing = false;
+        emitState();
+      }
+    });
+  } finally {
+    pendingDiamondMutationCount = Math.max(0, pendingDiamondMutationCount - 1);
+  }
 }
 
 export interface WarboxResolvedDropResult {
@@ -736,6 +1131,10 @@ export async function openWarfaceWarboxWithDiamonds(
   }
 
   clearPendingCloudPushTimer();
+  cloudWriteEpoch++;
+  pendingDiamondMutationCount++;
+  lastLocalDiamondMutationMs = Date.now();
+
   const prevProfile = { ...state.profile };
   const rolled = rollWarboxDrops(box.id, count);
 
@@ -854,38 +1253,90 @@ export async function openWarfaceWarboxWithDiamonds(
   emitState();
 
   const user = auth.currentUser;
-  if (user) {
-    const cloudSafePayload = buildCloudSafeProfilePayload(updatedProfile, user.uid);
-    try {
-      state.isSyncing = true;
-      emitState();
-      await setDoc(doc(db, 'players', user.uid), cloudSafePayload);
-      state.lastSyncedAt = nowIso;
-      state.syncError = null;
-    } catch (err) {
-      state.profile = prevProfile;
-      persistLocalProfile(prevProfile);
-      emitState();
-      handleFirestoreError(err, OperationType.WRITE, `players/${user.uid}`);
-      return {
-        ok: false,
-        error: 'Falha ao sincronizar abertura da Caixa com o servidor.',
-      };
-    } finally {
-      state.isSyncing = false;
-      emitState();
-    }
+  if (!user) {
+    pendingDiamondMutationCount = Math.max(0, pendingDiamondMutationCount - 1);
+    return {
+      ok: true,
+      results: resolvedResults,
+      nextPityCount: rolled.nextPityCount,
+      totalCashGained,
+      totalXpGained,
+      unlockedWeaponId: firstUnlockedWeaponId,
+      unlockedOperatorId: firstUnlockedOperatorId,
+    };
   }
 
-  return {
-    ok: true,
-    results: resolvedResults,
-    nextPityCount: rolled.nextPityCount,
-    totalCashGained,
-    totalXpGained,
-    unlockedWeaponId: firstUnlockedWeaponId,
-    unlockedOperatorId: firstUnlockedOperatorId,
-  };
+  try {
+    return await enqueueCloudWrite(async () => {
+      const playerRef = doc(db, 'players', user.uid);
+      const cloudSafePayload = buildCloudSafeProfilePayload(updatedProfile, user.uid);
+      try {
+        state.isSyncing = true;
+        emitState();
+        await setDoc(playerRef, cloudSafePayload);
+        lastLocalDiamondMutationMs = Date.now();
+        state.lastSyncedAt = nowIso;
+        state.syncError = null;
+        return {
+          ok: true,
+          results: resolvedResults,
+          nextPityCount: rolled.nextPityCount,
+          totalCashGained,
+          totalXpGained,
+          unlockedWeaponId: firstUnlockedWeaponId,
+          unlockedOperatorId: firstUnlockedOperatorId,
+        };
+      } catch (firstErr) {
+        try {
+          const serverData = await fetchAuthoritativeServerProfile(user.uid);
+          const serverDiamonds = Math.max(0, Math.floor(Number(serverData?.diamonds) || 0));
+          if (serverDiamonds < cost) {
+            throw new Error('Saldo insuficiente no servidor.');
+          }
+          const retryNowIso = new Date().toISOString();
+          const anchored = anchorProfileToServerBaseline(
+            {
+              ...updatedProfile,
+              diamonds: serverDiamonds - cost,
+              updatedAt: retryNowIso,
+            },
+            serverData
+          );
+          await setDoc(playerRef, buildCloudSafeProfilePayload(anchored, user.uid));
+          state.profile = anchored;
+          persistLocalProfile(anchored);
+          lastLocalDiamondMutationMs = Date.now();
+          state.lastSyncedAt = retryNowIso;
+          state.syncError = null;
+          emitState();
+          return {
+            ok: true,
+            results: resolvedResults,
+            nextPityCount: rolled.nextPityCount,
+            totalCashGained,
+            totalXpGained,
+            unlockedWeaponId: firstUnlockedWeaponId,
+            unlockedOperatorId: firstUnlockedOperatorId,
+          };
+        } catch (retryErr) {
+          lastLocalDiamondMutationMs = 0;
+          state.profile = prevProfile;
+          persistLocalProfile(prevProfile);
+          emitState();
+          handleFirestoreError(retryErr || firstErr, OperationType.WRITE, `players/${user.uid}`);
+          return {
+            ok: false,
+            error: 'Falha ao sincronizar abertura da Caixa com o servidor.',
+          };
+        }
+      } finally {
+        state.isSyncing = false;
+        emitState();
+      }
+    });
+  } finally {
+    pendingDiamondMutationCount = Math.max(0, pendingDiamondMutationCount - 1);
+  }
 }
 
 export async function purchaseDirectWeaponOfferWithDiamonds(
@@ -911,6 +1362,10 @@ export async function purchaseDirectWeaponOfferWithDiamonds(
   }
 
   clearPendingCloudPushTimer();
+  cloudWriteEpoch++;
+  pendingDiamondMutationCount++;
+  lastLocalDiamondMutationMs = Date.now();
+
   const prevProfile = { ...state.profile };
   const nextDiamonds = currentDiamonds - offer.diamondPrice;
   const nextCash = state.profile.playerCash + offer.bonusCash;
@@ -942,34 +1397,66 @@ export async function purchaseDirectWeaponOfferWithDiamonds(
   emitState();
 
   const user = auth.currentUser;
-  if (user) {
-    const cloudSafePayload = buildCloudSafeProfilePayload(updatedProfile, user.uid);
-    try {
-      state.isSyncing = true;
-      emitState();
-      await setDoc(doc(db, 'players', user.uid), cloudSafePayload);
-      state.lastSyncedAt = nowIso;
-      state.syncError = null;
-    } catch (err) {
-      state.profile = prevProfile;
-      persistLocalProfile(prevProfile);
-      emitState();
-      handleFirestoreError(err, OperationType.WRITE, `players/${user.uid}`);
-      return {
-        ok: false,
-        error: 'Falha ao validar compra da arma no servidor.',
-      };
-    } finally {
-      state.isSyncing = false;
-      emitState();
-    }
+  if (!user) {
+    pendingDiamondMutationCount = Math.max(0, pendingDiamondMutationCount - 1);
+    return { ok: true, weaponId: offer.weaponId, skinId: offer.skinId };
   }
 
-  return {
-    ok: true,
-    weaponId: offer.weaponId,
-    skinId: offer.skinId,
-  };
+  try {
+    return await enqueueCloudWrite(async () => {
+      const playerRef = doc(db, 'players', user.uid);
+      const cloudSafePayload = buildCloudSafeProfilePayload(updatedProfile, user.uid);
+      try {
+        state.isSyncing = true;
+        emitState();
+        await setDoc(playerRef, cloudSafePayload);
+        lastLocalDiamondMutationMs = Date.now();
+        state.lastSyncedAt = nowIso;
+        state.syncError = null;
+        return { ok: true, weaponId: offer.weaponId, skinId: offer.skinId };
+      } catch (firstErr) {
+        try {
+          const serverData = await fetchAuthoritativeServerProfile(user.uid);
+          const serverDiamonds = Math.max(0, Math.floor(Number(serverData?.diamonds) || 0));
+          if (serverDiamonds < offer.diamondPrice) {
+            throw new Error('Saldo insuficiente no servidor.');
+          }
+          const retryNowIso = new Date().toISOString();
+          const anchored = anchorProfileToServerBaseline(
+            {
+              ...updatedProfile,
+              diamonds: serverDiamonds - offer.diamondPrice,
+              updatedAt: retryNowIso,
+            },
+            serverData
+          );
+          await setDoc(playerRef, buildCloudSafeProfilePayload(anchored, user.uid));
+          state.profile = anchored;
+          persistLocalProfile(anchored);
+          lastLocalDiamondMutationMs = Date.now();
+          state.lastSyncedAt = retryNowIso;
+          state.syncError = null;
+          emitState();
+          return { ok: true, weaponId: offer.weaponId, skinId: offer.skinId };
+        } catch (retryErr) {
+          lastLocalDiamondMutationMs = 0;
+          state.profile = prevProfile;
+          persistLocalProfile(prevProfile);
+          emitState();
+          handleFirestoreError(retryErr || firstErr, OperationType.WRITE, `players/${user.uid}`);
+          return {
+            ok: false,
+            error: 'Falha ao validar compra da arma no servidor.',
+          };
+        }
+      } finally {
+        state.isSyncing = false;
+        emitState();
+      }
+    });
+  } finally {
+    pendingDiamondMutationCount = Math.max(0, pendingDiamondMutationCount - 1);
+  }
 }
 
 export async function purchaseOperatorWithDiamonds(
@@ -997,6 +1484,10 @@ export async function purchaseOperatorWithDiamonds(
   }
 
   clearPendingCloudPushTimer();
+  cloudWriteEpoch++;
+  pendingDiamondMutationCount++;
+  lastLocalDiamondMutationMs = Date.now();
+
   const prevProfile = { ...state.profile };
   const opSnap = getOperatorOwnershipState();
   const nextUnlockedOps = Array.from(
@@ -1025,30 +1516,66 @@ export async function purchaseOperatorWithDiamonds(
   emitState();
 
   const user = auth.currentUser;
-  if (user) {
-    const cloudSafePayload = buildCloudSafeProfilePayload(updatedProfile, user.uid);
-    try {
-      state.isSyncing = true;
-      emitState();
-      await setDoc(doc(db, 'players', user.uid), cloudSafePayload);
-      state.lastSyncedAt = nowIso;
-      state.syncError = null;
-    } catch (err) {
-      state.profile = prevProfile;
-      persistLocalProfile(prevProfile);
-      emitState();
-      handleFirestoreError(err, OperationType.WRITE, `players/${user.uid}`);
-      return {
-        ok: false,
-        error: 'Falha ao validar compra do Operador no servidor.',
-      };
-    } finally {
-      state.isSyncing = false;
-      emitState();
-    }
+  if (!user) {
+    pendingDiamondMutationCount = Math.max(0, pendingDiamondMutationCount - 1);
+    return { ok: true };
   }
 
-  return { ok: true };
+  try {
+    return await enqueueCloudWrite(async () => {
+      const playerRef = doc(db, 'players', user.uid);
+      const cloudSafePayload = buildCloudSafeProfilePayload(updatedProfile, user.uid);
+      try {
+        state.isSyncing = true;
+        emitState();
+        await setDoc(playerRef, cloudSafePayload);
+        lastLocalDiamondMutationMs = Date.now();
+        state.lastSyncedAt = nowIso;
+        state.syncError = null;
+        return { ok: true };
+      } catch (firstErr) {
+        try {
+          const serverData = await fetchAuthoritativeServerProfile(user.uid);
+          const serverDiamonds = Math.max(0, Math.floor(Number(serverData?.diamonds) || 0));
+          if (serverDiamonds < op.diamondPrice) {
+            throw new Error('Saldo insuficiente no servidor.');
+          }
+          const retryNowIso = new Date().toISOString();
+          const anchored = anchorProfileToServerBaseline(
+            {
+              ...updatedProfile,
+              diamonds: serverDiamonds - op.diamondPrice,
+              updatedAt: retryNowIso,
+            },
+            serverData
+          );
+          await setDoc(playerRef, buildCloudSafeProfilePayload(anchored, user.uid));
+          state.profile = anchored;
+          persistLocalProfile(anchored);
+          lastLocalDiamondMutationMs = Date.now();
+          state.lastSyncedAt = retryNowIso;
+          state.syncError = null;
+          emitState();
+          return { ok: true };
+        } catch (retryErr) {
+          lastLocalDiamondMutationMs = 0;
+          state.profile = prevProfile;
+          persistLocalProfile(prevProfile);
+          emitState();
+          handleFirestoreError(retryErr || firstErr, OperationType.WRITE, `players/${user.uid}`);
+          return {
+            ok: false,
+            error: 'Falha ao validar compra do Operador no servidor.',
+          };
+        }
+      } finally {
+        state.isSyncing = false;
+        emitState();
+      }
+    });
+  } finally {
+    pendingDiamondMutationCount = Math.max(0, pendingDiamondMutationCount - 1);
+  }
 }
 
 export async function purchaseWeaponSkinWithDiamonds(
@@ -1077,6 +1604,10 @@ export async function purchaseWeaponSkinWithDiamonds(
   }
 
   clearPendingCloudPushTimer();
+  cloudWriteEpoch++;
+  pendingDiamondMutationCount++;
+  lastLocalDiamondMutationMs = Date.now();
+
   const prevProfile = { ...state.profile };
   const targetWeapon =
     skin.weaponIds && skin.weaponIds.length > 0
@@ -1103,30 +1634,66 @@ export async function purchaseWeaponSkinWithDiamonds(
   emitState();
 
   const user = auth.currentUser;
-  if (user) {
-    const cloudSafePayload = buildCloudSafeProfilePayload(updatedProfile, user.uid);
-    try {
-      state.isSyncing = true;
-      emitState();
-      await setDoc(doc(db, 'players', user.uid), cloudSafePayload);
-      state.lastSyncedAt = nowIso;
-      state.syncError = null;
-    } catch (err) {
-      state.profile = prevProfile;
-      persistLocalProfile(prevProfile);
-      emitState();
-      handleFirestoreError(err, OperationType.WRITE, `players/${user.uid}`);
-      return {
-        ok: false,
-        error: 'Falha ao validar compra da Skin no servidor.',
-      };
-    } finally {
-      state.isSyncing = false;
-      emitState();
-    }
+  if (!user) {
+    pendingDiamondMutationCount = Math.max(0, pendingDiamondMutationCount - 1);
+    return { ok: true };
   }
 
-  return { ok: true };
+  try {
+    return await enqueueCloudWrite(async () => {
+      const playerRef = doc(db, 'players', user.uid);
+      const cloudSafePayload = buildCloudSafeProfilePayload(updatedProfile, user.uid);
+      try {
+        state.isSyncing = true;
+        emitState();
+        await setDoc(playerRef, cloudSafePayload);
+        lastLocalDiamondMutationMs = Date.now();
+        state.lastSyncedAt = nowIso;
+        state.syncError = null;
+        return { ok: true };
+      } catch (firstErr) {
+        try {
+          const serverData = await fetchAuthoritativeServerProfile(user.uid);
+          const serverDiamonds = Math.max(0, Math.floor(Number(serverData?.diamonds) || 0));
+          if (serverDiamonds < skin.diamondPrice!) {
+            throw new Error('Saldo insuficiente no servidor.');
+          }
+          const retryNowIso = new Date().toISOString();
+          const anchored = anchorProfileToServerBaseline(
+            {
+              ...updatedProfile,
+              diamonds: serverDiamonds - skin.diamondPrice!,
+              updatedAt: retryNowIso,
+            },
+            serverData
+          );
+          await setDoc(playerRef, buildCloudSafeProfilePayload(anchored, user.uid));
+          state.profile = anchored;
+          persistLocalProfile(anchored);
+          lastLocalDiamondMutationMs = Date.now();
+          state.lastSyncedAt = retryNowIso;
+          state.syncError = null;
+          emitState();
+          return { ok: true };
+        } catch (retryErr) {
+          lastLocalDiamondMutationMs = 0;
+          state.profile = prevProfile;
+          persistLocalProfile(prevProfile);
+          emitState();
+          handleFirestoreError(retryErr || firstErr, OperationType.WRITE, `players/${user.uid}`);
+          return {
+            ok: false,
+            error: 'Falha ao validar compra da Skin no servidor.',
+          };
+        }
+      } finally {
+        state.isSyncing = false;
+        emitState();
+      }
+    });
+  } finally {
+    pendingDiamondMutationCount = Math.max(0, pendingDiamondMutationCount - 1);
+  }
 }
 
 export async function purchaseMonthlyVipBattlePassWithDiamonds(): Promise<{
@@ -1152,6 +1719,10 @@ export async function purchaseMonthlyVipBattlePassWithDiamonds(): Promise<{
       error: `Saldo insuficiente: você precisa de ${VIP_PASS_DIAMOND_PRICE} Diamantes (saldo atual: ${currentDiamonds}).`,
     };
   }
+
+  cloudWriteEpoch++;
+  pendingDiamondMutationCount++;
+  lastLocalDiamondMutationMs = Date.now();
 
   const prevProfile = { ...state.profile };
   const nextVip = buildActivatedVipState();
@@ -1181,34 +1752,73 @@ export async function purchaseMonthlyVipBattlePassWithDiamonds(): Promise<{
     updatedAt: nowIso,
   };
 
-  const cloudSafePayload = buildCloudSafeProfilePayload(updatedProfile, user.uid);
-
   try {
-    state.isSyncing = true;
-    emitState();
-    await setDoc(doc(db, 'players', user.uid), cloudSafePayload);
-    state.profile = updatedProfile;
-    state.lastSyncedAt = nowIso;
-    state.syncError = null;
-    commitActivatedVipStateLocal(nextVip);
-    grantVipWeaponAndSkin(nextVip.weaponOfMonthId, nextVip.weaponOfMonthSkinId);
-    persistLocalProfile(updatedProfile);
-    emitState();
-    return {
-      ok: true,
-      weaponId: nextVip.weaponOfMonthId,
-      skinId: nextVip.weaponOfMonthSkinId,
-    };
-  } catch (err) {
-    state.profile = prevProfile;
-    handleFirestoreError(err, OperationType.WRITE, `players/${user.uid}`);
-    return {
-      ok: false,
-      error: 'Não foi possível validar a compra do Passe VIP no servidor. Tente novamente.',
-    };
+    return await enqueueCloudWrite(async () => {
+      const playerRef = doc(db, 'players', user.uid);
+      const cloudSafePayload = buildCloudSafeProfilePayload(updatedProfile, user.uid);
+      try {
+        state.isSyncing = true;
+        emitState();
+        await setDoc(playerRef, cloudSafePayload);
+        state.profile = updatedProfile;
+        state.lastSyncedAt = nowIso;
+        state.syncError = null;
+        lastLocalDiamondMutationMs = Date.now();
+        commitActivatedVipStateLocal(nextVip);
+        grantVipWeaponAndSkin(nextVip.weaponOfMonthId, nextVip.weaponOfMonthSkinId);
+        persistLocalProfile(updatedProfile);
+        emitState();
+        return {
+          ok: true,
+          weaponId: nextVip.weaponOfMonthId,
+          skinId: nextVip.weaponOfMonthSkinId,
+        };
+      } catch (firstErr) {
+        try {
+          const serverData = await fetchAuthoritativeServerProfile(user.uid);
+          const serverDiamonds = Math.max(0, Math.floor(Number(serverData?.diamonds) || 0));
+          if (serverDiamonds < VIP_PASS_DIAMOND_PRICE) {
+            throw new Error('Saldo insuficiente no servidor.');
+          }
+          const retryNowIso = new Date().toISOString();
+          const anchored = anchorProfileToServerBaseline(
+            {
+              ...updatedProfile,
+              diamonds: serverDiamonds - VIP_PASS_DIAMOND_PRICE,
+              updatedAt: retryNowIso,
+            },
+            serverData
+          );
+          await setDoc(playerRef, buildCloudSafeProfilePayload(anchored, user.uid));
+          state.profile = anchored;
+          state.lastSyncedAt = retryNowIso;
+          state.syncError = null;
+          lastLocalDiamondMutationMs = Date.now();
+          commitActivatedVipStateLocal(nextVip);
+          grantVipWeaponAndSkin(nextVip.weaponOfMonthId, nextVip.weaponOfMonthSkinId);
+          persistLocalProfile(anchored);
+          emitState();
+          return {
+            ok: true,
+            weaponId: nextVip.weaponOfMonthId,
+            skinId: nextVip.weaponOfMonthSkinId,
+          };
+        } catch (retryErr) {
+          lastLocalDiamondMutationMs = 0;
+          state.profile = prevProfile;
+          handleFirestoreError(retryErr || firstErr, OperationType.WRITE, `players/${user.uid}`);
+          return {
+            ok: false,
+            error: 'Não foi possível validar a compra do Passe VIP no servidor. Tente novamente.',
+          };
+        }
+      } finally {
+        state.isSyncing = false;
+        emitState();
+      }
+    });
   } finally {
-    state.isSyncing = false;
-    emitState();
+    pendingDiamondMutationCount = Math.max(0, pendingDiamondMutationCount - 1);
   }
 }
 

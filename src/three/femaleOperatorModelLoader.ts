@@ -243,7 +243,7 @@ async function ensureSilhouetteLoaded(
       if (!rigSrc) return null;
 
       const loader = createGameGltfLoader();
-      const url = resolveAssetUrl(glbPath);
+      const url = resolveAssetUrl(`${glbPath}?v=2`);
       const gltf = await new Promise<{ scene: THREE.Group }>((resolve, reject) => {
         loader.load(url, resolve, undefined, reject);
       }).finally(() => {
@@ -298,29 +298,29 @@ function buildFemaleMaterialForSlot(
   const baseParams: THREE.MeshStandardMaterialParameters = {
     name: slotName,
     color: 0xffffff,
-    roughness: 0.72,
-    metalness: 0.06,
-    envMapIntensity: 1.0,
+    roughness: 0.78,
+    metalness: 0.04,
+    envMapIntensity: 0.45,
+    side: THREE.FrontSide,
   };
 
   if (name === 'MFS_HEAD') {
-    const mat = new THREE.MeshStandardMaterial({
+    return new THREE.MeshStandardMaterial({
       ...baseParams,
       map: sharedBaseTexCache.get('head_b.webp') || null,
-      roughness: 0.62,
+      roughness: 0.64,
       metalness: 0.02,
-      envMapIntensity: 0.85,
+      envMapIntensity: 0.36,
     });
-    return mat;
   }
 
   if (name === 'MFS_ARMS') {
     return new THREE.MeshStandardMaterial({
       ...baseParams,
       map: sharedBaseTexCache.get('arms_b.webp') || null,
-      roughness: 0.62,
+      roughness: 0.64,
       metalness: 0.02,
-      envMapIntensity: 0.85,
+      envMapIntensity: 0.36,
     });
   }
 
@@ -329,8 +329,8 @@ function buildFemaleMaterialForSlot(
       ...baseParams,
       map: sharedBaseTexCache.get('eye_b.webp') || null,
       roughness: 0.14,
-      metalness: 0.05,
-      envMapIntensity: 1.35,
+      metalness: 0.04,
+      envMapIntensity: 1.05,
     });
   }
 
@@ -338,12 +338,13 @@ function buildFemaleMaterialForSlot(
     const mat = new THREE.MeshStandardMaterial({
       ...baseParams,
       map: sharedBaseTexCache.get('eyelashes_rgba.webp') || null,
-      color: 0x1a1514,
-      alphaTest: 0.32,
+      color: 0x3b2c26,
+      alphaTest: 0.35,
       transparent: false,
       side: THREE.DoubleSide,
-      roughness: 0.68,
+      roughness: 0.72,
       metalness: 0.02,
+      envMapIntensity: 0.32,
     });
     mat.userData.preserveFemaleMat = true;
     return mat;
@@ -351,16 +352,21 @@ function buildFemaleMaterialForSlot(
 
   if (name === 'MFS_HAIR' || name === 'MFS_HAIRSCALP') {
     const texKey = name === 'MFS_HAIR' ? 'hair_rgba.webp' : 'hairscalp_rgba.webp';
+    // Hair albedo is already dark strands; lift tint toward white so strands remain rich and detailed
+    const tint = new THREE.Color(cfg.hairColorHex ?? 0x4a3525).lerp(
+      new THREE.Color(0xffffff),
+      0.58
+    );
     const mat = new THREE.MeshStandardMaterial({
       ...baseParams,
       map: sharedBaseTexCache.get(texKey) || null,
-      color: cfg.hairColorHex ?? 0x2b1d15,
-      alphaTest: 0.3,
+      color: tint,
+      alphaTest: 0.34,
       transparent: false,
       side: THREE.DoubleSide,
-      roughness: 0.54,
-      metalness: 0.06,
-      envMapIntensity: 1.0,
+      roughness: 0.56,
+      metalness: 0.04,
+      envMapIntensity: 0.42,
     });
     mat.userData.preserveFemaleMat = true;
     return mat;
@@ -371,10 +377,11 @@ function buildFemaleMaterialForSlot(
       ...baseParams,
       color: 0x0b1626,
       transparent: true,
-      opacity: 0.78,
-      roughness: 0.12,
-      metalness: 0.88,
-      envMapIntensity: 1.65,
+      opacity: 0.44,
+      depthWrite: false,
+      roughness: 0.08,
+      metalness: 0.9,
+      envMapIntensity: 1.35,
       side: THREE.DoubleSide,
     });
     mat.userData.preserveFemaleMat = true;
@@ -385,9 +392,9 @@ function buildFemaleMaterialForSlot(
     return new THREE.MeshStandardMaterial({
       ...baseParams,
       map: camoPack.textures.shirt,
-      roughness: 0.78,
-      metalness: 0.04,
-      envMapIntensity: 0.92,
+      roughness: 0.84,
+      metalness: 0.03,
+      envMapIntensity: 0.38,
     });
   }
 
@@ -395,9 +402,9 @@ function buildFemaleMaterialForSlot(
     return new THREE.MeshStandardMaterial({
       ...baseParams,
       map: camoPack.textures.pants,
-      roughness: 0.78,
-      metalness: 0.04,
-      envMapIntensity: 0.92,
+      roughness: 0.84,
+      metalness: 0.03,
+      envMapIntensity: 0.38,
     });
   }
 
@@ -405,9 +412,9 @@ function buildFemaleMaterialForSlot(
     return new THREE.MeshStandardMaterial({
       ...baseParams,
       map: camoPack.textures.leggings,
-      roughness: 0.62,
-      metalness: 0.1,
-      envMapIntensity: 1.0,
+      roughness: 0.68,
+      metalness: 0.08,
+      envMapIntensity: 0.48,
     });
   }
 
@@ -415,9 +422,9 @@ function buildFemaleMaterialForSlot(
     return new THREE.MeshStandardMaterial({
       ...baseParams,
       map: camoPack.textures.unloading,
-      roughness: 0.58,
-      metalness: 0.14,
-      envMapIntensity: 1.08,
+      roughness: 0.66,
+      metalness: 0.1,
+      envMapIntensity: 0.52,
     });
   }
 
@@ -425,9 +432,9 @@ function buildFemaleMaterialForSlot(
     return new THREE.MeshStandardMaterial({
       ...baseParams,
       map: camoPack.textures.headgear,
-      roughness: 0.54,
-      metalness: 0.16,
-      envMapIntensity: 1.12,
+      roughness: 0.6,
+      metalness: 0.14,
+      envMapIntensity: 0.55,
     });
   }
 
@@ -435,9 +442,9 @@ function buildFemaleMaterialForSlot(
     return new THREE.MeshStandardMaterial({
       ...baseParams,
       map: camoPack.textures.pouches,
-      roughness: 0.6,
-      metalness: 0.12,
-      envMapIntensity: 1.04,
+      roughness: 0.68,
+      metalness: 0.08,
+      envMapIntensity: 0.48,
     });
   }
 
@@ -445,9 +452,9 @@ function buildFemaleMaterialForSlot(
     return new THREE.MeshStandardMaterial({
       ...baseParams,
       map: sharedBaseTexCache.get(`glove_${cfg.gloveVariant}.webp`) || null,
-      roughness: 0.62,
-      metalness: 0.1,
-      envMapIntensity: 1.0,
+      roughness: 0.66,
+      metalness: 0.08,
+      envMapIntensity: 0.48,
     });
   }
 
@@ -455,17 +462,18 @@ function buildFemaleMaterialForSlot(
     return new THREE.MeshStandardMaterial({
       ...baseParams,
       map: sharedBaseTexCache.get('patches_b.webp') || null,
-      roughness: 0.66,
-      metalness: 0.08,
-      envMapIntensity: 1.0,
+      roughness: 0.7,
+      metalness: 0.06,
+      envMapIntensity: 0.45,
     });
   }
 
   return new THREE.MeshStandardMaterial({
     ...baseParams,
     map: camoPack.textures.unloading || camoPack.textures.shirt,
-    roughness: 0.64,
-    metalness: 0.12,
+    roughness: 0.72,
+    metalness: 0.08,
+    envMapIntensity: 0.45,
   });
 }
 

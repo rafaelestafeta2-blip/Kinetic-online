@@ -232,7 +232,7 @@ export function loadLocalProfileFallback(): PlayerCloudProfile {
         activeOperatorId: parsed.activeOperatorId || 'op_vanguard_default',
         unlockedOperators: Array.from(
           new Set(['op_vanguard_default', ...(parsed.unlockedOperators || [])])
-        ).slice(0, 20),
+        ).slice(0, 40),
         founderDiamondsClaimed: Boolean(parsed.founderDiamondsClaimed),
         createdAt: parsed.createdAt || nowIso,
         updatedAt: nowIso,

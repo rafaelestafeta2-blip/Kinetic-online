@@ -43,6 +43,7 @@ interface RankedOperator3DCanvasProps {
   operatorSkinId?: string;
   team?: 'VANGUARD' | 'BLACKTHORN';
   externalRotateSignal?: { nonce: number; delta: number };
+  framing?: 'default' | 'store';
 }
 
 export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
@@ -52,6 +53,7 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
   operatorSkinId,
   team = 'VANGUARD',
   externalRotateSignal,
+  framing = 'default',
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -113,13 +115,19 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
       return /SwiftShader|llvmpipe|softpipe|Software|Basic Render/i.test(gpu);
     })();
 
-    const width = Math.max(260, container.clientWidth || 420);
-    const height = Math.max(320, container.clientHeight || 520);
+    const isStoreFraming = framing === 'store';
+    const width = Math.max(160, container.clientWidth || 360);
+    const height = Math.max(180, container.clientHeight || (isStoreFraming ? 280 : 520));
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(34, width / height, 0.1, 30);
-    camera.position.set(0, 0.98, isBlackthorn ? 3.12 : 3.18);
-    camera.lookAt(0, 0.90, 0);
+    if (isStoreFraming) {
+      camera.position.set(0, 0.96, 3.68);
+      camera.lookAt(0, 0.92, 0);
+    } else {
+      camera.position.set(0, 0.98, isBlackthorn ? 3.12 : 3.18);
+      camera.lookAt(0, 0.90, 0);
+    }
 
     const renderer = createSecondaryWebGLRenderer({
       antialias: !isSoftwareGl,
@@ -307,6 +315,7 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
         isCustomFemale ? 1.0 : avatarKind === 'VANGUARD_MEDICO' ? 1.0 : 1.02
       );
       modelRoot.position.set(0, 0, 0);
+      modelRoot.rotation.set(0, isCustomFemale ? 0.34 : 0, 0);
 
       modelRoot.traverse((child) => {
         if (child.name === 'mixamorigRightHand') rHandBone = child;
@@ -335,7 +344,6 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
                 std.map.colorSpace = THREE.SRGBColorSpace;
                 std.map.needsUpdate = true;
               }
-              std.envMapIntensity = Math.max(std.envMapIntensity || 0, 1.05);
               std.needsUpdate = true;
             }
             return;
@@ -566,8 +574,8 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
 
     const handleResize = () => {
       if (!container || disposed) return;
-      const nw = Math.max(240, container.clientWidth);
-      const nh = Math.max(280, container.clientHeight);
+      const nw = Math.max(160, container.clientWidth);
+      const nh = Math.max(180, container.clientHeight);
       camera.aspect = nw / nh;
       camera.updateProjectionMatrix();
       renderer.setSize(nw, nh);
@@ -634,13 +642,13 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
       innerDiscMat.dispose();
       disposeSecondaryWebGLRenderer(renderer);
     };
-  }, [team, contextEpoch]);
+  }, [team, framing, contextEpoch]);
 
   return (
-    <div className="relative w-full h-full flex items-center justify-center">
+    <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
       <div
         ref={mountRef}
-        className="w-full h-full cursor-grab active:cursor-grabbing"
+        className="w-full h-full cursor-grab active:cursor-grabbing touch-none"
         title="Arraste para girar o Operador 3D (.glb)"
       />
       {!isLoaded && <OperatorDownloadProgressOverlay />}
