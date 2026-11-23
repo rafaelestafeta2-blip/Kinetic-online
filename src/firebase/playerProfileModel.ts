@@ -538,7 +538,7 @@ export function mergeLocalAndCloudProfiles(
         ...(local.unlockedOperators || []),
         ...(cloud?.unlockedOperators || []),
       ])
-    ).slice(0, 20),
+    ).slice(0, 40),
     founderDiamondsClaimed: mergedFounderClaimed,
     createdAt: cloud?.createdAt || local.createdAt || nowIso,
     updatedAt: nowIso,

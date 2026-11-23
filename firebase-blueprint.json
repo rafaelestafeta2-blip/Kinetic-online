@@ -136,7 +136,7 @@
           "items": {
             "type": "string"
           },
-          "description": "Array of unlocked 3D Operator skin IDs (1 to 20 items)."
+          "description": "Array of unlocked 3D Operator skin IDs (1 to 40 items)."
         },
         "founderDiamondsClaimed": {
           "type": "boolean",

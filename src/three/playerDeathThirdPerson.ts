@@ -1,5 +1,10 @@
 import * as THREE from 'three';
 import { getPlayerInventoryState } from '../progression/loadoutSystem';
+import {
+  applyOperatorSuitToCharacter3D,
+  getOperatorDefinition,
+  getOperatorOwnershipState,
+} from '../progression/operatorSkinsSystem';
 import { HudState, WeaponId } from '../types/game';
 import {
   BotAnimState,
@@ -12,6 +17,10 @@ import {
   preloadProRifleBotCharacter,
   resolveCharacterAvatarKind,
 } from './botCharacterSystem';
+import {
+  cloneFemaleOperatorAvatarSync,
+  preloadFemaleOperatorAvatar,
+} from './femaleOperatorModelLoader';
 import { checkBotLineOfSight } from './botNavigationRoutes';
 import { createBotThirdPersonWeaponMesh } from './botWeaponProps';
 import { Dust2TriangleCollider } from './dust2Collider';
@@ -35,6 +44,7 @@ export class PlayerDeathThirdPersonController {
   private rootGroup: THREE.Group;
   private modelRoot: THREE.Object3D | null = null;
   private avatarKind: CharacterAvatarKind | null = null;
+  private mountedOperatorId: string | null = null;
   private mixer: THREE.AnimationMixer | null = null;
   private actions: Partial<Record<BotAnimState, THREE.AnimationAction>> = {};
   private weaponProp: THREE.Group | null = null;
@@ -58,13 +68,30 @@ export class PlayerDeathThirdPersonController {
 
   private ensureAvatarReady(weaponId?: WeaponId): boolean {
     const selectedClass = getPlayerInventoryState().selectedClass;
+    const opDef = getOperatorDefinition(getOperatorOwnershipState().activeOperatorId);
     const wantKind = resolveCharacterAvatarKind(weaponId, selectedClass, true);
-    if (this.modelRoot && this.mixer && this.avatarKind === wantKind) return true;
-    const cloned = cloneVanguardCharacterAvatar(
-      this.isSoftwareGl,
-      weaponId,
-      selectedClass
-    );
+    if (
+      this.modelRoot &&
+      this.mixer &&
+      this.mountedOperatorId === opDef.id &&
+      (opDef.customModelConfig || this.avatarKind === wantKind)
+    ) {
+      return true;
+    }
+
+    let cloned = opDef.customModelConfig
+      ? cloneFemaleOperatorAvatarSync(opDef, this.isSoftwareGl)
+      : null;
+    if (opDef.customModelConfig && !cloned) {
+      void preloadFemaleOperatorAvatar(opDef);
+    }
+    if (!cloned) {
+      cloned = cloneVanguardCharacterAvatar(
+        this.isSoftwareGl,
+        weaponId,
+        selectedClass
+      );
+    }
     if (!cloned) {
       void preloadProRifleBotCharacter();
       return false;
@@ -78,6 +105,10 @@ export class PlayerDeathThirdPersonController {
 
     this.modelRoot = cloned.modelRoot;
     this.avatarKind = cloned.avatarKind;
+    this.mountedOperatorId = opDef.customModelConfig && !cloned.modelRoot.userData?.femaleOperatorId
+      ? null
+      : opDef.id;
+    applyOperatorSuitToCharacter3D(this.modelRoot, opDef.id);
     this.rootGroup.add(this.modelRoot);
 
     this.mixer = new THREE.AnimationMixer(this.modelRoot);

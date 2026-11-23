@@ -515,6 +515,14 @@ export function preloadProRifleBotCharacter(loadingManager?: THREE.LoadingManage
   return Promise.resolve(loadPromise);
 }
 
+export function getProRifleAnimationRigSource(): {
+  templateScene: THREE.Group;
+  sharedClips: BotClipMap;
+} | null {
+  if (!templateScene || !sharedClips) return null;
+  return { templateScene, sharedClips };
+}
+
 export function cloneVanguardCharacterAvatar(
   isSoftwareGl: boolean,
   weaponId?: WeaponId | null,

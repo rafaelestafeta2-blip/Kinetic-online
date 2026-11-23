@@ -10,6 +10,15 @@ import {
   resolveCharacterAvatarKind,
 } from './botCharacterSystem';
 import {
+  applyOperatorSuitToCharacter3D,
+  getOperatorDefinition,
+  getOperatorOwnershipState,
+} from '../progression/operatorSkinsSystem';
+import {
+  cloneFemaleOperatorAvatarSync,
+  preloadFemaleOperatorAvatar,
+} from './femaleOperatorModelLoader';
+import {
   alignWeaponPropToMixamoHands,
   createBotThirdPersonWeaponMesh,
 } from './botWeaponProps';
@@ -241,7 +250,17 @@ export class PostMatchShowcase3D {
       const opClass = this.resolveClassForSquadOp(op);
       const wantKind = resolveCharacterAvatarKind(desiredWep, opClass, true);
 
-      if (slot.modelRoot && slot.avatarKind !== wantKind) {
+      const isLocalSlot = Boolean(op?.isPlayer);
+      const localOpDef = isLocalSlot
+        ? getOperatorDefinition(getOperatorOwnershipState().activeOperatorId)
+        : null;
+      const wantFemaleId = localOpDef?.customModelConfig ? localOpDef.id : null;
+      const curFemaleId = (slot.modelRoot?.userData?.femaleOperatorId as string | undefined) || null;
+
+      if (
+        slot.modelRoot &&
+        (slot.avatarKind !== wantKind || wantFemaleId !== curFemaleId)
+      ) {
         slot.mixer?.stopAllAction();
         slot.slotGroup.remove(slot.modelRoot);
         slot.modelRoot = null;
@@ -251,10 +270,21 @@ export class PostMatchShowcase3D {
       }
 
       if (!slot.modelRoot) {
-        const cloned = cloneVanguardCharacterAvatar(this.isSoftwareGl, desiredWep, opClass);
+        let cloned = localOpDef?.customModelConfig
+          ? cloneFemaleOperatorAvatarSync(localOpDef, this.isSoftwareGl)
+          : null;
+        if (localOpDef?.customModelConfig && !cloned) {
+          void preloadFemaleOperatorAvatar(localOpDef);
+        }
+        if (!cloned) {
+          cloned = cloneVanguardCharacterAvatar(this.isSoftwareGl, desiredWep, opClass);
+        }
         if (!cloned) {
           void preloadProRifleBotCharacter();
           return;
+        }
+        if (localOpDef) {
+          applyOperatorSuitToCharacter3D(cloned.modelRoot, localOpDef.id);
         }
         slot.modelRoot = cloned.modelRoot;
         slot.avatarKind = cloned.avatarKind;

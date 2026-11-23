@@ -19,6 +19,10 @@ import {
   getOperatorDefinition,
   getOperatorOwnershipState,
 } from '../progression/operatorSkinsSystem';
+import {
+  cloneFemaleOperatorAvatarSync,
+  preloadFemaleOperatorAvatar,
+} from '../three/femaleOperatorModelLoader';
 import { WeaponId } from '../types/game';
 import { WarfaceClassId } from './WarfaceClassIcons';
 
@@ -124,6 +128,7 @@ const FORMATION_SLOTS: FormationSlotTransform[] = [
 interface MountedSquadSlotRuntime {
   slotIndex: number;
   uid: string;
+  opId: string;
   pivot: THREE.Group;
   modelRoot: THREE.Object3D;
   weaponProp: THREE.Group;
@@ -280,8 +285,15 @@ export const SquadFormation3DCanvas: React.FC<SquadFormation3DCanvasProps> = ({
       const slotCfg = FORMATION_SLOTS[slotIdx] || FORMATION_SLOTS[0];
       const existing = activeRuntimes.get(slotIdx);
 
-      // If same player UID is already mounted in this slot, keep their stance
-      if (existing && existing.uid === spec.uid) {
+      const opId =
+        spec.operatorSkinId ||
+        (slotIdx === 0
+          ? getOperatorOwnershipState().activeOperatorId || slotCfg.defaultOpSkin
+          : slotCfg.defaultOpSkin);
+      const opDef = getOperatorDefinition(opId);
+
+      // If same player UID and same operator skin are already mounted, keep their stance
+      if (existing && existing.uid === spec.uid && existing.opId === opDef.id) {
         return;
       }
 
@@ -291,20 +303,26 @@ export const SquadFormation3DCanvas: React.FC<SquadFormation3DCanvasProps> = ({
         activeRuntimes.delete(slotIdx);
       }
 
-      const opId =
-        spec.operatorSkinId ||
-        (slotIdx === 0
-          ? getOperatorOwnershipState().activeOperatorId || slotCfg.defaultOpSkin
-          : slotCfg.defaultOpSkin);
-      const opDef = getOperatorDefinition(opId);
       const weaponId = spec.weaponId || slotCfg.defaultWeapon;
       const weaponSkinId = spec.weaponSkinId || slotCfg.defaultWeaponSkin;
 
-      const cloned = cloneVanguardCharacterAvatar(
-        isSoftwareGl,
-        weaponId,
-        spec.classId || opDef.preferredClass
-      );
+      let cloned = opDef.customModelConfig
+        ? cloneFemaleOperatorAvatarSync(opDef, isSoftwareGl)
+        : null;
+      if (opDef.customModelConfig && !cloned) {
+        void preloadFemaleOperatorAvatar(opDef).then((ok) => {
+          if (!disposed && ok) {
+            mountOrUpdateSlot(slotIdx, spec);
+          }
+        });
+      }
+      if (!cloned) {
+        cloned = cloneVanguardCharacterAvatar(
+          isSoftwareGl,
+          weaponId,
+          spec.classId || opDef.preferredClass
+        );
+      }
       if (!cloned) return;
 
       const { modelRoot, clips, avatarKind } = cloned;
@@ -386,6 +404,7 @@ export const SquadFormation3DCanvas: React.FC<SquadFormation3DCanvasProps> = ({
       activeRuntimes.set(slotIdx, {
         slotIndex: slotIdx,
         uid: spec.uid,
+        opId: opDef.id,
         pivot,
         modelRoot,
         weaponProp,
@@ -426,8 +445,19 @@ export const SquadFormation3DCanvas: React.FC<SquadFormation3DCanvasProps> = ({
 
     syncSquadFnRef.current = syncAllSlots;
 
+    const activeOpDef = getOperatorDefinition(getOperatorOwnershipState().activeOperatorId);
+    const femalePreloads = membersRef.current
+      .map((m, idx) =>
+        getOperatorDefinition(
+          m.operatorSkinId || (idx === 0 ? activeOpDef.id : '')
+        )
+      )
+      .filter((d) => Boolean(d.customModelConfig))
+      .map((d) => preloadFemaleOperatorAvatar(d));
+
     void Promise.all([
       preloadProRifleBotCharacter(),
+      ...femalePreloads,
       ...membersRef.current.map((m) =>
         preloadSingleBotWeaponGlb(m.weaponId, m.weaponSkinId)
       ),

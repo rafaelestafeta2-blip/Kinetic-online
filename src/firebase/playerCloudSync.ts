@@ -187,7 +187,7 @@ function buildCloudSafeProfilePayload(
         'op_vanguard_default',
         ...(restProfile.unlockedOperators || opSnap.unlockedOperatorIds || []),
       ])
-    ).slice(0, 20),
+    ).slice(0, 40),
     founderDiamondsClaimed: Boolean(restProfile.founderDiamondsClaimed),
     uid,
   };
@@ -845,7 +845,7 @@ export async function openWarfaceWarboxWithDiamonds(
     unlockedWeapons: finalWeapons,
     equippedWeaponSkins: nextSkins,
     activeOperatorId: nextActiveOperatorId,
-    unlockedOperators: Array.from(nextUnlockedOperators).slice(0, 20),
+    unlockedOperators: Array.from(nextUnlockedOperators).slice(0, 40),
     updatedAt: nowIso,
   };
 
@@ -1006,7 +1006,7 @@ export async function purchaseOperatorWithDiamonds(
       ...(state.profile.unlockedOperators || []),
       op.id,
     ])
-  ).slice(0, 20);
+  ).slice(0, 40);
   const nowIso = new Date().toISOString();
 
   grantOperatorSkin(op.id, true);

@@ -22,6 +22,10 @@ import {
   getOperatorOwnershipState,
   subscribeOperatorOwnership,
 } from '../progression/operatorSkinsSystem';
+import {
+  cloneFemaleOperatorAvatarSync,
+  loadAndCloneFemaleOperatorAvatar,
+} from '../three/femaleOperatorModelLoader';
 import { applyWeaponSkinToObject3D } from '../three/weaponSkinMaterial';
 import {
   AssetDownloadSnapshot,
@@ -256,7 +260,9 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
 
     let currentModelRoot: THREE.Object3D | null = null;
     let currentAvatarKind: CharacterAvatarKind | null = null;
+    let currentMountedOpId: string | null = null;
     let mountedWeaponId: WeaponId | null = null;
+    let mountGeneration = 0;
     let mixer: THREE.AnimationMixer | null = null;
     let rHandBone: THREE.Object3D | null = null;
     let lHandBone: THREE.Object3D | null = null;
@@ -268,24 +274,21 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
 
     void preloadSingleBotWeaponGlb(weaponRef.current, skinRef.current);
 
-    const mountCharacterForSelection = (
+    const finalizeMountedAvatar = (
+      cloned: {
+        modelRoot: THREE.Object3D;
+        clips: ReturnType<typeof cloneVanguardCharacterAvatar> extends infer T
+          ? T extends { clips: infer C }
+            ? C
+            : never
+          : never;
+        avatarKind: CharacterAvatarKind;
+      },
       targetWeapon: WeaponId,
-      targetClass?: WarfaceClassId,
-      targetSkin?: string,
-      targetOpId?: string
+      targetSkin: string | undefined,
+      opDef: ReturnType<typeof getOperatorDefinition>
     ) => {
       if (disposed) return;
-      const opDef = getOperatorDefinition(targetOpId || opSkinRef.current);
-      const effectiveClass =
-        opDef.id !== 'op_vanguard_default'
-          ? opDef.preferredClass
-          : targetClass;
-      const cloned = cloneVanguardCharacterAvatar(
-        isSoftwareGl,
-        targetWeapon,
-        effectiveClass
-      );
-      if (!cloned) return;
 
       if (currentModelRoot) {
         mixer?.stopAllAction();
@@ -293,12 +296,16 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
       }
 
       const { modelRoot, clips, avatarKind } = cloned;
+      const isCustomFemale = Boolean(opDef.customModelConfig);
       currentModelRoot = modelRoot;
       currentAvatarKind = avatarKind;
+      currentMountedOpId = opDef.id;
       rHandBone = null;
       lHandBone = null;
 
-      modelRoot.scale.setScalar(avatarKind === 'VANGUARD_MEDICO' ? 1.0 : 1.02);
+      modelRoot.scale.setScalar(
+        isCustomFemale ? 1.0 : avatarKind === 'VANGUARD_MEDICO' ? 1.0 : 1.02
+      );
       modelRoot.position.set(0, 0, 0);
 
       modelRoot.traverse((child) => {
@@ -318,6 +325,21 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
           m.castShadow = !isSoftwareGl;
           m.receiveShadow = false;
           m.frustumCulled = false;
+          if (isCustomFemale) {
+            const mats = Array.isArray(m.material) ? m.material : [m.material];
+            for (let mi = 0; mi < mats.length; mi++) {
+              const std = mats[mi] as THREE.MeshStandardMaterial;
+              if (!std?.isMeshStandardMaterial) continue;
+              if (std.map) {
+                std.map.anisotropy = 16;
+                std.map.colorSpace = THREE.SRGBColorSpace;
+                std.map.needsUpdate = true;
+              }
+              std.envMapIntensity = Math.max(std.envMapIntensity || 0, 1.05);
+              std.needsUpdate = true;
+            }
+            return;
+          }
           const mats = Array.isArray(m.material) ? m.material : [m.material];
           for (let mi = 0; mi < mats.length; mi++) {
             const std = mats[mi] as THREE.MeshStandardMaterial;
@@ -365,7 +387,7 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
 
       applyOperatorSuitToCharacter3D(modelRoot, opDef.id);
 
-      // Plant feet on pedestal (Tripo medic bind can leave a tiny Y offset).
+      // Plant feet on pedestal (Tripo medic / UE female bind can leave a tiny Y offset).
       modelRoot.updateMatrixWorld(true);
       const footBox = new THREE.Box3().setFromObject(modelRoot);
       if (Number.isFinite(footBox.min.y)) {
@@ -400,6 +422,58 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
       setIsLoaded(true);
     };
 
+    const mountCharacterForSelection = (
+      targetWeapon: WeaponId,
+      targetClass?: WarfaceClassId,
+      targetSkin?: string,
+      targetOpId?: string
+    ) => {
+      if (disposed) return;
+      const myGen = ++mountGeneration;
+      const opDef = getOperatorDefinition(targetOpId || opSkinRef.current);
+
+      if (opDef.customModelConfig) {
+        const syncClone = cloneFemaleOperatorAvatarSync(opDef, isSoftwareGl);
+        if (syncClone) {
+          finalizeMountedAvatar(syncClone, targetWeapon, targetSkin, opDef);
+          return;
+        }
+        setIsLoaded(false);
+        void Promise.all([
+          loadAndCloneFemaleOperatorAvatar(opDef, isSoftwareGl),
+          preloadSingleBotWeaponGlb(targetWeapon, targetSkin || skinRef.current),
+        ]).then(([asyncClone]) => {
+          if (disposed || myGen !== mountGeneration) return;
+          if (asyncClone) {
+            finalizeMountedAvatar(asyncClone, targetWeapon, targetSkin, opDef);
+            return;
+          }
+          // Fallback to standard class avatar if female GLB fails to load
+          const fallback = cloneVanguardCharacterAvatar(
+            isSoftwareGl,
+            targetWeapon,
+            opDef.preferredClass
+          );
+          if (fallback) {
+            finalizeMountedAvatar(fallback, targetWeapon, targetSkin, opDef);
+          }
+        });
+        return;
+      }
+
+      const effectiveClass =
+        opDef.id !== 'op_vanguard_default'
+          ? opDef.preferredClass
+          : targetClass;
+      const cloned = cloneVanguardCharacterAvatar(
+        isSoftwareGl,
+        targetWeapon,
+        effectiveClass
+      );
+      if (!cloned) return;
+      finalizeMountedAvatar(cloned, targetWeapon, targetSkin, opDef);
+    };
+
     swapSelectionRef.current = (
       nextWeapon: WeaponId,
       nextClass?: WarfaceClassId,
@@ -409,16 +483,31 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
       if (disposed) return;
       const desiredSkin = nextSkin || 'default';
       const opDef = getOperatorDefinition(nextOpId || opSkinRef.current);
-      const effectiveClass =
-        opDef.id !== 'op_vanguard_default'
-          ? opDef.preferredClass
-          : nextClass;
-      const wantKind = resolveCharacterAvatarKind(nextWeapon, effectiveClass, true);
-      if (currentModelRoot === null || currentAvatarKind !== wantKind) {
-        mountCharacterForSelection(nextWeapon, nextClass, desiredSkin, opDef.id);
-        return;
+      const prevWasFemale = Boolean(
+        currentMountedOpId && getOperatorDefinition(currentMountedOpId).customModelConfig
+      );
+      const nextIsFemale = Boolean(opDef.customModelConfig);
+
+      // Always remount when switching to/from/between modular Female Operator skins
+      if (nextIsFemale || prevWasFemale) {
+        if (currentMountedOpId !== opDef.id || currentModelRoot === null) {
+          mountCharacterForSelection(nextWeapon, nextClass, desiredSkin, opDef.id);
+          return;
+        }
+      } else {
+        const effectiveClass =
+          opDef.id !== 'op_vanguard_default'
+            ? opDef.preferredClass
+            : nextClass;
+        const wantKind = resolveCharacterAvatarKind(nextWeapon, effectiveClass, true);
+        if (currentModelRoot === null || currentAvatarKind !== wantKind) {
+          mountCharacterForSelection(nextWeapon, nextClass, desiredSkin, opDef.id);
+          return;
+        }
+        currentMountedOpId = opDef.id;
+        applyOperatorSuitToCharacter3D(currentModelRoot, opDef.id);
       }
-      applyOperatorSuitToCharacter3D(currentModelRoot, opDef.id);
+
       if (!rHandBone) return;
       if (mountedWeaponId !== nextWeapon || !weaponProp) {
         if (weaponProp) {
