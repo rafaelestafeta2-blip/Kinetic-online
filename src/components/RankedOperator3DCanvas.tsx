@@ -116,14 +116,14 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
     })();
 
     const isStoreFraming = framing === 'store';
-    const width = Math.max(160, container.clientWidth || 360);
-    const height = Math.max(180, container.clientHeight || (isStoreFraming ? 280 : 520));
+    const width = Math.max(140, container.clientWidth || 340);
+    const height = Math.max(120, container.clientHeight || (isStoreFraming ? 220 : 520));
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(34, width / height, 0.1, 30);
     if (isStoreFraming) {
-      camera.position.set(0, 0.96, 3.68);
-      camera.lookAt(0, 0.92, 0);
+      camera.position.set(0, 0.94, 3.32);
+      camera.lookAt(0, 0.91, 0);
     } else {
       camera.position.set(0, 0.98, isBlackthorn ? 3.12 : 3.18);
       camera.lookAt(0, 0.90, 0);
@@ -574,8 +574,8 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
 
     const handleResize = () => {
       if (!container || disposed) return;
-      const nw = Math.max(160, container.clientWidth);
-      const nh = Math.max(180, container.clientHeight);
+      const nw = Math.max(140, container.clientWidth);
+      const nh = Math.max(120, container.clientHeight);
       camera.aspect = nw / nh;
       camera.updateProjectionMatrix();
       renderer.setSize(nw, nh);

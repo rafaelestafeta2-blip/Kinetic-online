@@ -1,5 +1,6 @@
 import { onAuthStateChanged } from 'firebase/auth';
 import {
+  deleteField,
   doc,
   getDoc,
   getDocFromCache,
@@ -7,6 +8,7 @@ import {
   onSnapshot,
   setDoc,
   Unsubscribe,
+  updateDoc,
 } from 'firebase/firestore';
 import { WarfaceClassId } from '../components/WarfaceClassIcons';
 import { evaluateUnlockedAchievements } from '../progression/achievementsData';
@@ -277,9 +279,14 @@ function buildCloudSafeProfilePayload(
       : '';
 
   const callsign = (
-    typeof profile.callsign === 'string' && profile.callsign.trim().length > 0
-      ? profile.callsign.trim()
-      : 'OPERADOR-01'
+    profile.callsignLocked &&
+    typeof profile.callsign === 'string' &&
+    profile.callsign.length >= 1 &&
+    profile.callsign.length <= 32
+      ? profile.callsign
+      : typeof profile.callsign === 'string' && profile.callsign.trim().length > 0
+        ? profile.callsign.trim()
+        : 'OPERADOR-01'
   ).slice(0, 32);
 
   const rankTitle = (
@@ -812,11 +819,11 @@ function anchorProfileToServerBaseline(
     serverData.createdAt.length <= 40
       ? serverData.createdAt
       : candidate.createdAt;
+  const serverCallsignLocked = Boolean(serverData.callsignLocked);
   const serverCallsign =
-    typeof serverData.callsign === 'string' && serverData.callsign.trim().length > 0
+    typeof serverData.callsign === 'string' && serverData.callsign.length >= 1
       ? serverData.callsign.slice(0, 32)
       : candidate.callsign;
-  const serverCallsignLocked = Boolean(serverData.callsignLocked);
   const serverXp = Math.max(0, Math.floor(Number(serverData.playerXp) || 0));
   const serverCash = Math.max(0, Math.floor(Number(serverData.playerCash) || 0));
   const nextXp = Math.max(candidate.playerXp, serverXp);
@@ -873,6 +880,27 @@ async function fetchAuthoritativeServerProfile(
   }
 }
 
+function formatFirestoreSyncError(err: unknown, fallback: string): string {
+  const code =
+    typeof err === 'object' && err !== null && 'code' in err
+      ? String((err as { code?: unknown }).code || '')
+      : '';
+  const msg = err instanceof Error ? err.message : String(err || '');
+  if (code === 'resource-exhausted' || /quota exceeded/i.test(msg)) {
+    return 'Limite diário do Firestore atingido. A cota reinicia amanhã.';
+  }
+  if (code === 'unauthenticated') {
+    return 'Sessão Google expirada. Faça login novamente e tente resgatar.';
+  }
+  if (code === 'unavailable' || isFirestoreOfflineError(err)) {
+    return 'Sem conexão estável com o servidor Firebase. Verifique a internet e tente novamente.';
+  }
+  if (code) {
+    return `${fallback} (${code})`;
+  }
+  return fallback;
+}
+
 export async function claimFounderWelcomeDiamonds(): Promise<{
   ok: boolean;
   error?: string;
@@ -927,7 +955,9 @@ export async function claimFounderWelcomeDiamonds(): Promise<{
         state.syncError = null;
         return { ok: true, granted: FOUNDER_WELCOME_DIAMONDS };
       } catch (firstErr) {
-        // Reconcile against authoritative server doc (handles stale createdAt, locked callsign, or prior commit)
+        // Refresh auth token (helps Android WebView after background resume)
+        // and reconcile against authoritative server doc.
+        await user.getIdToken(true).catch(() => undefined);
         const serverData = await fetchAuthoritativeServerProfile(user.uid);
         if (serverData && serverData.founderDiamondsClaimed === true) {
           const adopted = mergeLocalAndCloudProfiles(updatedProfile, serverData, user);
@@ -940,21 +970,26 @@ export async function claimFounderWelcomeDiamonds(): Promise<{
           return { ok: true, granted: FOUNDER_WELCOME_DIAMONDS };
         }
 
+        const retryNowIso = new Date().toISOString();
+        const serverDiamonds = Math.max(
+          0,
+          Math.floor(Number(serverData?.diamonds) || 0)
+        );
+        const targetDiamonds = Math.min(
+          1_000_000,
+          serverDiamonds + FOUNDER_WELCOME_DIAMONDS
+        );
+        const anchored = anchorProfileToServerBaseline(
+          {
+            ...updatedProfile,
+            diamonds: targetDiamonds,
+            founderDiamondsClaimed: true,
+            updatedAt: retryNowIso,
+          },
+          serverData
+        );
+
         try {
-          const retryNowIso = new Date().toISOString();
-          const serverDiamonds = Math.max(
-            0,
-            Math.floor(Number(serverData?.diamonds) || 0)
-          );
-          const anchored = anchorProfileToServerBaseline(
-            {
-              ...updatedProfile,
-              diamonds: Math.min(1_000_000, serverDiamonds + FOUNDER_WELCOME_DIAMONDS),
-              founderDiamondsClaimed: true,
-              updatedAt: retryNowIso,
-            },
-            serverData
-          );
           const retryPayload = buildCloudSafeProfilePayload(anchored, user.uid);
           await setDoc(playerRef, retryPayload);
           state.profile = anchored;
@@ -965,6 +1000,38 @@ export async function claimFounderWelcomeDiamonds(): Promise<{
           emitState();
           return { ok: true, granted: FOUNDER_WELCOME_DIAMONDS };
         } catch (retryErr) {
+          // Final targeted fallback: update only the founder diamond fields when doc already exists
+          if (serverData) {
+            try {
+              await updateDoc(playerRef, {
+                diamonds: targetDiamonds,
+                founderDiamondsClaimed: true,
+                email: deleteField(),
+                updatedAt: retryNowIso,
+              });
+              state.profile = anchored;
+              persistLocalProfile(anchored);
+              lastLocalDiamondMutationMs = Date.now();
+              state.lastSyncedAt = retryNowIso;
+              state.syncError = null;
+              emitState();
+              return { ok: true, granted: FOUNDER_WELCOME_DIAMONDS };
+            } catch (patchErr) {
+              lastLocalDiamondMutationMs = 0;
+              state.profile = prevProfile;
+              persistLocalProfile(prevProfile);
+              emitState();
+              handleFirestoreError(patchErr || retryErr || firstErr, OperationType.WRITE, `players/${user.uid}`);
+              return {
+                ok: false,
+                error: formatFirestoreSyncError(
+                  patchErr || retryErr || firstErr,
+                  'Não foi possível sincronizar o resgate de Diamantes com a nuvem.'
+                ),
+              };
+            }
+          }
+
           lastLocalDiamondMutationMs = 0;
           state.profile = prevProfile;
           persistLocalProfile(prevProfile);
@@ -972,7 +1039,10 @@ export async function claimFounderWelcomeDiamonds(): Promise<{
           handleFirestoreError(retryErr || firstErr, OperationType.WRITE, `players/${user.uid}`);
           return {
             ok: false,
-            error: 'Não foi possível sincronizar o resgate de Diamantes com a nuvem. Verifique sua conexão e tente novamente.',
+            error: formatFirestoreSyncError(
+              retryErr || firstErr,
+              'Não foi possível sincronizar o resgate de Diamantes com a nuvem.'
+            ),
           };
         }
       } finally {

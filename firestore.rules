@@ -98,7 +98,7 @@ service cloud.firestore {
         && (!('purchasedClanOfferIds' in data) || (data.purchasedClanOfferIds is list && data.purchasedClanOfferIds.size() <= 30 && (data.purchasedClanOfferIds.size() == 0 || data.purchasedClanOfferIds[0] is string)))
         && (!('dailyContracts' in data) || (data.dailyContracts is map && data.dailyContracts.size() <= 8))
         && (!('diamonds' in data) || (isNonNegativeNumber(data.diamonds) && data.diamonds <= 1000000))
-        && (!('vipBattlePass' in data) || (data.vipBattlePass is map && data.vipBattlePass.size() <= 8))
+        && (!('vipBattlePass' in data) || (data.vipBattlePass is map && data.vipBattlePass.size() <= 10))
         && isValidOptionalString(data, 'activeOperatorId', 40)
         && (!('unlockedOperators' in data) || (data.unlockedOperators is list && data.unlockedOperators.size() >= 1 && data.unlockedOperators.size() <= 40 && data.unlockedOperators[0] is string))
         && (!('founderDiamondsClaimed' in data) || data.founderDiamondsClaimed is bool)
@@ -153,13 +153,14 @@ service cloud.firestore {
         && incoming().diamonds == existing().diamonds - 800
         && ('vipBattlePass' in incoming())
         && incoming().vipBattlePass is map
-        && incoming().vipBattlePass.size() <= 8
+        && incoming().vipBattlePass.size() <= 10
         && ('activeUntilIso' in incoming().vipBattlePass)
         && incoming().vipBattlePass.activeUntilIso is string
         && incoming().vipBattlePass.activeUntilIso.size() >= 10
         && incoming().vipBattlePass.activeUntilIso.size() <= 40
         && isFounderClaimPreserved()
-        && !incoming().diff(existing()).affectedKeys().hasAny(['uid', 'createdAt']);
+        && (!('uid' in existing()) || incoming().uid == existing().uid)
+        && (!('createdAt' in existing()) || !(existing().createdAt is string) || incoming().createdAt == existing().createdAt);
     }
 
     function isPlayerFounderGrantAction() {
@@ -171,7 +172,8 @@ service cloud.firestore {
           ((!('diamonds' in existing()) || !(existing().diamonds is number)) && incoming().diamonds <= 1500)
           || (('diamonds' in existing()) && existing().diamonds is number && incoming().diamonds <= existing().diamonds + 1500)
         )
-        && !incoming().diff(existing()).affectedKeys().hasAny(['uid', 'createdAt']);
+        && (!('uid' in existing()) || incoming().uid == existing().uid)
+        && (!('createdAt' in existing()) || !(existing().createdAt is string) || incoming().createdAt == existing().createdAt);
     }
 
     function isPlayerDiamondStoreAction() {
@@ -185,7 +187,8 @@ service cloud.firestore {
         && incoming().playerCash >= existing().playerCash
         && incoming().playerCash <= existing().playerCash + 50000
         && isFounderClaimPreserved()
-        && !incoming().diff(existing()).affectedKeys().hasAny(['uid', 'createdAt']);
+        && (!('uid' in existing()) || incoming().uid == existing().uid)
+        && (!('createdAt' in existing()) || !(existing().createdAt is string) || incoming().createdAt == existing().createdAt);
     }
 
     function isPlayerDiamondPackTopupAction() {
@@ -196,7 +199,8 @@ service cloud.firestore {
           || (('diamonds' in existing()) && existing().diamonds is number && (incoming().diamonds - existing().diamonds) in [400, 880, 2050, 4800])
         )
         && isFounderClaimPreserved()
-        && !incoming().diff(existing()).affectedKeys().hasAny(['uid', 'createdAt']);
+        && (!('uid' in existing()) || incoming().uid == existing().uid)
+        && (!('createdAt' in existing()) || !(existing().createdAt is string) || incoming().createdAt == existing().createdAt);
     }
 
     function isPlayerProgressionUpdateAction() {
@@ -253,7 +257,8 @@ service cloud.firestore {
         && incoming().bombsPlanted >= existing().bombsPlanted
         && incoming().bombsPlanted <= existing().bombsPlanted + 50
         && isFounderClaimPreserved()
-        && !incoming().diff(existing()).affectedKeys().hasAny(['uid', 'createdAt']);
+        && (!('uid' in existing()) || incoming().uid == existing().uid)
+        && (!('createdAt' in existing()) || !(existing().createdAt is string) || incoming().createdAt == existing().createdAt);
     }
 
     function isValidUsernameRegistry(data, usernameLower) {
@@ -379,7 +384,7 @@ service cloud.firestore {
       allow update: if isOwner(userId)
         && isValidId(userId)
         && isValidPlayerProfile(incoming())
-        && incoming().uid == existing().uid
+        && (!('uid' in existing()) || incoming().uid == existing().uid)
         && (!('createdAt' in existing()) || !(existing().createdAt is string) || incoming().createdAt == existing().createdAt)
         && (!('callsignLocked' in existing()) || existing().callsignLocked != true || (incoming().callsign == existing().callsign && incoming().callsignLocked == true))
         && (isPlayerEconomyMigrationAction() || isPlayerAccountResetAction() || isPlayerVipPurchaseAction() || isPlayerFounderGrantAction() || isPlayerDiamondPackTopupAction() || isPlayerDiamondStoreAction() || isPlayerProgressionUpdateAction());

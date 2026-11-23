@@ -123,7 +123,7 @@
         },
         "vipBattlePass": {
           "type": "object",
-          "description": "Monthly VIP Battle Pass status, expiration timestamp, weapon of the month, XP/Cash boosts, and claimed season tiers (up to 8 entries)."
+          "description": "Monthly VIP Battle Pass status, expiration timestamp, weapon of the month, XP/Cash boosts, and claimed season tiers (up to 10 entries)."
         },
         "activeOperatorId": {
           "type": "string",

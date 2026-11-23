@@ -1697,7 +1697,7 @@ export const WarfaceDiamondStoreModal: React.FC<WarfaceDiamondStoreModalProps> =
         )}
 
         {/* ================================================================= */}
-        {/* TAB 2A: OPERADORES 3D (SHOWCASE 3D CENTRALIZADO + LISTA LATERAL)  */}
+        {/* TAB 2A: OPERADORES 3D (SHOWCASE 3D LIMPO + LISTA LATERAL)         */}
         {/* ================================================================= */}
         {section === 'OPERADORES' && (() => {
           const selectedMeta = WARFACE_CLASS_META[selectedOperatorDef.preferredClass];
@@ -1724,18 +1724,31 @@ export const WarfaceDiamondStoreModal: React.FC<WarfaceDiamondStoreModalProps> =
                 ? 'text-rose-300'
                 : 'text-sky-300';
 
+          const compactClassLabel = (cls: WarfaceClassId): string => {
+            switch (cls) {
+              case 'FUZILEIRO':
+                return 'ASSAULT';
+              case 'ENGENHEIRO':
+                return 'ENG';
+              case 'MEDICO':
+                return 'MEDIC';
+              case 'FRANCO_ATIRADOR':
+                return 'RECON';
+            }
+          };
+
           return (
-            <div className="flex-1 min-h-0 flex flex-col gap-2 overflow-hidden">
-              {/* Barra Superior Compacta: Filtros por Classe + Alternador FEM / TODOS */}
-              <div className="shrink-0 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar min-w-0 py-0.5">
+            <div className="flex-1 min-h-0 flex flex-col gap-1.5 sm:gap-2 overflow-hidden">
+              {/* Barra Superior Compacta: Todos os 4 filtros de classe visíveis + FEM / TODOS */}
+              <div className="shrink-0 flex items-center justify-between gap-1.5">
+                <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar min-w-0 py-0.5">
                   <button
                     type="button"
                     onClick={() => {
                       soundEngine.playMenuHover();
                       setOperatorClassFilter('ALL');
                     }}
-                    className={`whitespace-nowrap shrink-0 px-2.5 py-1 rounded-md text-[10px] font-display font-black uppercase tracking-wider cursor-pointer border transition-colors ${
+                    className={`whitespace-nowrap shrink-0 px-2 sm:px-2.5 py-1 rounded-md text-[9px] sm:text-[10px] font-display font-black uppercase tracking-wider cursor-pointer border transition-colors ${
                       operatorClassFilter === 'ALL'
                         ? 'bg-white text-slate-950 border-white'
                         : 'bg-white/[0.04] text-slate-300 border-white/15 hover:border-white/35'
@@ -1767,7 +1780,7 @@ export const WarfaceDiamondStoreModal: React.FC<WarfaceDiamondStoreModalProps> =
                           );
                           if (firstOfClass) setPreviewOpId(firstOfClass.id);
                         }}
-                        className={`whitespace-nowrap shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-display font-black uppercase tracking-wider cursor-pointer border transition-colors ${
+                        className={`whitespace-nowrap shrink-0 flex items-center gap-1 px-1.5 sm:px-2.5 py-1 rounded-md text-[9px] sm:text-[10px] font-display font-black uppercase tracking-wider cursor-pointer border transition-colors ${
                           active
                             ? 'bg-white/15 text-white'
                             : 'bg-white/[0.04] text-slate-300 border-white/15 hover:border-white/35'
@@ -1776,13 +1789,14 @@ export const WarfaceDiamondStoreModal: React.FC<WarfaceDiamondStoreModalProps> =
                           active
                             ? {
                                 borderColor: meta.accentHex,
-                                boxShadow: `0 0 12px ${meta.accentHex}30`,
+                                boxShadow: `0 0 10px ${meta.accentHex}30`,
                               }
                             : undefined
                         }
                       >
                         <WarfaceClassIcon classId={cls} className="w-3.5 h-3.5 shrink-0" />
-                        <span>{meta.shortLabel || meta.label}</span>
+                        <span className="sm:hidden">{compactClassLabel(cls)}</span>
+                        <span className="hidden sm:inline">{meta.shortLabel || meta.label}</span>
                         <span
                           className="text-[9px] font-mono font-bold tabular-nums"
                           style={{ color: meta.accentHex }}
@@ -1811,7 +1825,7 @@ export const WarfaceDiamondStoreModal: React.FC<WarfaceDiamondStoreModalProps> =
                         if (firstFem) setPreviewOpId(firstFem.id);
                       }
                     }}
-                    className={`whitespace-nowrap px-2 py-1 rounded-md text-[9px] font-mono font-bold uppercase cursor-pointer transition-colors ${
+                    className={`whitespace-nowrap px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md text-[9px] font-mono font-bold uppercase cursor-pointer transition-colors ${
                       onlyFemaleOperators
                         ? 'bg-amber-400/20 text-amber-200 border border-amber-400/55'
                         : 'text-slate-400 hover:text-white border border-transparent'
@@ -1825,7 +1839,7 @@ export const WarfaceDiamondStoreModal: React.FC<WarfaceDiamondStoreModalProps> =
                       soundEngine.playMenuHover();
                       setOnlyFemaleOperators(false);
                     }}
-                    className={`whitespace-nowrap px-2 py-1 rounded-md text-[9px] font-mono font-bold uppercase cursor-pointer transition-colors ${
+                    className={`whitespace-nowrap px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md text-[9px] font-mono font-bold uppercase cursor-pointer transition-colors ${
                       !onlyFemaleOperators
                         ? 'bg-sky-500/20 text-sky-200 border border-sky-400/55'
                         : 'text-slate-400 hover:text-white border border-transparent'
@@ -1836,23 +1850,89 @@ export const WarfaceDiamondStoreModal: React.FC<WarfaceDiamondStoreModalProps> =
                 </div>
               </div>
 
-              {/* Workspace Travado na Altura da Tela: Palco 3D Central + Lista Rolável Lateral */}
+              {/* Workspace Travado na Altura da Tela: Palco 3D 100% Livre + Lista Rolável Lateral */}
               <div className="flex-1 min-h-0 flex flex-row gap-2 sm:gap-3 overflow-hidden">
-                {/* PALCO CENTRAL: OPERADOR 3D SEMPRE VISÍVEL SEM ROLAR */}
+                {/* PALCO CENTRAL: CABEÇALHO FINO ACIMA + 3D 100% DESOBSTRUÍDO NO CENTRO + AÇÃO EMBAIXO */}
                 <div
-                  className="flex-1 min-w-0 h-full relative rounded-xl border bg-[radial-gradient(ellipse_at_50%_42%,rgba(255,255,255,0.06),rgba(10,14,24,0.92)_62%,#05070c_100%)] overflow-hidden"
+                  className="flex-1 min-w-0 h-full rounded-xl border bg-[radial-gradient(ellipse_at_50%_46%,rgba(255,255,255,0.05),rgba(10,14,24,0.94)_64%,#05070c_100%)] flex flex-col overflow-hidden"
                   style={{ borderColor: `${selectedMeta.accentHex}55` }}
                 >
-                  {/* Brilho sutil da classe atrás do operador */}
-                  <div
-                    className="absolute inset-0 pointer-events-none opacity-25"
-                    style={{
-                      background: `radial-gradient(circle at 50% 48%, ${selectedMeta.accentHex}44 0%, transparent 58%)`,
-                    }}
-                  />
+                  {/* Faixa Superior Fina (FORA do canvas — nunca tapa o rosto do personagem) */}
+                  <div className="shrink-0 px-2.5 py-1.5 border-b border-white/10 bg-[#090d16]/95 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <WarfaceClassIcon
+                        classId={selectedOperatorDef.preferredClass}
+                        className="w-4 h-4 shrink-0"
+                      />
+                      <h3 className="font-display font-black text-xs sm:text-sm lg:text-base text-white uppercase leading-none truncate">
+                        {selectedOperatorDef.name}
+                      </h3>
+                      <span
+                        className="hidden md:inline text-[9px] font-display font-black uppercase tracking-wider shrink-0"
+                        style={{ color: selectedMeta.accentHex }}
+                      >
+                        {selectedMeta.shortLabel || selectedMeta.label}
+                      </span>
+                      <span className="text-slate-600 text-[9px] shrink-0">·</span>
+                      <span
+                        className={`text-[9px] font-mono font-bold uppercase shrink-0 ${rarityTextClass(
+                          selectedOperatorDef.rarity
+                        )}`}
+                      >
+                        {selectedOperatorDef.rarity}
+                      </span>
+                      <div className="hidden sm:flex items-center gap-0.5 shrink-0 ml-0.5">
+                        {selectedOperatorDef.swatchColors.map((hex, i) => (
+                          <span
+                            key={i}
+                            className="w-2.5 h-2 rounded-[2px] border border-white/30"
+                            style={{ backgroundColor: hex }}
+                          />
+                        ))}
+                      </div>
+                    </div>
 
-                  {/* Canvas 3D ocupando 100% do palco central */}
-                  <div className="absolute inset-0">
+                    {/* Botões rápidos de rotação 360° alinhados no cabeçalho */}
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          soundEngine.playMenuHover();
+                          setOperatorRotateSignal((prev) => ({
+                            nonce: prev.nonce + 1,
+                            delta: -0.75,
+                          }));
+                        }}
+                        title="Girar operador para esquerda"
+                        className="w-6 h-6 sm:w-7 sm:h-7 rounded-md bg-white/[0.06] hover:bg-white/15 border border-white/15 text-slate-200 hover:text-white flex items-center justify-center text-xs font-mono cursor-pointer transition-colors"
+                      >
+                        ↺
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          soundEngine.playMenuHover();
+                          setOperatorRotateSignal((prev) => ({
+                            nonce: prev.nonce + 1,
+                            delta: 0.75,
+                          }));
+                        }}
+                        title="Girar operador para direita"
+                        className="w-6 h-6 sm:w-7 sm:h-7 rounded-md bg-white/[0.06] hover:bg-white/15 border border-white/15 text-slate-200 hover:text-white flex items-center justify-center text-xs font-mono cursor-pointer transition-colors"
+                      >
+                        ↻
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Palco 3D Puro: 100% livre da cabeça às botas (zero texto em cima do personagem) */}
+                  <div className="flex-1 min-h-0 relative w-full overflow-hidden">
+                    <div
+                      className="absolute inset-0 pointer-events-none opacity-25"
+                      style={{
+                        background: `radial-gradient(circle at 50% 48%, ${selectedMeta.accentHex}44 0%, transparent 58%)`,
+                      }}
+                    />
                     <RankedOperator3DCanvas
                       activeWeapon={previewWeaponForOp}
                       operatorSkinId={selectedOperatorDef.id}
@@ -1861,97 +1941,25 @@ export const WarfaceDiamondStoreModal: React.FC<WarfaceDiamondStoreModalProps> =
                     />
                   </div>
 
-                  {/* Overlay Superior Esquerdo: Identidade do Operador + Classe + Camuflagem */}
-                  <div className="absolute top-2 left-2 sm:top-3 sm:left-3 z-10 pointer-events-none max-w-[70%] bg-black/55 backdrop-blur-sm border border-white/10 rounded-lg px-2.5 py-1.5">
-                    <div className="flex items-center gap-1.5 text-[9px] sm:text-[10px] font-mono uppercase">
-                      <WarfaceClassIcon
-                        classId={selectedOperatorDef.preferredClass}
-                        className="w-3.5 h-3.5 shrink-0"
-                      />
-                      <span
-                        className="font-display font-black tracking-wider truncate"
-                        style={{ color: selectedMeta.accentHex }}
-                      >
-                        {selectedMeta.label}
-                      </span>
-                      <span className="text-slate-500">·</span>
-                      <span className={`font-bold ${rarityTextClass(selectedOperatorDef.rarity)}`}>
-                        {selectedOperatorDef.rarity}
-                      </span>
-                      <span className="hidden sm:inline text-slate-500">·</span>
-                      <span className="hidden sm:inline text-slate-400">
-                        {selectedOperatorDef.codename}
-                      </span>
-                    </div>
-
-                    <h3 className="font-display font-black text-sm sm:text-base lg:text-lg text-white uppercase leading-tight truncate mt-0.5">
-                      {selectedOperatorDef.name}
-                    </h3>
-
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <div className="flex items-center gap-1 shrink-0">
-                        {selectedOperatorDef.swatchColors.map((hex, i) => (
-                          <span
-                            key={i}
-                            className="w-3 h-2 rounded-[2px] border border-white/30"
-                            style={{ backgroundColor: hex }}
-                          />
-                        ))}
-                      </div>
-                      <span className="text-[9px] font-mono text-amber-300/90 truncate">
+                  {/* Faixa Inferior Fina (FORA do canvas — nunca tapa as botas) */}
+                  <div className="shrink-0 px-2.5 py-1.5 border-t border-white/10 bg-[#080c14]/95 flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[9px] sm:text-[10px] font-mono text-amber-300/95 truncate">
                         {selectedOperatorDef.customModelConfig?.silhouetteLabel ||
                           selectedOperatorDef.perkLabel}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Overlay Superior Direito: Controles rápidos de rotação 360° */}
-                  <div className="absolute top-2 right-2 sm:top-3 sm:right-3 z-10 flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        soundEngine.playMenuHover();
-                        setOperatorRotateSignal((prev) => ({
-                          nonce: prev.nonce + 1,
-                          delta: -0.75,
-                        }));
-                      }}
-                      title="Girar operador para esquerda"
-                      className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-black/55 hover:bg-black/80 border border-white/15 hover:border-white/35 text-slate-200 hover:text-white flex items-center justify-center text-xs font-mono cursor-pointer transition-colors backdrop-blur-sm"
-                    >
-                      ↺
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        soundEngine.playMenuHover();
-                        setOperatorRotateSignal((prev) => ({
-                          nonce: prev.nonce + 1,
-                          delta: 0.75,
-                        }));
-                      }}
-                      title="Girar operador para direita"
-                      className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-black/55 hover:bg-black/80 border border-white/15 hover:border-white/35 text-slate-200 hover:text-white flex items-center justify-center text-xs font-mono cursor-pointer transition-colors backdrop-blur-sm"
-                    >
-                      ↻
-                    </button>
-                  </div>
-
-                  {/* Barra Inferior do Palco: Descrição + Botão Comprar / Equipar */}
-                  <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-[#04060a]/95 via-[#060911]/75 to-transparent pt-7 pb-2.5 px-2.5 sm:px-3.5 flex items-end justify-between gap-2.5 pointer-events-none">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[9px] sm:text-[10px] font-mono text-slate-300/90 leading-snug line-clamp-2 max-w-[360px]">
+                      </div>
+                      <p className="hidden lg:block text-[10px] font-mono text-slate-400 truncate mt-0.5">
                         {selectedOperatorDef.description}
                       </p>
                     </div>
 
-                    <div className="pointer-events-auto shrink-0 w-[162px] sm:w-[198px]">
+                    <div className="shrink-0 w-[148px] sm:w-[186px]">
                       <GoldSlantedButton
                         label={
                           selectedEquipped
                             ? 'EQUIPADO ✓'
                             : selectedUnlocked
-                              ? 'EQUIPAR OPERADOR'
+                              ? 'EQUIPAR'
                               : `COMPRAR · ${selectedOperatorDef.diamondPrice} 💎`
                         }
                         variant={selectedEquipped ? 'equipped' : 'gold'}
@@ -1959,14 +1967,14 @@ export const WarfaceDiamondStoreModal: React.FC<WarfaceDiamondStoreModalProps> =
                         onClick={() =>
                           void handleBuyOrEquipOperator(selectedOperatorDef.id)
                         }
-                        className="py-2"
+                        className="py-1.5"
                       />
                     </div>
                   </div>
                 </div>
 
                 {/* LISTA LATERAL DIREITA ROLÁVEL: SELEÇÃO RÁPIDA COM ÍCONE DA CLASSE */}
-                <div className="w-[215px] sm:w-[255px] lg:w-[295px] xl:w-[325px] shrink-0 h-full rounded-xl border border-white/10 bg-[#080c14]/90 flex flex-col overflow-hidden">
+                <div className="w-[196px] sm:w-[240px] lg:w-[285px] xl:w-[315px] shrink-0 h-full rounded-xl border border-white/10 bg-[#080c14]/90 flex flex-col overflow-hidden">
                   <div className="shrink-0 px-2.5 py-1.5 border-b border-white/10 bg-black/40 flex items-center justify-between gap-2">
                     <span className="text-[10px] font-display font-black uppercase tracking-wider text-slate-200">
                       CATÁLOGO
@@ -1991,7 +1999,7 @@ export const WarfaceDiamondStoreModal: React.FC<WarfaceDiamondStoreModalProps> =
                             soundEngine.playMenuHover();
                             setPreviewOpId(op.id);
                           }}
-                          className={`w-full text-left rounded-lg border px-2 py-2 flex items-center gap-2 cursor-pointer transition-all min-h-[54px] shrink-0 ${
+                          className={`w-full text-left rounded-lg border px-2 py-1.5 sm:py-2 flex items-center gap-2 cursor-pointer transition-all min-h-[50px] shrink-0 ${
                             selected
                               ? 'bg-white/[0.09] shadow-md'
                               : 'border-white/10 bg-white/[0.025] hover:bg-white/[0.06] hover:border-white/25'
@@ -2007,7 +2015,7 @@ export const WarfaceDiamondStoreModal: React.FC<WarfaceDiamondStoreModalProps> =
                         >
                           {/* Ícone Oficial da Classe */}
                           <div
-                            className="w-8 h-8 rounded-md flex items-center justify-center shrink-0 border bg-black/65"
+                            className="w-7 h-7 sm:w-8 sm:h-8 rounded-md flex items-center justify-center shrink-0 border bg-black/65"
                             style={{
                               borderColor: `${clsMeta.accentHex}70`,
                             }}
@@ -2015,16 +2023,16 @@ export const WarfaceDiamondStoreModal: React.FC<WarfaceDiamondStoreModalProps> =
                           >
                             <WarfaceClassIcon
                               classId={op.preferredClass}
-                              className="w-5 h-5"
+                              className="w-4 h-4 sm:w-5 sm:h-5"
                             />
                           </div>
 
                           {/* Nome, Classe, Raridade e Cores */}
                           <div className="flex-1 min-w-0">
-                            <div className="font-display font-black text-[11px] sm:text-xs text-white uppercase truncate leading-tight">
+                            <div className="font-display font-black text-[10px] sm:text-xs text-white uppercase truncate leading-tight">
                               {op.name}
                             </div>
-                            <div className="flex items-center gap-1 mt-0.5 text-[9px] font-mono truncate">
+                            <div className="flex items-center gap-1 mt-0.5 text-[8px] sm:text-[9px] font-mono truncate">
                               <span
                                 className="font-bold uppercase truncate"
                                 style={{ color: clsMeta.accentHex }}
@@ -2048,7 +2056,7 @@ export const WarfaceDiamondStoreModal: React.FC<WarfaceDiamondStoreModalProps> =
                           </div>
 
                           {/* Preço ou Status de Posse */}
-                          <div className="shrink-0 text-right pl-1">
+                          <div className="shrink-0 text-right pl-0.5">
                             {unlocked ? (
                               <span
                                 className={`text-[9px] font-mono font-bold uppercase ${
@@ -2058,7 +2066,7 @@ export const WarfaceDiamondStoreModal: React.FC<WarfaceDiamondStoreModalProps> =
                                 {equipped ? 'ATIVA' : 'LIBERADA'}
                               </span>
                             ) : (
-                              <div className="flex items-center justify-end gap-0.5 text-[11px] sm:text-xs font-display font-black text-sky-300 tabular-nums">
+                              <div className="flex items-center justify-end gap-0.5 text-[10px] sm:text-xs font-display font-black text-sky-300 tabular-nums">
                                 <DiamondGemIcon className="w-3 h-3 shrink-0" />
                                 <span>{op.diamondPrice}</span>
                               </div>
