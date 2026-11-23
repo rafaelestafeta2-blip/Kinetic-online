@@ -629,7 +629,7 @@ export class TacticalFPSEngine {
     });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.02;
+    this.renderer.toneMappingExposure = 0.92;
     this.currentRenderScale = this.isSoftwareGl
       ? 1.0
       : Math.min(window.devicePixelRatio || 1, 1.65);

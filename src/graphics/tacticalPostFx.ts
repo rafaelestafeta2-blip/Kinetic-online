@@ -1,11 +1,11 @@
 /**
- * Fullscreen single-pass tactical post-processing:
+ * Fullscreen single-pass HDR tactical post-processing:
  * - WebGL2 Hardware MSAA on the offscreen render target (keeps edges crisp, zero jaggedness)
- * - HalfFloat HDR render target when supported (prevents 8-bit banding on bright metal/sky)
- * - 5-tap neighborhood-clamped CAS sharpen (crisp textures, zero ringing/halos)
- * - Zero-extra-fetch micro-bloom on specular highlights (sun glints, muzzle flash, optics)
- * - Filmic S-curve micro-contrast + biome-calibrated tactical color balance
- * - Subtle optical lens vignette + reactive combat damage flash
+ * - HalfFloat HDR render target when supported (preserves specular headroom before tone mapping)
+ * - HDR-thresholded micro-bloom on bright glints/muzzle flash (never blooms matte walls)
+ * - Official Three.js `#include <tonemapping_fragment>` (ACES Filmic / Linear + toneMappingExposure)
+ * - Post-tonemap 5-tap neighborhood-clamped CAS sharpen (crisp textures, zero ringing/halos)
+ * - Subtle biome-calibrated contrast/vibrance + optical framing vignette + damage flash
  *
  * Single quad blit — no multi-pass EffectComposer overhead on mobile GPUs.
  */
@@ -38,8 +38,8 @@ varying vec2 vUv;
 void main() {
   vec3 c = texture2D(tDiffuse, vUv).rgb;
 
-  // 5-tap cross neighborhood: simultaneously drives CAS edge sharpen AND
-  // zero-extra-fetch soft highlight bloom on bright speculars/muzzle flashes.
+  // 5-tap cross neighborhood in linear HDR space:
+  // Drives subtle HDR-thresholded micro-bloom AND zero-ringing CAS edge sharpen.
   if (uSharpen > 0.001 || uBloomStrength > 0.001) {
     vec2 t = uTexel;
     vec3 n  = texture2D(tDiffuse, vUv + vec2(0.0, t.y)).rgb;
@@ -56,44 +56,51 @@ void main() {
       vec3 sharpened = clamp(c + detail * uSharpen, mn, mx);
 
       float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
-      // Protect deep shadows and clipped highlights from sharpening noise
-      float protect = smoothstep(0.02, 0.14, lum) * (1.0 - smoothstep(0.86, 1.0, lum));
+      float protect = smoothstep(0.02, 0.15, lum) * (1.0 - smoothstep(0.95, 1.6, lum));
       c = mix(c, sharpened, protect);
     }
 
     if (uBloomStrength > 0.001) {
-      // Soft knee extraction on blurred neighborhood so only real speculars/lights glow
-      vec3 hi = max(blur - vec3(0.82), vec3(0.0));
+      // True HDR threshold (> 1.35 linear) so matte sunlit sandstone NEVER washes out,
+      // while metallic glints, muzzle flashes, and emissive optics get a clean soft glow.
+      vec3 hi = max(blur - vec3(1.35), vec3(0.0));
+      hi = hi / (vec3(1.0) + hi);
       c += hi * uBloomStrength;
     }
   }
 
-  // Subtle filmic micro-contrast (gentle S-curve in midtones, protects shadow legibility)
+  // Official Three.js Tone Mapping (ACES Filmic or Linear + renderer.toneMappingExposure)
+  // Required because WebGLRenderer skips material tone mapping when rendering to an offscreen RT.
+  gl_FragColor = vec4(max(c, vec3(0.0)), 1.0);
+  #include <tonemapping_fragment>
+
+  // Post-tonemap subtle filmic grading in display linear [0..1]
+  vec3 mapped = gl_FragColor.rgb;
+
   if (abs(uContrast - 1.0) > 0.001) {
-    vec3 mid = vec3(0.18);
-    c = max(vec3(0.0), mid + (c - mid) * uContrast);
+    vec3 pivot = vec3(0.18);
+    mapped = max(vec3(0.0), pivot + (mapped - pivot) * uContrast);
   }
 
-  // Subtle vibrance / saturation & biome split tint
-  float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
-  c = mix(vec3(luma), c, uSaturation);
-  c *= uTint;
+  float luma = dot(mapped, vec3(0.2126, 0.7152, 0.0722));
+  mapped = mix(vec3(luma), mapped, uSaturation);
+  mapped *= uTint;
 
-  // Optical framing vignette (very subtle, draws eye to sight picture)
+  // Subtle optical lens framing vignette
   vec2 d = vUv - 0.5;
   float r2 = dot(d, d);
   if (uVignette > 0.001) {
-    float optVig = 1.0 - smoothstep(0.22, 0.72, r2) * uVignette;
-    c *= optVig;
+    float optVig = 1.0 - smoothstep(0.24, 0.76, r2) * uVignette;
+    mapped *= optVig;
   }
 
-  // Damage vignette only while the player is actually hit.
+  // Reactive combat damage vignette
   if (uDamage > 0.001) {
     float vig = smoothstep(0.42, 1.15, length(d) * 1.35);
-    c = mix(c, c * vec3(0.65, 0.16, 0.12), vig * uDamage);
+    mapped = mix(mapped, mapped * vec3(0.65, 0.16, 0.12), vig * uDamage);
   }
 
-  gl_FragColor = vec4(max(c, vec3(0.0)), 1.0);
+  gl_FragColor = vec4(max(mapped, vec3(0.0)), 1.0);
   #include <colorspace_fragment>
 }
 `;
@@ -102,6 +109,7 @@ export interface TacticalPostFxState {
   enabled: boolean;
   sharpen: number;
   biome: PostFxBiome;
+  lastToneMapping: THREE.ToneMapping | null;
   rt: THREE.WebGLRenderTarget | null;
   scene: THREE.Scene | null;
   camera: THREE.OrthographicCamera | null;
@@ -136,24 +144,23 @@ function resolveTargetType(renderer: THREE.WebGLRenderer): THREE.TextureDataType
 function applyBiomeUniforms(material: THREE.ShaderMaterial, biome: PostFxBiome): void {
   const u = material.uniforms;
   if (biome === 'desert') {
-    u.uBloomStrength.value = 0.24;
-    u.uContrast.value = 1.06;
-    u.uSaturation.value = 1.07;
-    u.uVignette.value = 0.14;
-    u.uTint.value.set(1.015, 1.0, 0.985);
-  } else if (biome === 'outdoor') {
-    u.uBloomStrength.value = 0.26;
-    u.uContrast.value = 1.07;
+    u.uBloomStrength.value = 0.18;
+    u.uContrast.value = 1.05;
     u.uSaturation.value = 1.06;
-    u.uVignette.value = 0.15;
-    u.uTint.value.set(0.995, 1.005, 1.015);
-  } else {
-    // Indoor / tactical range: slightly richer shadow contrast & crisp highlights
-    u.uBloomStrength.value = 0.28;
-    u.uContrast.value = 1.08;
+    u.uVignette.value = 0.13;
+    u.uTint.value.set(1.01, 0.995, 0.98);
+  } else if (biome === 'outdoor') {
+    u.uBloomStrength.value = 0.2;
+    u.uContrast.value = 1.06;
     u.uSaturation.value = 1.05;
-    u.uVignette.value = 0.18;
-    u.uTint.value.set(0.985, 1.0, 1.02);
+    u.uVignette.value = 0.14;
+    u.uTint.value.set(0.995, 1.0, 1.01);
+  } else {
+    u.uBloomStrength.value = 0.22;
+    u.uContrast.value = 1.07;
+    u.uSaturation.value = 1.05;
+    u.uVignette.value = 0.16;
+    u.uTint.value.set(0.99, 1.0, 1.015);
   }
 }
 
@@ -162,6 +169,7 @@ export function createTacticalPostFx(): TacticalPostFxState {
     enabled: false,
     sharpen: 0.55,
     biome: 'outdoor',
+    lastToneMapping: null,
     rt: null,
     scene: null,
     camera: null,
@@ -230,10 +238,10 @@ export function configureTacticalPostFx(
         tDiffuse: { value: state.rt.texture },
         uSharpen: { value: state.sharpen },
         uDamage: { value: 0 },
-        uBloomStrength: { value: 0.25 },
-        uContrast: { value: 1.06 },
-        uSaturation: { value: 1.06 },
-        uVignette: { value: 0.15 },
+        uBloomStrength: { value: 0.2 },
+        uContrast: { value: 1.05 },
+        uSaturation: { value: 1.05 },
+        uVignette: { value: 0.14 },
         uTint: { value: new THREE.Vector3(1.0, 1.0, 1.0) },
         uTexel: { value: new THREE.Vector2(1 / w, 1 / h) },
       },
@@ -241,8 +249,9 @@ export function configureTacticalPostFx(
       fragmentShader: FRAG,
       depthTest: false,
       depthWrite: false,
-      toneMapped: false,
+      toneMapped: true,
     });
+    state.lastToneMapping = renderer.toneMapping;
     applyBiomeUniforms(state.material, state.biome);
     state.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), state.material);
     state.scene = new THREE.Scene();
@@ -252,6 +261,10 @@ export function configureTacticalPostFx(
     syncTargetSize(state, renderer);
     if (state.material) {
       applyBiomeUniforms(state.material, state.biome);
+      if (state.lastToneMapping !== renderer.toneMapping) {
+        state.lastToneMapping = renderer.toneMapping;
+        state.material.needsUpdate = true;
+      }
     }
   }
 }
@@ -271,6 +284,11 @@ export function renderWithTacticalPostFx(
 
   syncTargetSize(state, renderer);
 
+  if (state.lastToneMapping !== renderer.toneMapping) {
+    state.lastToneMapping = renderer.toneMapping;
+    state.material.needsUpdate = true;
+  }
+
   renderer.setRenderTarget(state.rt);
   renderer.clear();
   renderer.render(scene, camera);
@@ -285,6 +303,7 @@ export function renderWithTacticalPostFx(
 
 export function disposeTacticalPostFx(state: TacticalPostFxState): void {
   state.enabled = false;
+  state.lastToneMapping = null;
   state.rt?.dispose();
   state.material?.dispose();
   state.quad?.geometry.dispose();

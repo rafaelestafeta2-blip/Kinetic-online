@@ -5,9 +5,49 @@ import { PostFxBiome } from '../graphics/tacticalPostFx';
 
 type SkyBiomeKind = 'desert' | 'outdoor' | 'hangar' | 'indoor';
 
+const ENV_DOME_VERT = /* glsl */ `
+varying vec3 vWorldDir;
+void main() {
+  vWorldDir = normalize(position);
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+
+const ENV_DOME_FRAG = /* glsl */ `
+precision highp float;
+uniform vec3 uZenithColor;
+uniform vec3 uHorizonColor;
+uniform vec3 uGroundColor;
+uniform vec3 uSunColor;
+uniform vec3 uSunDir;
+varying vec3 vWorldDir;
+
+void main() {
+  vec3 dir = normalize(vWorldDir);
+  float h = dir.y;
+
+  // Physically calibrated atmospheric sky + horizon haze + ground bounce
+  vec3 col;
+  if (h >= 0.0) {
+    float skyT = pow(clamp(h, 0.0, 1.0), 0.55);
+    col = mix(uHorizonColor, uZenithColor, skyT);
+  } else {
+    float gndT = pow(clamp(-h, 0.0, 1.0), 0.45);
+    col = mix(uHorizonColor * 0.72, uGroundColor, gndT);
+  }
+
+  // Soft Mie atmospheric scatter + crisp solar specular lobe for metallic firearms
+  float sunDot = max(dot(dir, normalize(uSunDir)), 0.0);
+  col += uSunColor * pow(sunDot, 7.0) * 0.22;
+  col += uSunColor * pow(sunDot, 64.0) * 1.45;
+
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
 /**
  * Sistema Físico de Céu 3D (Preetham Atmospheric Rayleigh/Mie Scattering + Shader de Nuvens Volumétricas FBM)
- * com baking lazy de mapas de ambiente IBL (PMREM) por bioma para reflexos metálicos e PBR fiéis ao céu real.
+ * com baking lazy de mapas de ambiente IBL (PMREM) calibrados por bioma (sem estourar exposição em mapas claros).
  */
 export class TacticalSkySystem {
   private scene: THREE.Scene;
@@ -66,9 +106,9 @@ export class TacticalSkySystem {
   }
 
   /**
-   * Lazily bakes a physically-matched atmospheric PMREM IBL cubemap (sky dome + sun hotspot +
-   * biome ground-bounce hemisphere) so 1P firearms, optics, and metallic surfaces reflect real
-   * sky/sun/ground colors instead of a flat white indoor RoomEnvironment box.
+   * Lazily bakes a physically-calibrated atmospheric PMREM IBL cubemap using controlled linear
+   * sky/horizon/ground/sun radiance (unlike raw Preetham Sky which peaks at 20+ radiance and
+   * blows out matte sandstone walls). Gives weapons rich sky-blue & warm-ground reflections.
    */
   private getOrBakeBiomeEnv(kind: Exclude<SkyBiomeKind, 'indoor'>): THREE.Texture | null {
     const cached = this.biomeEnvCache.get(kind);
@@ -78,69 +118,54 @@ export class TacticalSkySystem {
     try {
       const envScene = new THREE.Scene();
 
-      // Atmospheric sky dome matching active biome sun & scattering
-      const miniSky = new Sky();
-      miniSky.scale.setScalar(200);
-      const u = miniSky.material.uniforms;
-      u.sunPosition.value.copy(this.sunDirection);
-      if (kind === 'desert') {
-        u.turbidity.value = 1.9;
-        u.rayleigh.value = 2.35;
-        u.mieCoefficient.value = 0.004;
-        u.mieDirectionalG.value = 0.86;
-      } else if (kind === 'hangar') {
-        u.turbidity.value = 2.4;
-        u.rayleigh.value = 1.95;
-        u.mieCoefficient.value = 0.0045;
-        u.mieDirectionalG.value = 0.82;
-      } else {
-        u.turbidity.value = 2.1;
-        u.rayleigh.value = 2.15;
-        u.mieCoefficient.value = 0.0038;
-        u.mieDirectionalG.value = 0.84;
-      }
-      if (u.showSunDisc) u.showSunDisc.value = 1.0;
-      if (u.cloudCoverage) u.cloudCoverage.value = 0.0;
-      envScene.add(miniSky);
+      const zenith =
+        kind === 'desert'
+          ? new THREE.Color(0.2, 0.45, 0.88)
+          : kind === 'hangar'
+            ? new THREE.Color(0.32, 0.46, 0.68)
+            : new THREE.Color(0.24, 0.48, 0.85);
+      const horizon =
+        kind === 'desert'
+          ? new THREE.Color(0.76, 0.68, 0.56)
+          : kind === 'hangar'
+            ? new THREE.Color(0.58, 0.64, 0.72)
+            : new THREE.Color(0.66, 0.74, 0.84);
+      const ground =
+        kind === 'desert'
+          ? new THREE.Color(0.36, 0.26, 0.16)
+          : kind === 'hangar'
+            ? new THREE.Color(0.18, 0.2, 0.24)
+            : new THREE.Color(0.2, 0.21, 0.23);
+      const sunCol =
+        kind === 'desert'
+          ? new THREE.Color(1.0, 0.9, 0.72)
+          : new THREE.Color(1.0, 0.95, 0.86);
 
-      // Lower ground-bounce hemisphere so underside of weapon barrels/receivers gets warm bounce light
-      const groundColor =
-        kind === 'desert' ? 0x9b7c56 : kind === 'hangar' ? 0x5f6874 : 0x5c646d;
-      const groundGeo = new THREE.SphereGeometry(
-        180,
-        24,
-        12,
-        0,
-        Math.PI * 2,
-        Math.PI * 0.5,
-        Math.PI * 0.5
-      );
-      const groundMat = new THREE.MeshBasicMaterial({
-        color: groundColor,
+      const domeGeo = new THREE.SphereGeometry(60, 32, 20);
+      const domeMat = new THREE.ShaderMaterial({
+        vertexShader: ENV_DOME_VERT,
+        fragmentShader: ENV_DOME_FRAG,
+        uniforms: {
+          uZenithColor: { value: zenith },
+          uHorizonColor: { value: horizon },
+          uGroundColor: { value: ground },
+          uSunColor: { value: sunCol },
+          uSunDir: { value: this.sunDirection.clone() },
+        },
         side: THREE.BackSide,
+        depthWrite: false,
+        toneMapped: false,
       });
-      const groundDome = new THREE.Mesh(groundGeo, groundMat);
-      envScene.add(groundDome);
 
-      // Subtle crisp specular sun highlight disc for realistic metallic sheen on 1P weapons
-      const sunHighlightGeo = new THREE.SphereGeometry(14, 12, 8);
-      const sunHighlightMat = new THREE.MeshBasicMaterial({
-        color: kind === 'desert' ? new THREE.Color(4.5, 3.8, 2.7) : new THREE.Color(4.0, 3.9, 3.6),
-      });
-      const sunHighlight = new THREE.Mesh(sunHighlightGeo, sunHighlightMat);
-      sunHighlight.position.copy(this.sunDirection).multiplyScalar(140);
-      envScene.add(sunHighlight);
+      const dome = new THREE.Mesh(domeGeo, domeMat);
+      envScene.add(dome);
 
       const pmrem = new THREE.PMREMGenerator(this.renderer);
       const rt = pmrem.fromScene(envScene, 0.035);
       pmrem.dispose();
 
-      miniSky.geometry.dispose();
-      miniSky.material.dispose();
-      groundGeo.dispose();
-      groundMat.dispose();
-      sunHighlightGeo.dispose();
-      sunHighlightMat.dispose();
+      domeGeo.dispose();
+      domeMat.dispose();
 
       this.biomeEnvCache.set(kind, rt);
       return rt.texture;
@@ -186,14 +211,14 @@ export class TacticalSkySystem {
 
     if (isDust2 || isMirageAnubis) {
       this.activeBiome = 'desert';
-      // Vivid azure sky + warm golden sandstone contrast with dramatic directional shadows
+      // Vivid azure sky + warm golden sandstone contrast with clean directional shadows
       const phi = THREE.MathUtils.degToRad(90 - 44);
       const theta = THREE.MathUtils.degToRad(isMirageAnubis ? 42 : 35);
       this.sunDirection.setFromSphericalCoords(1, phi, theta).normalize();
 
       uniforms.turbidity.value = 1.75;
       uniforms.rayleigh.value = 2.45;
-      uniforms.mieCoefficient.value = 0.003;
+      uniforms.mieCoefficient.value = 0.0028;
       uniforms.mieDirectionalG.value = 0.86;
       uniforms.sunPosition.value.copy(this.sunDirection);
       uniforms.showSunDisc.value = 1.0;
@@ -207,7 +232,7 @@ export class TacticalSkySystem {
       this.outdoorFallbackBg.setHex(0x3b82f6);
       this.scene.background = this.outdoorFallbackBg;
       this.scene.fog = fogEnabled
-        ? new THREE.FogExp2(0xd6c9b4, isMirageAnubis ? 0.0014 : 0.0016)
+        ? new THREE.FogExp2(0xd6c9b4, isMirageAnubis ? 0.0013 : 0.0015)
         : null;
 
       this.keyLightTarget.position.set(
@@ -218,26 +243,26 @@ export class TacticalSkySystem {
       this.keyLight.position
         .copy(this.keyLightTarget.position)
         .addScaledVector(this.sunDirection, isMirageAnubis ? 90 : 85);
-      this.keyLight.color.setHex(0xffe9c4);
-      this.keyLight.intensity = isMirageAnubis ? 2.15 : 2.3;
+      this.keyLight.color.setHex(0xffebd0);
+      // Dust2 & Mirage already include map-level desert fill lights — keep keyLight balanced
+      this.keyLight.intensity = isMirageAnubis ? 1.65 : 1.55;
       this.updateShadowFrustum(isMirageAnubis ? 100 : 68, 175);
       this.applyFillRig('desert');
       this.applyBiomeEnvironment('desert');
       if ('environmentIntensity' in this.scene) {
         (this.scene as THREE.Scene & { environmentIntensity: number }).environmentIntensity =
-          isMirageAnubis ? 0.82 : 0.92;
+          isMirageAnubis ? 0.56 : 0.62;
       }
     } else if (isAssault || isIndustria || isHangar || isEasternCity || isStationArena || isYard) {
       const biomeKind: Exclude<SkyBiomeKind, 'indoor'> = isHangar ? 'hangar' : 'outdoor';
       this.activeBiome = biomeKind;
-      // Elevação solar de 44° e azimute de 52° — relevo mais tridimensional em paredes e props
       const phi = THREE.MathUtils.degToRad(90 - 44);
       const theta = THREE.MathUtils.degToRad(52);
       this.sunDirection.setFromSphericalCoords(1, phi, theta).normalize();
 
       uniforms.turbidity.value = 2.05;
       uniforms.rayleigh.value = 2.15;
-      uniforms.mieCoefficient.value = 0.0036;
+      uniforms.mieCoefficient.value = 0.0034;
       uniforms.mieDirectionalG.value = 0.84;
       uniforms.sunPosition.value.copy(this.sunDirection);
       uniforms.showSunDisc.value = 1.0;
@@ -254,7 +279,7 @@ export class TacticalSkySystem {
       this.scene.fog = fogEnabled
         ? new THREE.FogExp2(
             0xc4d7eb,
-            isEasternCity ? 0.00105 : isHangar ? 0.0011 : isIndustria ? 0.00095 : isAssault ? 0.0011 : 0.0024
+            isEasternCity ? 0.001 : isHangar ? 0.00105 : isIndustria ? 0.0009 : isAssault ? 0.00105 : 0.0022
           )
         : null;
 
@@ -266,13 +291,13 @@ export class TacticalSkySystem {
       this.keyLight.position
         .copy(this.keyLightTarget.position)
         .addScaledVector(this.sunDirection, 80);
-      this.keyLight.color.setHex(0xfff0d4);
-      this.keyLight.intensity = isHangar ? 2.15 : industrialSky ? 2.1 : 2.2;
+      this.keyLight.color.setHex(0xfff1d8);
+      this.keyLight.intensity = isEasternCity ? 1.55 : isHangar ? 1.85 : industrialSky ? 1.75 : 1.85;
       this.updateShadowFrustum(isEasternCity ? 95 : isHangar ? 55 : isIndustria ? 90 : isAssault ? 65 : 52, 165);
       this.applyFillRig(biomeKind);
       this.applyBiomeEnvironment(biomeKind);
       if ('environmentIntensity' in this.scene) {
-        (this.scene as THREE.Scene & { environmentIntensity: number }).environmentIntensity = 0.92;
+        (this.scene as THREE.Scene & { environmentIntensity: number }).environmentIntensity = 0.72;
       }
     } else {
       this.activeBiome = 'indoor';
@@ -284,12 +309,12 @@ export class TacticalSkySystem {
       this.keyLightTarget.position.set(4, 0, -2);
       this.keyLight.position.set(16, 28, 12);
       this.keyLight.color.setHex(0xe2e8f0);
-      this.keyLight.intensity = 1.15;
+      this.keyLight.intensity = 1.1;
       this.keyLight.castShadow = false;
       this.applyFillRig('indoor');
       this.applyBiomeEnvironment('indoor');
       if ('environmentIntensity' in this.scene) {
-        (this.scene as THREE.Scene & { environmentIntensity: number }).environmentIntensity = 1.05;
+        (this.scene as THREE.Scene & { environmentIntensity: number }).environmentIntensity = 0.95;
       }
     }
 
@@ -299,37 +324,36 @@ export class TacticalSkySystem {
   private applyFillRig(kind: SkyBiomeKind): void {
     if (this.hemiLight) {
       if (kind === 'desert') {
-        // Cool azure sky bounce vs rich warm sandstone ground bounce (warm/cool contrast)
         this.hemiLight.color.setHex(0x7cc8ff);
-        this.hemiLight.groundColor.setHex(0x7d5d3b);
-        this.hemiLight.intensity = 0.56;
+        this.hemiLight.groundColor.setHex(0x745536);
+        this.hemiLight.intensity = 0.4;
       } else if (kind === 'hangar') {
         this.hemiLight.color.setHex(0x8fd2ff);
-        this.hemiLight.groundColor.setHex(0x5d626b);
-        this.hemiLight.intensity = 0.7;
+        this.hemiLight.groundColor.setHex(0x555b64);
+        this.hemiLight.intensity = 0.58;
       } else if (kind === 'outdoor') {
         this.hemiLight.color.setHex(0x88ceff);
-        this.hemiLight.groundColor.setHex(0x5b5854);
-        this.hemiLight.intensity = 0.64;
+        this.hemiLight.groundColor.setHex(0x524f4b);
+        this.hemiLight.intensity = 0.52;
       } else {
         this.hemiLight.color.setHex(0x93c5fd);
         this.hemiLight.groundColor.setHex(0x1e293b);
-        this.hemiLight.intensity = 0.78;
+        this.hemiLight.intensity = 0.75;
       }
     }
     if (this.rimLight) {
       if (kind === 'desert') {
-        this.rimLight.color.setHex(0x8ecaff);
-        this.rimLight.intensity = 0.38;
+        this.rimLight.color.setHex(0x9bd0ff);
+        this.rimLight.intensity = 0.24;
       } else if (kind === 'hangar') {
         this.rimLight.color.setHex(0xb8dcff);
-        this.rimLight.intensity = 0.42;
+        this.rimLight.intensity = 0.3;
       } else if (kind === 'outdoor') {
         this.rimLight.color.setHex(0xa8d5ff);
-        this.rimLight.intensity = 0.38;
+        this.rimLight.intensity = 0.28;
       } else {
         this.rimLight.color.setHex(0x38bdf8);
-        this.rimLight.intensity = 0.6;
+        this.rimLight.intensity = 0.55;
       }
     }
   }

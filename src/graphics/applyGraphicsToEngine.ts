@@ -175,8 +175,8 @@ export function applyGraphicsToEngine(
   ) {
     cache.lastAcesToneMapping = settings.acesToneMapping;
     renderer.toneMapping = targetToneMapping;
-    // Calibrated for biome-matched atmospheric IBL + warm sun key light without washing out midtones
-    renderer.toneMappingExposure = settings.acesToneMapping ? 1.02 : 1.0;
+    // Calibrated so sunlit sandstone/concrete keeps rich midtones in ACES and never clips white in Linear
+    renderer.toneMappingExposure = settings.acesToneMapping ? 0.92 : 0.72;
     forceAllMaterialsNeedsUpdate = true;
   }
 
