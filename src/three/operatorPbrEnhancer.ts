@@ -371,6 +371,7 @@ export function upgradeOperatorForShowcase(
           phys.clearcoatRoughness = 0.03;
           phys.ior = 1.48;
           phys.envMapIntensity = 1.55;
+          if (phys.normalMap) phys.normalScale.set(0.45, 0.45);
         } else if (matName === 'MFS_GLASS') {
           phys.roughness = 0.06;
           phys.metalness = 0.78;
@@ -380,13 +381,13 @@ export function upgradeOperatorForShowcase(
           phys.envMapIntensity = 1.85;
           phys.opacity = 0.48;
         } else if (matName === 'MFS_HEAD' || matName === 'MFS_ARMS') {
-          phys.roughness = phys.roughnessMap ? 1.0 : 0.56;
-          phys.metalness = 0.01;
+          phys.roughness = phys.roughnessMap ? 0.90 : 0.56;
+          phys.metalness = phys.metalnessMap ? 1.0 : 0.01;
           phys.sheen = 0.24;
           phys.sheenRoughness = 0.74;
           phys.sheenColor = new THREE.Color(0xffd7c4);
-          phys.envMapIntensity = 0.52;
-          if (phys.normalMap) phys.normalScale.set(0.32, 0.32);
+          phys.envMapIntensity = 0.54;
+          if (phys.normalMap) phys.normalScale.set(0.88, 0.88);
           applyOperatorRimLight(phys, { colorHex: 0xffe4d4, intensity: 0.14, power: 3.4 });
         } else if (matName === 'MFS_HAIR' || matName === 'MFS_HAIRSCALP') {
           phys.roughness = 0.46;
@@ -395,6 +396,7 @@ export function upgradeOperatorForShowcase(
           phys.sheenRoughness = 0.52;
           phys.sheenColor = new THREE.Color(0xfff1e0);
           phys.envMapIntensity = 0.68;
+          if (phys.normalMap) phys.normalScale.set(0.80, 0.80);
           applyOperatorRimLight(phys, { colorHex: rimColor, intensity: 0.16, power: 2.8 });
         } else if (matName === 'MFS_EYELASHES') {
           phys.roughness = 0.65;
@@ -406,25 +408,29 @@ export function upgradeOperatorForShowcase(
           matName === 'MFS_POUCHES' ||
           matName === 'MFS_PATCHES'
         ) {
-          phys.roughness = phys.roughnessMap ? 1.0 : 0.82;
-          phys.metalness = 0.03;
+          phys.roughness = phys.roughnessMap ? 0.92 : 0.82;
+          phys.metalness = phys.metalnessMap ? 1.0 : 0.03;
           phys.sheen = 0.44;
           phys.sheenRoughness = 0.78;
           phys.sheenColor = new THREE.Color(0xdbe7f5);
-          phys.envMapIntensity = 0.58;
-          if (phys.normalMap) phys.normalScale.set(0.86, 0.86);
+          phys.envMapIntensity = 0.62;
+          if (phys.normalMap) phys.normalScale.set(1.12, 1.12);
           applyOperatorRimLight(phys, { colorHex: rimColor, intensity: 0.22, power: 3.1 });
         } else {
           // MFS_UNLOADING, MFS_HEADGEAR, MFS_LEGGINGS, MFS_GLOVE -> tactical rig/helmet/leather
-          phys.roughness = phys.roughnessMap ? 1.0 : 0.60;
-          phys.metalness = matName === 'MFS_HEADGEAR' ? 0.16 : 0.11;
+          phys.roughness = phys.roughnessMap ? 0.90 : 0.60;
+          phys.metalness = phys.metalnessMap
+            ? 1.0
+            : matName === 'MFS_HEADGEAR'
+            ? 0.16
+            : 0.11;
           phys.clearcoat = 0.14;
           phys.clearcoatRoughness = 0.44;
           phys.sheen = 0.20;
           phys.sheenRoughness = 0.72;
           phys.sheenColor = new THREE.Color(0xcbd5e1);
-          phys.envMapIntensity = 0.85;
-          if (phys.normalMap) phys.normalScale.set(0.95, 0.95);
+          phys.envMapIntensity = 0.88;
+          if (phys.normalMap) phys.normalScale.set(1.18, 1.18);
           applyOperatorRimLight(phys, { colorHex: rimColor, intensity: 0.26, power: 2.9 });
         }
       } else {
