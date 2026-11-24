@@ -15,6 +15,7 @@ export const VideoIntroScreen: React.FC<VideoIntroScreenProps> = ({ onComplete }
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
+  const startedRef = useRef(false);
   const completedRef = useRef(false);
 
   const finishIntro = () => {
@@ -30,6 +31,13 @@ export const VideoIntroScreen: React.FC<VideoIntroScreenProps> = ({ onComplete }
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+
+    // Watchdog: se o vídeo remoto do GitHub travar no buffering inicial por mais de 4s, avança para o jogo
+    const stallWatchdog = window.setTimeout(() => {
+      if (!startedRef.current || video.readyState < 2 || video.currentTime < 0.05) {
+        finishIntro();
+      }
+    }, 4000);
 
     // Tentar tocar com som primeiro; se a política do navegador bloquear, tocar mudo
     video.play().catch(() => {
@@ -50,6 +58,7 @@ export const VideoIntroScreen: React.FC<VideoIntroScreenProps> = ({ onComplete }
 
     window.addEventListener('keydown', handleKeyDown);
     return () => {
+      window.clearTimeout(stallWatchdog);
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
@@ -81,7 +90,10 @@ export const VideoIntroScreen: React.FC<VideoIntroScreenProps> = ({ onComplete }
         playsInline
         autoPlay
         preload="auto"
-        onPlay={() => setHasStarted(true)}
+        onPlay={() => {
+          startedRef.current = true;
+          setHasStarted(true);
+        }}
         onEnded={finishIntro}
         onError={() => {
           console.warn('Erro ao carregar trailer de vídeo. Pulando para o jogo...');

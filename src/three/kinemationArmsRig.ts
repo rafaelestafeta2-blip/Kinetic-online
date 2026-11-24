@@ -1152,156 +1152,7 @@ export function createKinemationArmsRig(params: {
             poseAct.reset().play();
             mixer.setTime(0);
           }
-          modelScene.updateMatrixWorld(true);
-          const m16Meshes: THREE.Mesh[] = [];
-          modelScene.traverse((c) => {
-            if ((c as THREE.Mesh).isMesh) m16Meshes.push(c as THREE.Mesh);
-          });
-          const vTmp = new THREE.Vector3();
-          const toModelSceneMat = new THREE.Matrix4();
-          for (const mesh of m16Meshes) {
-            const geom = mesh.geometry;
-            const posAttr = geom.attributes.position;
-            if (!posAttr) continue;
-            computeMatrixInAncestorSpace(mesh, modelScene, toModelSceneMat);
-            const idx = geom.index;
-            const triCount = idx ? idx.count / 3 : posAttr.count / 3;
-            const vCount = posAttr.count;
-            const vertY = new Float32Array(vCount);
-            const vertKey = new Array<string>(vCount);
-            const isSkinned = Boolean((mesh as THREE.SkinnedMesh).isSkinnedMesh);
-            for (let i = 0; i < vCount; i++) {
-              vTmp.fromBufferAttribute(posAttr, i);
-              if (isSkinned) {
-                (mesh as THREE.SkinnedMesh).applyBoneTransform(i, vTmp);
-              }
-              vTmp.applyMatrix4(toModelSceneMat);
-              vertY[i] = vTmp.y;
-              vertKey[i] = `${Math.round(vTmp.x * 10000)}_${Math.round(vTmp.y * 10000)}_${Math.round(vTmp.z * 10000)}`;
-            }
-            const keyToTris = new Map<string, number[]>();
-            for (let t = 0; t < triCount; t++) {
-              const i0 = idx ? idx.getX(t * 3) : t * 3;
-              const i1 = idx ? idx.getX(t * 3 + 1) : t * 3 + 1;
-              const i2 = idx ? idx.getX(t * 3 + 2) : t * 3 + 2;
-              const k0 = vertKey[i0];
-              const k1 = vertKey[i1];
-              const k2 = vertKey[i2];
-              let a0 = keyToTris.get(k0);
-              if (!a0) {
-                a0 = [];
-                keyToTris.set(k0, a0);
-              }
-              a0.push(t);
-              let a1 = keyToTris.get(k1);
-              if (!a1) {
-                a1 = [];
-                keyToTris.set(k1, a1);
-              }
-              a1.push(t);
-              let a2 = keyToTris.get(k2);
-              if (!a2) {
-                a2 = [];
-                keyToTris.set(k2, a2);
-              }
-              a2.push(t);
-            }
-            const visited = new Uint8Array(triCount);
-            const isSightTri = new Uint8Array(triCount);
-            const bfsQueue: number[] = [];
-            const compTris: number[] = [];
-            for (let t = 0; t < triCount; t++) {
-              if (visited[t]) continue;
-              visited[t] = 1;
-              bfsQueue.length = 0;
-              compTris.length = 0;
-              bfsQueue.push(t);
-              let compMaxY = -Infinity;
-              while (bfsQueue.length > 0) {
-                const cur = bfsQueue.pop()!;
-                compTris.push(cur);
-                const c0 = idx ? idx.getX(cur * 3) : cur * 3;
-                const c1 = idx ? idx.getX(cur * 3 + 1) : cur * 3 + 1;
-                const c2 = idx ? idx.getX(cur * 3 + 2) : cur * 3 + 2;
-                if (vertY[c0] > compMaxY) compMaxY = vertY[c0];
-                if (vertY[c1] > compMaxY) compMaxY = vertY[c1];
-                if (vertY[c2] > compMaxY) compMaxY = vertY[c2];
-                const nbs0 = keyToTris.get(vertKey[c0]);
-                if (nbs0) {
-                  for (let n = 0; n < nbs0.length; n++) {
-                    const nb = nbs0[n];
-                    if (!visited[nb]) {
-                      visited[nb] = 1;
-                      bfsQueue.push(nb);
-                    }
-                  }
-                }
-                const nbs1 = keyToTris.get(vertKey[c1]);
-                if (nbs1) {
-                  for (let n = 0; n < nbs1.length; n++) {
-                    const nb = nbs1[n];
-                    if (!visited[nb]) {
-                      visited[nb] = 1;
-                      bfsQueue.push(nb);
-                    }
-                  }
-                }
-                const nbs2 = keyToTris.get(vertKey[c2]);
-                if (nbs2) {
-                  for (let n = 0; n < nbs2.length; n++) {
-                    const nb = nbs2[n];
-                    if (!visited[nb]) {
-                      visited[nb] = 1;
-                      bfsQueue.push(nb);
-                    }
-                  }
-                }
-              }
-              if (compMaxY > 0.017) {
-                for (let c = 0; c < compTris.length; c++) {
-                  isSightTri[compTris[c]] = 1;
-                }
-              }
-            }
-            const baseIndices: number[] = [];
-            const sightIndices: number[] = [];
-            for (let t = 0; t < triCount; t++) {
-              const i0 = idx ? idx.getX(t * 3) : t * 3;
-              const i1 = idx ? idx.getX(t * 3 + 1) : t * 3 + 1;
-              const i2 = idx ? idx.getX(t * 3 + 2) : t * 3 + 2;
-              if (isSightTri[t]) {
-                sightIndices.push(i0, i1, i2);
-              } else {
-                baseIndices.push(i0, i1, i2);
-              }
-            }
-            if (sightIndices.length === 0) continue;
-            if (baseIndices.length === 0) {
-              inst.builtInOpticNodes.push(mesh);
-              continue;
-            }
-            const baseGeom = geom.clone();
-            baseGeom.setIndex(baseIndices);
-            mesh.geometry = baseGeom;
-
-            const sightGeom = geom.clone();
-            sightGeom.setIndex(sightIndices);
-            let sightMesh: THREE.Mesh;
-            if ((mesh as THREE.SkinnedMesh).isSkinnedMesh) {
-              const sk = mesh as THREE.SkinnedMesh;
-              const skSight = new THREE.SkinnedMesh(sightGeom, sk.material);
-              skSight.bind(sk.skeleton, sk.bindMatrix);
-              sightMesh = skSight;
-            } else {
-              sightMesh = new THREE.Mesh(sightGeom, mesh.material);
-            }
-            sightMesh.name = `${mesh.name}_A2RearSight`;
-            sightMesh.frustumCulled = false;
-            sightMesh.castShadow = false;
-            sightMesh.receiveShadow = true;
-            mesh.parent?.add(sightMesh);
-            inst.builtInOpticNodes.push(sightMesh);
-          }
+          splitM4CarbineBuiltInIronSights(modelScene, inst.builtInOpticNodes);
         }
 
         // 3. SMG_45 (v18_engineer_smg.glb): separa o carregador (Z_local > 0.02) do silenciador
@@ -2027,158 +1878,205 @@ export function prepareStandaloneWeaponSceneForInspection(
 
   // Separa por componentes conexos a alça de transporte A2 removível e a massa de mira A2 na M4_CARBINE (mx16a4.glb)
   if (weaponId === 'M4_CARBINE') {
-    modelScene.updateMatrixWorld(true);
-    const m16Meshes: THREE.Mesh[] = [];
-    modelScene.traverse((c) => {
-      if ((c as THREE.Mesh).isMesh) m16Meshes.push(c as THREE.Mesh);
-    });
-    const vTmp = new THREE.Vector3();
-    const toModelSceneMat = new THREE.Matrix4();
-    for (const mesh of m16Meshes) {
-      const geom = mesh.geometry;
-      const posAttr = geom.attributes.position;
-      if (!posAttr) continue;
-      computeMatrixInAncestorSpace(mesh, modelScene, toModelSceneMat);
-      const idx = geom.index;
-      const triCount = idx ? idx.count / 3 : posAttr.count / 3;
-      const vCount = posAttr.count;
-      const vertY = new Float32Array(vCount);
-      const vertKey = new Array<string>(vCount);
-      const isSkinned = Boolean((mesh as THREE.SkinnedMesh).isSkinnedMesh);
-      for (let i = 0; i < vCount; i++) {
-        vTmp.fromBufferAttribute(posAttr, i);
-        if (isSkinned) {
-          (mesh as THREE.SkinnedMesh).applyBoneTransform(i, vTmp);
-        }
-        vTmp.applyMatrix4(toModelSceneMat);
-        vertY[i] = vTmp.y;
-        vertKey[i] = `${Math.round(vTmp.x * 10000)}_${Math.round(vTmp.y * 10000)}_${Math.round(vTmp.z * 10000)}`;
-      }
-      const keyToTris = new Map<string, number[]>();
-      for (let t = 0; t < triCount; t++) {
-        const i0 = idx ? idx.getX(t * 3) : t * 3;
-        const i1 = idx ? idx.getX(t * 3 + 1) : t * 3 + 1;
-        const i2 = idx ? idx.getX(t * 3 + 2) : t * 3 + 2;
-        const k0 = vertKey[i0];
-        const k1 = vertKey[i1];
-        const k2 = vertKey[i2];
-        let a0 = keyToTris.get(k0);
-        if (!a0) {
-          a0 = [];
-          keyToTris.set(k0, a0);
-        }
-        a0.push(t);
-        let a1 = keyToTris.get(k1);
-        if (!a1) {
-          a1 = [];
-          keyToTris.set(k1, a1);
-        }
-        a1.push(t);
-        let a2 = keyToTris.get(k2);
-        if (!a2) {
-          a2 = [];
-          keyToTris.set(k2, a2);
-        }
-        a2.push(t);
-      }
-      const visited = new Uint8Array(triCount);
-      const isSightTri = new Uint8Array(triCount);
-      const bfsQueue: number[] = [];
-      const compTris: number[] = [];
-      for (let t = 0; t < triCount; t++) {
-        if (visited[t]) continue;
-        visited[t] = 1;
-        bfsQueue.length = 0;
-        compTris.length = 0;
-        bfsQueue.push(t);
-        let compMaxY = -Infinity;
-        while (bfsQueue.length > 0) {
-          const cur = bfsQueue.pop()!;
-          compTris.push(cur);
-          const c0 = idx ? idx.getX(cur * 3) : cur * 3;
-          const c1 = idx ? idx.getX(cur * 3 + 1) : cur * 3 + 1;
-          const c2 = idx ? idx.getX(cur * 3 + 2) : cur * 3 + 2;
-          if (vertY[c0] > compMaxY) compMaxY = vertY[c0];
-          if (vertY[c1] > compMaxY) compMaxY = vertY[c1];
-          if (vertY[c2] > compMaxY) compMaxY = vertY[c2];
-          const nbs0 = keyToTris.get(vertKey[c0]);
-          if (nbs0) {
-            for (let n = 0; n < nbs0.length; n++) {
-              const nb = nbs0[n];
-              if (!visited[nb]) {
-                visited[nb] = 1;
-                bfsQueue.push(nb);
-              }
-            }
-          }
-          const nbs1 = keyToTris.get(vertKey[c1]);
-          if (nbs1) {
-            for (let n = 0; n < nbs1.length; n++) {
-              const nb = nbs1[n];
-              if (!visited[nb]) {
-                visited[nb] = 1;
-                bfsQueue.push(nb);
-              }
-            }
-          }
-          const nbs2 = keyToTris.get(vertKey[c2]);
-          if (nbs2) {
-            for (let n = 0; n < nbs2.length; n++) {
-              const nb = nbs2[n];
-              if (!visited[nb]) {
-                visited[nb] = 1;
-                bfsQueue.push(nb);
-              }
-            }
-          }
-        }
-        if (compMaxY > 0.017) {
-          for (let c = 0; c < compTris.length; c++) {
-            isSightTri[compTris[c]] = 1;
-          }
-        }
-      }
-      const baseIndices: number[] = [];
-      const sightIndices: number[] = [];
-      for (let t = 0; t < triCount; t++) {
-        const i0 = idx ? idx.getX(t * 3) : t * 3;
-        const i1 = idx ? idx.getX(t * 3 + 1) : t * 3 + 1;
-        const i2 = idx ? idx.getX(t * 3 + 2) : t * 3 + 2;
-        if (isSightTri[t]) {
-          sightIndices.push(i0, i1, i2);
-        } else {
-          baseIndices.push(i0, i1, i2);
-        }
-      }
-      if (sightIndices.length === 0) continue;
-      if (baseIndices.length === 0) {
-        builtInOpticNodes.push(mesh);
-        continue;
-      }
-      const baseGeom = geom.clone();
-      baseGeom.setIndex(baseIndices);
-      mesh.geometry = baseGeom;
-
-      const sightGeom = geom.clone();
-      sightGeom.setIndex(sightIndices);
-      let sightMesh: THREE.Mesh;
-      if ((mesh as THREE.SkinnedMesh).isSkinnedMesh) {
-        const sk = mesh as THREE.SkinnedMesh;
-        const skSight = new THREE.SkinnedMesh(sightGeom, sk.material);
-        skSight.bind(sk.skeleton, sk.bindMatrix);
-        sightMesh = skSight;
-      } else {
-        sightMesh = new THREE.Mesh(sightGeom, mesh.material);
-      }
-      sightMesh.name = `${mesh.name}_A2RearSight`;
-      sightMesh.frustumCulled = false;
-      sightMesh.castShadow = false;
-      sightMesh.receiveShadow = true;
-      mesh.parent?.add(sightMesh);
-      builtInOpticNodes.push(sightMesh);
-    }
+    splitM4CarbineBuiltInIronSights(modelScene, builtInOpticNodes);
   }
 
   return { gunAnchorGroup, builtInOpticNodes };
+}
+
+/**
+ * Separa de forma ultra-rápida (< 2 ms) a alça de transporte A2 e a massa de mira frontal da M4_CARBINE (`mx16a4.glb`).
+ * Como todas as 14 primitivas de `mx16a4.glb` compartilham um único buffer de 44.538 vértices, transformamos apenas
+ * os vértices efetivamente referenciados por cada primitiva (com cache no buffer compartilhado) e ignoramos
+ * imediatamente primitivas cujo topo Y não ultrapassa o trilho Picatinny (Y <= 0.017).
+ */
+function splitM4CarbineBuiltInIronSights(
+  modelScene: THREE.Object3D,
+  builtInOpticNodes: THREE.Object3D[]
+): void {
+  modelScene.updateMatrixWorld(true);
+  const m16Meshes: THREE.Mesh[] = [];
+  modelScene.traverse((c) => {
+    if ((c as THREE.Mesh).isMesh) m16Meshes.push(c as THREE.Mesh);
+  });
+  const vTmp = new THREE.Vector3();
+  const toModelSceneMat = new THREE.Matrix4();
+  const sharedPosCache = new Map<
+    THREE.BufferAttribute | THREE.InterleavedBufferAttribute,
+    { y: Float32Array; key: Array<string>; computed: Uint8Array }
+  >();
+
+  for (const mesh of m16Meshes) {
+    const geom = mesh.geometry;
+    const posAttr = geom.attributes.position;
+    if (!posAttr) continue;
+    const idx = geom.index;
+    const triCount = idx ? idx.count / 3 : posAttr.count / 3;
+    if (triCount <= 0) continue;
+
+    let cache = sharedPosCache.get(posAttr);
+    if (!cache) {
+      const vCount = posAttr.count;
+      cache = {
+        y: new Float32Array(vCount),
+        key: new Array<string>(vCount),
+        computed: new Uint8Array(vCount),
+      };
+      sharedPosCache.set(posAttr, cache);
+    }
+
+    computeMatrixInAncestorSpace(mesh, modelScene, toModelSceneMat);
+    const isSkinned = Boolean((mesh as THREE.SkinnedMesh).isSkinnedMesh);
+    const { y: vertY, key: vertKey, computed } = cache;
+
+    // 1. Transforma apenas os vértices usados por esta primitiva e verifica o Y máximo
+    let primMaxY = -Infinity;
+    const indexCount = triCount * 3;
+    for (let k = 0; k < indexCount; k++) {
+      const vi = idx ? idx.getX(k) : k;
+      if (!computed[vi]) {
+        vTmp.fromBufferAttribute(posAttr, vi);
+        if (isSkinned) {
+          (mesh as THREE.SkinnedMesh).applyBoneTransform(vi, vTmp);
+        }
+        vTmp.applyMatrix4(toModelSceneMat);
+        vertY[vi] = vTmp.y;
+        vertKey[vi] = `${Math.round(vTmp.x * 10000)}_${Math.round(vTmp.y * 10000)}_${Math.round(vTmp.z * 10000)}`;
+        computed[vi] = 1;
+      }
+      if (vertY[vi] > primMaxY) {
+        primMaxY = vertY[vi];
+      }
+    }
+
+    // Descarta imediatamente primitivas que ficam inteiras abaixo do topo do trilho (12 das 14 primitivas)
+    if (primMaxY <= 0.017) continue;
+
+    // 2. Constrói adjacência espacial e executa BFS apenas nas primitivas que contêm geometria acima do trilho
+    const keyToTris = new Map<string, number[]>();
+    for (let t = 0; t < triCount; t++) {
+      const i0 = idx ? idx.getX(t * 3) : t * 3;
+      const i1 = idx ? idx.getX(t * 3 + 1) : t * 3 + 1;
+      const i2 = idx ? idx.getX(t * 3 + 2) : t * 3 + 2;
+      const k0 = vertKey[i0];
+      const k1 = vertKey[i1];
+      const k2 = vertKey[i2];
+      let a0 = keyToTris.get(k0);
+      if (!a0) {
+        a0 = [];
+        keyToTris.set(k0, a0);
+      }
+      a0.push(t);
+      let a1 = keyToTris.get(k1);
+      if (!a1) {
+        a1 = [];
+        keyToTris.set(k1, a1);
+      }
+      a1.push(t);
+      let a2 = keyToTris.get(k2);
+      if (!a2) {
+        a2 = [];
+        keyToTris.set(k2, a2);
+      }
+      a2.push(t);
+    }
+
+    const visited = new Uint8Array(triCount);
+    const isSightTri = new Uint8Array(triCount);
+    const bfsQueue: number[] = [];
+    const compTris: number[] = [];
+    for (let t = 0; t < triCount; t++) {
+      if (visited[t]) continue;
+      visited[t] = 1;
+      bfsQueue.length = 0;
+      compTris.length = 0;
+      bfsQueue.push(t);
+      let compMaxY = -Infinity;
+      while (bfsQueue.length > 0) {
+        const cur = bfsQueue.pop()!;
+        compTris.push(cur);
+        const c0 = idx ? idx.getX(cur * 3) : cur * 3;
+        const c1 = idx ? idx.getX(cur * 3 + 1) : cur * 3 + 1;
+        const c2 = idx ? idx.getX(cur * 3 + 2) : cur * 3 + 2;
+        if (vertY[c0] > compMaxY) compMaxY = vertY[c0];
+        if (vertY[c1] > compMaxY) compMaxY = vertY[c1];
+        if (vertY[c2] > compMaxY) compMaxY = vertY[c2];
+        const nbs0 = keyToTris.get(vertKey[c0]);
+        if (nbs0) {
+          for (let n = 0; n < nbs0.length; n++) {
+            const nb = nbs0[n];
+            if (!visited[nb]) {
+              visited[nb] = 1;
+              bfsQueue.push(nb);
+            }
+          }
+        }
+        const nbs1 = keyToTris.get(vertKey[c1]);
+        if (nbs1) {
+          for (let n = 0; n < nbs1.length; n++) {
+            const nb = nbs1[n];
+            if (!visited[nb]) {
+              visited[nb] = 1;
+              bfsQueue.push(nb);
+            }
+          }
+        }
+        const nbs2 = keyToTris.get(vertKey[c2]);
+        if (nbs2) {
+          for (let n = 0; n < nbs2.length; n++) {
+            const nb = nbs2[n];
+            if (!visited[nb]) {
+              visited[nb] = 1;
+              bfsQueue.push(nb);
+            }
+          }
+        }
+      }
+      if (compMaxY > 0.017) {
+        for (let c = 0; c < compTris.length; c++) {
+          isSightTri[compTris[c]] = 1;
+        }
+      }
+    }
+
+    const baseIndices: number[] = [];
+    const sightIndices: number[] = [];
+    for (let t = 0; t < triCount; t++) {
+      const i0 = idx ? idx.getX(t * 3) : t * 3;
+      const i1 = idx ? idx.getX(t * 3 + 1) : t * 3 + 1;
+      const i2 = idx ? idx.getX(t * 3 + 2) : t * 3 + 2;
+      if (isSightTri[t]) {
+        sightIndices.push(i0, i1, i2);
+      } else {
+        baseIndices.push(i0, i1, i2);
+      }
+    }
+    if (sightIndices.length === 0) continue;
+    if (baseIndices.length === 0) {
+      builtInOpticNodes.push(mesh);
+      continue;
+    }
+    const baseGeom = geom.clone();
+    baseGeom.setIndex(baseIndices);
+    mesh.geometry = baseGeom;
+
+    const sightGeom = geom.clone();
+    sightGeom.setIndex(sightIndices);
+    let sightMesh: THREE.Mesh;
+    if ((mesh as THREE.SkinnedMesh).isSkinnedMesh) {
+      const sk = mesh as THREE.SkinnedMesh;
+      const skSight = new THREE.SkinnedMesh(sightGeom, sk.material);
+      skSight.bind(sk.skeleton, sk.bindMatrix);
+      sightMesh = skSight;
+    } else {
+      sightMesh = new THREE.Mesh(sightGeom, mesh.material);
+    }
+    sightMesh.name = `${mesh.name}_A2RearSight`;
+    sightMesh.frustumCulled = false;
+    sightMesh.castShadow = false;
+    sightMesh.receiveShadow = true;
+    mesh.parent?.add(sightMesh);
+    builtInOpticNodes.push(sightMesh);
+  }
 }
 

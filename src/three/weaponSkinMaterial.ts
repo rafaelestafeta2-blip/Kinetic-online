@@ -470,33 +470,38 @@ function createCyberCobaltEmissiveTexture(): THREE.CanvasTexture {
 function attachCyberCobaltNeonShader(mat: THREE.MeshStandardMaterial): void {
   if (mat.userData?.__hasCyberCobaltNeonShader) return;
   mat.userData.__hasCyberCobaltNeonShader = true;
-  mat.customProgramCacheKey = () => 'kinetic_cyber_cobalt_neon_v2';
+  mat.customProgramCacheKey = () => 'kinetic_cyber_cobalt_neon_v3';
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uCyberTime = CYBER_NEON_TIME_UNIFORM;
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
         `#include <common>
-varying vec3 vCyberLocalPos;`
+varying vec3 vCyberLocalPos;
+varying vec3 vCyberViewNorm;
+varying vec3 vCyberViewDir;`
       )
       .replace(
-        '#include <begin_vertex>',
-        `#include <begin_vertex>
-vCyberLocalPos = vec3(position);`
+        '#include <project_vertex>',
+        `#include <project_vertex>
+vCyberLocalPos = vec3(position);
+vCyberViewNorm = normalize(normalMatrix * objectNormal);
+vCyberViewDir = normalize(-mvPosition.xyz);`
       );
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
         `#include <common>
 uniform float uCyberTime;
-varying vec3 vCyberLocalPos;`
+varying vec3 vCyberLocalPos;
+varying vec3 vCyberViewNorm;
+varying vec3 vCyberViewDir;`
       )
       .replace(
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>
 {
-  vec3 viewDir = normalize(vViewPosition);
-  float ndv = clamp(abs(dot(normalize(normal), viewDir)), 0.0, 1.0);
+  float ndv = clamp(abs(dot(normalize(vCyberViewNorm), normalize(vCyberViewDir))), 0.0, 1.0);
   float fresnel = pow(1.0 - ndv, 2.35);
 
   // Escala automática para coordenadas em metros ou centímetros
@@ -536,7 +541,9 @@ function detachCyberCobaltNeonShader(
   mat: THREE.MeshStandardMaterial,
   orig: OriginalMaterialSkinState
 ): void {
-  mat.emissive.setHex(orig.emissiveHex);
+  if (mat.emissive) {
+    mat.emissive.setHex(orig.emissiveHex);
+  }
   mat.emissiveMap = orig.emissiveMap;
   mat.emissiveIntensity = orig.emissiveIntensity;
   if (mat.userData?.__hasCyberCobaltNeonShader) {
@@ -624,7 +631,7 @@ function ensureClonedOwnMaterial(
   origMat: THREE.Material
 ): THREE.MeshStandardMaterial | null {
   const std = origMat as THREE.MeshStandardMaterial;
-  if (!std || !('color' in std)) return null;
+  if (!std || !('color' in std) || !('roughness' in std) || !std.emissive) return null;
   if (std.userData?.__skinInstanceCloned) {
     return std;
   }
@@ -714,7 +721,9 @@ function applySkinDefToMaterial(
       const emiTex = createCyberCobaltEmissiveTexture().clone();
       emiTex.flipY = orig.map ? orig.map.flipY : false;
       emiTex.needsUpdate = true;
-      mat.emissive.setHex(0x00d8ff);
+      if (mat.emissive) {
+        mat.emissive.setHex(0x00d8ff);
+      }
       mat.emissiveMap = emiTex;
       mat.emissiveIntensity = 1.65;
       mat.roughness = 0.16;
