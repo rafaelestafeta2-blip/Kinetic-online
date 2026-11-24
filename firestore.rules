@@ -194,7 +194,7 @@ service cloud.firestore {
         && incoming().diamonds >= 0
         && incoming().playerXp >= existing().playerXp
         && incoming().playerXp <= existing().playerXp + 50000
-        && incoming().playerCash >= existing().playerCash
+        && incoming().playerCash >= existing().playerCash - 50000
         && incoming().playerCash <= existing().playerCash + 50000
         && isFounderClaimPreserved()
         && (!('uid' in existing()) || incoming().uid == existing().uid)

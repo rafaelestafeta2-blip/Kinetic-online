@@ -13,11 +13,16 @@ interface OriginalMaterialSkinState {
   metalness: number;
   bumpMap: THREE.Texture | null;
   bumpScale: number;
+  emissiveHex: number;
+  emissiveMap: THREE.Texture | null;
+  emissiveIntensity: number;
 }
 
 const loadedUrlTextures = new Map<string, THREE.Texture>();
 const pendingUrlLoads = new Map<string, Promise<THREE.Texture | null>>();
 const patternCanvasCache = new Map<CamoPatternType, HTMLCanvasElement>();
+let cyberCobaltEmissiveTexCache: THREE.CanvasTexture | null = null;
+const CYBER_NEON_TIME_UNIFORM = { value: 0 };
 const textureLoader = new THREE.TextureLoader();
 
 function mulberry32(seed: number): () => number {
@@ -166,28 +171,103 @@ function createCamoPatternCanvas(pattern: CamoPatternType): HTMLCanvasElement {
     }
   } else if (pattern === 'cyber_cobalt') {
     const rand = mulberry32(61423);
-    ctx.fillStyle = '#0b1120';
+    // Base anodizada azul-cobalto profundo com gradiente metálico escuro
+    const bgGrad = ctx.createLinearGradient(0, 0, size, size);
+    bgGrad.addColorStop(0, '#040917');
+    bgGrad.addColorStop(0.5, '#09193a');
+    bgGrad.addColorStop(1, '#050d24');
+    ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, size, size);
-    for (let i = 0; i < 64; i++) {
+
+    // Micro-grade hexagonal tática
+    ctx.strokeStyle = 'rgba(14, 165, 233, 0.22)';
+    ctx.lineWidth = 1.2;
+    const hexR = 22;
+    const hexW = hexR * Math.sqrt(3);
+    const hexH = hexR * 1.5;
+    for (let row = -1; row < size / hexH + 2; row++) {
+      for (let col = -1; col < size / hexW + 2; col++) {
+        const cx = col * hexW + (row % 2 === 0 ? 0 : hexW * 0.5);
+        const cy = row * hexH;
+        ctx.beginPath();
+        for (let k = 0; k < 6; k++) {
+          const ang = (Math.PI / 3) * k + Math.PI / 6;
+          const vx = cx + Math.cos(ang) * (hexR - 2);
+          const vy = cy + Math.sin(ang) * (hexR - 2);
+          if (k === 0) ctx.moveTo(vx, vy);
+          else ctx.lineTo(vx, vy);
+        }
+        ctx.closePath();
+        ctx.stroke();
+      }
+    }
+
+    // Placas diagonais de titânio azul-elétrico e safira
+    for (let i = 0; i < 48; i++) {
       const color =
         i % 4 === 0
-          ? '#0284c7'
+          ? '#0369a1'
           : i % 4 === 1
-            ? '#38bdf8'
+            ? '#1d4ed8'
             : i % 4 === 2
-              ? '#1e3a8a'
-              : '#1e293b';
+              ? '#0f172a'
+              : '#0284c7';
       ctx.fillStyle = color;
       const x = rand() * size;
       const y = rand() * size;
-      const w = 40 + rand() * 95;
-      const h = 8 + rand() * 22;
+      const w = 36 + rand() * 88;
+      const h = 6 + rand() * 16;
       for (let ox = -size; ox <= size; ox += size) {
         for (let oy = -size; oy <= size; oy += size) {
           ctx.save();
           ctx.translate(x + ox, y + oy);
           ctx.rotate(-Math.PI / 6);
           ctx.fillRect(-w / 2, -h / 2, w, h);
+          ctx.restore();
+        }
+      }
+    }
+
+    // Trilhas de circuito neon ciano elétrico (#00f2ff) com halo luminoso e nós de energia
+    for (let i = 0; i < 28; i++) {
+      const x = rand() * size;
+      const y = rand() * size;
+      const len1 = 30 + rand() * 75;
+      const len2 = 22 + rand() * 55;
+      const isBright = i % 2 === 0;
+      for (let ox = -size; ox <= size; ox += size) {
+        for (let oy = -size; oy <= size; oy += size) {
+          ctx.save();
+          ctx.translate(x + ox, y + oy);
+          ctx.rotate(-Math.PI / 6);
+          // Halo externo neon
+          ctx.strokeStyle = isBright
+            ? 'rgba(0, 242, 255, 0.55)'
+            : 'rgba(56, 189, 248, 0.42)';
+          ctx.lineWidth = isBright ? 6 : 4.5;
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.lineTo(len1, 0);
+          ctx.lineTo(len1 + 14, 14);
+          ctx.lineTo(len1 + 14 + len2, 14);
+          ctx.stroke();
+
+          // Núcleo incandescente branco-ciano
+          ctx.strokeStyle = isBright ? '#e0f2fe' : '#38bdf8';
+          ctx.lineWidth = isBright ? 2.2 : 1.6;
+          ctx.stroke();
+
+          // Nós de energia nas extremidades
+          ctx.fillStyle = '#00f2ff';
+          ctx.beginPath();
+          ctx.arc(0, 0, 3.8, 0, Math.PI * 2);
+          ctx.arc(len1 + 14 + len2, 14, 3.8, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(0, 0, 1.8, 0, Math.PI * 2);
+          ctx.arc(len1 + 14 + len2, 14, 1.8, 0, Math.PI * 2);
+          ctx.fill();
           ctx.restore();
         }
       }
@@ -299,6 +379,173 @@ function createCamoPatternTexture(pattern: CamoPatternType): THREE.CanvasTexture
   return tex;
 }
 
+function createCyberCobaltEmissiveTexture(): THREE.CanvasTexture {
+  if (cyberCobaltEmissiveTexCache) {
+    return cyberCobaltEmissiveTexCache;
+  }
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, size, size);
+
+  // Grade hexagonal emissiva sutil
+  ctx.strokeStyle = 'rgba(0, 210, 255, 0.25)';
+  ctx.lineWidth = 1.4;
+  const hexR = 22;
+  const hexW = hexR * Math.sqrt(3);
+  const hexH = hexR * 1.5;
+  for (let row = -1; row < size / hexH + 2; row++) {
+    for (let col = -1; col < size / hexW + 2; col++) {
+      const cx = col * hexW + (row % 2 === 0 ? 0 : hexW * 0.5);
+      const cy = row * hexH;
+      ctx.beginPath();
+      for (let k = 0; k < 6; k++) {
+        const ang = (Math.PI / 3) * k + Math.PI / 6;
+        const vx = cx + Math.cos(ang) * (hexR - 2);
+        const vy = cy + Math.sin(ang) * (hexR - 2);
+        if (k === 0) ctx.moveTo(vx, vy);
+        else ctx.lineTo(vx, vy);
+      }
+      ctx.closePath();
+      ctx.stroke();
+    }
+  }
+
+  // Trilhas de circuito neon ciano elétrico de alto brilho
+  const rand = mulberry32(61423);
+  for (let i = 0; i < 48; i++) {
+    rand();
+    rand();
+    rand();
+    rand();
+  }
+  for (let i = 0; i < 28; i++) {
+    const x = rand() * size;
+    const y = rand() * size;
+    const len1 = 30 + rand() * 75;
+    const len2 = 22 + rand() * 55;
+    const isBright = i % 2 === 0;
+    for (let ox = -size; ox <= size; ox += size) {
+      for (let oy = -size; oy <= size; oy += size) {
+        ctx.save();
+        ctx.translate(x + ox, y + oy);
+        ctx.rotate(-Math.PI / 6);
+        ctx.strokeStyle = isBright ? '#00e5ff' : '#0284c7';
+        ctx.lineWidth = isBright ? 7 : 5;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(len1, 0);
+        ctx.lineTo(len1 + 14, 14);
+        ctx.lineTo(len1 + 14 + len2, 14);
+        ctx.stroke();
+
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = isBright ? 2.6 : 1.8;
+        ctx.stroke();
+
+        ctx.fillStyle = '#00f2ff';
+        ctx.beginPath();
+        ctx.arc(0, 0, 4.5, 0, Math.PI * 2);
+        ctx.arc(len1 + 14 + len2, 14, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(3.2, 3.2);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  tex.needsUpdate = true;
+  cyberCobaltEmissiveTexCache = tex;
+  return tex;
+}
+
+function attachCyberCobaltNeonShader(mat: THREE.MeshStandardMaterial): void {
+  if (mat.userData?.__hasCyberCobaltNeonShader) return;
+  mat.userData.__hasCyberCobaltNeonShader = true;
+  mat.customProgramCacheKey = () => 'kinetic_cyber_cobalt_neon_v2';
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uCyberTime = CYBER_NEON_TIME_UNIFORM;
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+varying vec3 vCyberLocalPos;`
+      )
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+vCyberLocalPos = vec3(position);`
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+uniform float uCyberTime;
+varying vec3 vCyberLocalPos;`
+      )
+      .replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+{
+  vec3 viewDir = normalize(vViewPosition);
+  float ndv = clamp(abs(dot(normalize(normal), viewDir)), 0.0, 1.0);
+  float fresnel = pow(1.0 - ndv, 2.35);
+
+  // Escala automática para coordenadas em metros ou centímetros
+  float posScale = length(vCyberLocalPos) > 2.5 ? 0.22 : 22.0;
+  vec3 p = vCyberLocalPos * posScale;
+
+  // Onda de plasma ciano viajando ao longo do cano e receptor
+  float wave = 0.5 + 0.5 * sin(p.z * 1.35 - uCyberTime * 3.4 + p.y * 0.8);
+  float pulse = 0.78 + 0.22 * sin(uCyberTime * 2.6);
+
+  // Veios laser triplanares (funcionam mesmo em malhas sem UV ou UVs compactas)
+  float diag1 = abs(fract((p.z + p.y * 1.35) * 0.95) - 0.5);
+  float diag2 = abs(fract((p.z * 0.65 - p.x * 1.45) * 1.15) - 0.5);
+  float circuitLine1 = smoothstep(0.055, 0.012, diag1);
+  float circuitLine2 = smoothstep(0.042, 0.009, diag2) * step(0.35, fract(p.z * 0.45));
+  float neonVeins = clamp(circuitLine1 * 0.85 + circuitLine2 * 0.75, 0.0, 1.0);
+
+  vec3 electricCyan = vec3(0.0, 0.92, 1.0);
+  vec3 deepCobalt = vec3(0.04, 0.28, 0.95);
+
+  // Tingimento metálico anodizado + reflexo holográfico nas quinas
+  diffuseColor.rgb = mix(diffuseColor.rgb, deepCobalt * 0.55 + electricCyan * 0.25, 0.38);
+  diffuseColor.rgb += electricCyan * neonVeins * 0.35;
+
+  // Emissão neon de alta intensidade nas trilhas + borda Fresnel ciano elétrico
+  vec3 neonGlow =
+    electricCyan * (neonVeins * (0.95 + 0.85 * wave) * pulse) +
+    mix(deepCobalt, electricCyan, 0.72) * (fresnel * (1.05 + 0.35 * wave));
+  totalEmissiveRadiance += neonGlow;
+}`
+      );
+  };
+  mat.needsUpdate = true;
+}
+
+function detachCyberCobaltNeonShader(
+  mat: THREE.MeshStandardMaterial,
+  orig: OriginalMaterialSkinState
+): void {
+  mat.emissive.setHex(orig.emissiveHex);
+  mat.emissiveMap = orig.emissiveMap;
+  mat.emissiveIntensity = orig.emissiveIntensity;
+  if (mat.userData?.__hasCyberCobaltNeonShader) {
+    mat.userData.__hasCyberCobaltNeonShader = false;
+    mat.onBeforeCompile = () => {};
+    mat.customProgramCacheKey = () => 'default_std_mat';
+  }
+}
+
 function loadSkinImageTexture(url: string): Promise<THREE.Texture | null> {
   const cached = loadedUrlTextures.get(url);
   if (cached) return Promise.resolve(cached);
@@ -392,6 +639,10 @@ function ensureClonedOwnMaterial(
       metalness: typeof std.metalness === 'number' ? std.metalness : 0.5,
       bumpMap: std.bumpMap ?? null,
       bumpScale: typeof std.bumpScale === 'number' ? std.bumpScale : 0,
+      emissiveHex: std.emissive ? std.emissive.getHex() : 0x000000,
+      emissiveMap: std.emissiveMap ?? null,
+      emissiveIntensity:
+        typeof std.emissiveIntensity === 'number' ? std.emissiveIntensity : 1,
     } satisfies OriginalMaterialSkinState,
   };
   if (Array.isArray(mesh.material)) {
@@ -417,6 +668,7 @@ function applySkinDefToMaterial(
     skin.id === 'default' ||
     (skin.id === 'shotgun_aemondir_legion' && hasVertexColors)
   ) {
+    detachCyberCobaltNeonShader(mat, orig);
     mat.map = orig.map;
     if (mat.map) {
       mat.map.colorSpace = THREE.SRGBColorSpace;
@@ -434,6 +686,7 @@ function applySkinDefToMaterial(
 
   if (skin.textureUrl) {
     if (!urlTex) return;
+    detachCyberCobaltNeonShader(mat, orig);
     // Clone lightweight Texture wrapper so disposing one WebGL scene never poisons another context.
     const instanceTex = urlTex.clone();
     instanceTex.flipY = orig.map ? orig.map.flipY : false;
@@ -456,6 +709,20 @@ function applySkinDefToMaterial(
     if (mat.color) mat.color.setHex(0xffffff);
     if (typeof skin.roughness === 'number') mat.roughness = skin.roughness;
     if (typeof skin.metalness === 'number') mat.metalness = skin.metalness;
+
+    if (skin.pattern === 'cyber_cobalt') {
+      const emiTex = createCyberCobaltEmissiveTexture().clone();
+      emiTex.flipY = orig.map ? orig.map.flipY : false;
+      emiTex.needsUpdate = true;
+      mat.emissive.setHex(0x00d8ff);
+      mat.emissiveMap = emiTex;
+      mat.emissiveIntensity = 1.65;
+      mat.roughness = 0.16;
+      mat.metalness = 0.88;
+      attachCyberCobaltNeonShader(mat);
+    } else {
+      detachCyberCobaltNeonShader(mat, orig);
+    }
     mat.needsUpdate = true;
   }
 }
@@ -478,6 +745,8 @@ export function applyWeaponSkinToObject3D(
   root.userData.appliedWeaponSkinId = skin.id;
   root.userData.appliedSkinWeaponId = weaponId;
 
+  const isCyberNeon = skin.pattern === 'cyber_cobalt';
+
   const applyWithTex = (urlTex: THREE.Texture | null) => {
     const seenMats = new Set<THREE.MeshStandardMaterial>();
     root.traverse((child) => {
@@ -491,6 +760,7 @@ export function applyWeaponSkinToObject3D(
           ? [mesh.material]
           : [];
 
+      let appliedOnMesh = false;
       for (let i = 0; i < rawMats.length; i++) {
         const raw = rawMats[i];
         if (!raw) continue;
@@ -499,10 +769,40 @@ export function applyWeaponSkinToObject3D(
         if (raw.transparent && (raw.opacity ?? 1) < 0.85) continue;
 
         const ownMat = ensureClonedOwnMaterial(mesh, i, raw);
-        if (!ownMat || seenMats.has(ownMat)) continue;
+        if (!ownMat) continue;
+        appliedOnMesh = true;
+        if (seenMats.has(ownMat)) continue;
         seenMats.add(ownMat);
         const hasVertexColors = Boolean(mesh.geometry?.getAttribute('color'));
         applySkinDefToMaterial(ownMat, skin, urlTex, hasVertexColors);
+      }
+
+      if (appliedOnMesh && isCyberNeon) {
+        if (!mesh.userData.__cyberNeonHooked) {
+          mesh.userData.__cyberNeonHooked = true;
+          const prevBeforeRender = mesh.onBeforeRender;
+          mesh.onBeforeRender = function (
+            renderer,
+            scene,
+            camera,
+            geometry,
+            material,
+            group
+          ) {
+            CYBER_NEON_TIME_UNIFORM.value = performance.now() * 0.001;
+            if (typeof prevBeforeRender === 'function') {
+              prevBeforeRender.call(
+                this,
+                renderer,
+                scene,
+                camera,
+                geometry,
+                material,
+                group
+              );
+            }
+          };
+        }
       }
     });
     onApplied?.();

@@ -1213,7 +1213,8 @@ export function buildTacticalWeaponRig(
 
   const configureLoadedScopeScene = (
     sceneRoot: THREE.Group,
-    isLpvo = false
+    isLpvo = false,
+    opticKind: Exclude<OpticType, 'iron'> = 'red_dot'
   ) => {
     sceneRoot.traverse((child) => {
       child.frustumCulled = false;
@@ -1241,6 +1242,54 @@ export function buildTacticalWeaponRig(
           mat.side = THREE.FrontSide;
           mesh.renderOrder = 12;
         } else if (mesh.name.includes('Reticle')) {
+          // Os discos Scope_Reticle nos GLBs de mira (Aimpoint, Kolimator, EoTech, LPVO) usavam sub-regiões
+          // de atlas deslocadas (ex.: U centrada em 0.580 no Aimpoint), fazendo o chevron/ponto aparecer torto à esquerda.
+          // Remapeamos as UVs diretamente a partir do centro geométrico XY do disco da lente para [0..1, 0..1]
+          // e vinculamos o retículo procedural de alta precisão centrado em (0.5, 0.5).
+          const geom = mesh.geometry;
+          const posAttr = geom?.attributes?.position;
+          if (posAttr && posAttr.count > 0) {
+            let minX = Infinity;
+            let maxX = -Infinity;
+            let minY = Infinity;
+            let maxY = -Infinity;
+            for (let i = 0; i < posAttr.count; i++) {
+              const x = posAttr.getX(i);
+              const y = posAttr.getY(i);
+              if (x < minX) minX = x;
+              if (x > maxX) maxX = x;
+              if (y < minY) minY = y;
+              if (y > maxY) maxY = y;
+            }
+            const cx = (minX + maxX) * 0.5;
+            const cy = (minY + maxY) * 0.5;
+            const span = Math.max(1e-4, Math.max(maxX - minX, maxY - minY));
+            const uvScale =
+              opticKind === 'red_dot' || opticKind === 'kolimator'
+                ? 1.55
+                : opticKind === 'holo'
+                  ? 1.25
+                  : 1.05;
+            const newUvs = new Float32Array(posAttr.count * 2);
+            for (let i = 0; i < posAttr.count; i++) {
+              const nx = ((posAttr.getX(i) - cx) / span) * uvScale;
+              const ny = ((posAttr.getY(i) - cy) / span) * uvScale;
+              newUvs[i * 2] = 0.5 + nx;
+              newUvs[i * 2 + 1] = 0.5 + ny;
+            }
+            geom.setAttribute('uv', new THREE.BufferAttribute(newUvs, 2));
+          }
+          const reticleTex =
+            opticKind === 'holo'
+              ? textures.holoReticle
+              : opticKind === 'lpvo'
+                ? textures.lpvoReticle
+                : textures.cantedDotReticle;
+          mat.map = reticleTex;
+          mat.emissiveMap = reticleTex;
+          mat.emissive = new THREE.Color(isLpvo ? 0xffffff : 0xff2a1f);
+          mat.emissiveIntensity = isLpvo ? 1.2 : 2.4;
+          mat.color = new THREE.Color(0xffffff);
           mat.transparent = true;
           mat.depthWrite = false;
           mat.blending = isLpvo
@@ -1266,6 +1315,7 @@ export function buildTacticalWeaponRig(
     localUrl: string,
     targetGroup: THREE.Group,
     isLpvo = false,
+    opticKind: Exclude<OpticType, 'iron'> = 'red_dot',
     extraSetup?: (sceneRoot: THREE.Group) => void
   ) => {
     if (disposed || loadedAccessories.has(key) || loadingAccessories.has(key)) {
@@ -1281,7 +1331,7 @@ export function buildTacticalWeaponRig(
           return;
         }
         loadedAccessories.add(key);
-        configureLoadedScopeScene(gltf.scene, isLpvo);
+        configureLoadedScopeScene(gltf.scene, isLpvo, opticKind);
         extraSetup?.(gltf.scene);
         targetGroup.add(gltf.scene);
         onSubtreeLoaded?.(gltf.scene);
@@ -1298,26 +1348,33 @@ export function buildTacticalWeaponRig(
       loadAccessoryOnce(
         'optic_red_dot',
         '/models/accessories/scopes/Scope_Aimpoint_RedDot.glb',
-        redDotScopeGroup
+        redDotScopeGroup,
+        false,
+        'red_dot'
       );
     } else if (optic === 'kolimator') {
       loadAccessoryOnce(
         'optic_kolimator',
         '/models/accessories/scopes/Scope_Kolimator_Reflex.glb',
-        kolimatorScopeGroup
+        kolimatorScopeGroup,
+        false,
+        'kolimator'
       );
     } else if (optic === 'holo') {
       loadAccessoryOnce(
         'optic_holo',
         '/models/accessories/scopes/Scope_EoTech_Holo.glb',
-        holoSightGroup
+        holoSightGroup,
+        false,
+        'holo'
       );
     } else if (optic === 'lpvo') {
       loadAccessoryOnce(
         'optic_lpvo',
         '/models/accessories/scopes/Scope_Tactical_LPVO.glb',
         lpvoScopeGroup,
-        true
+        true,
+        'lpvo'
       );
     }
   };

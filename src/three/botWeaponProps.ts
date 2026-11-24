@@ -160,9 +160,9 @@ const WEAPON_GLB_SPECS: RealGlbWeaponSpec[] = [
     clipName: 'Pose',
     clipTime: 0,
     filter: (m, n, mats) => !isExcludedMesh(m, n, mats),
-    offset: [0, 0.05, 0.03],
+    offset: [0, 0.068, 0.095],
     scale: 1.0,
-    rotX: 0.2,
+    rotX: 0.12,
     rotY: 0,
   },
   {
@@ -182,9 +182,11 @@ const WEAPON_GLB_SPECS: RealGlbWeaponSpec[] = [
     clipName: 'Pose',
     clipTime: 0,
     filter: (m, n, mats) => !isExcludedMesh(m, n, mats),
-    offset: [0, 0.05, 0.03],
+    // No mx16a4.glb a origem (0,0,0) fica no carregador (Z = -0.003) e o pistol grip/gatilho fica em [0, -0.082, -0.105].
+    // Deslocar +0.105 em Z (+frente) e +0.082 em Y (+cima) posiciona a mão direita exatamente no pistol grip e o guarda-mão na mão esquerda.
+    offset: [0, 0.082, 0.105],
     scale: 1.0,
-    rotX: 0.2,
+    rotX: 0.12,
     rotY: 0,
   },
   {

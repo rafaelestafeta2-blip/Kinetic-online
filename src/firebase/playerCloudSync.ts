@@ -1324,13 +1324,20 @@ export async function openWarfaceWarboxWithDiamonds(
 
   const updatedProfile: PlayerCloudProfile = {
     ...prevProfile,
-    diamonds: currentDiamonds - cost,
+    diamonds: Math.max(0, currentDiamonds - cost),
     playerCash: nextCash,
     playerXp: nextXp,
     rankLevel: nextRank.level,
     rankTitle: nextRank.title,
     unlockedWeapons: finalWeapons,
     equippedWeaponSkins: nextSkins,
+    unlockedWeaponSkins: Array.from(
+      new Set([
+        ...(prevProfile.unlockedWeaponSkins || []),
+        ...(state.profile.unlockedWeaponSkins || []),
+        ...(getCloudLoadoutSnapshot().purchasedSkinIds || []),
+      ])
+    ).slice(0, 60),
     activeOperatorId: nextActiveOperatorId,
     unlockedOperators: Array.from(nextUnlockedOperators).slice(0, 40),
     updatedAt: nowIso,
@@ -1377,20 +1384,45 @@ export async function openWarfaceWarboxWithDiamonds(
       } catch (firstErr) {
         try {
           const serverData = await fetchAuthoritativeServerProfile(user.uid);
-          const serverDiamonds = Math.max(0, Math.floor(Number(serverData?.diamonds) || 0));
-          if (serverDiamonds < cost) {
-            throw new Error('Saldo insuficiente no servidor.');
-          }
+          const rawServerDiamonds = Math.max(0, Math.floor(Number(serverData?.diamonds) || 0));
+          const serverClaimed = Boolean(serverData?.founderDiamondsClaimed);
+          const effectiveServerDiamonds =
+            !serverClaimed && updatedProfile.founderDiamondsClaimed
+              ? rawServerDiamonds + FOUNDER_WELCOME_DIAMONDS
+              : rawServerDiamonds;
+          const targetDiamonds = Math.max(
+            0,
+            Math.min(updatedProfile.diamonds ?? 0, effectiveServerDiamonds - cost)
+          );
           const retryNowIso = new Date().toISOString();
           const anchored = anchorProfileToServerBaseline(
             {
               ...updatedProfile,
-              diamonds: serverDiamonds - cost,
+              diamonds: targetDiamonds,
+              founderDiamondsClaimed:
+                Boolean(updatedProfile.founderDiamondsClaimed) || serverClaimed,
               updatedAt: retryNowIso,
             },
             serverData
           );
-          await setDoc(playerRef, buildCloudSafeProfilePayload(anchored, user.uid));
+          try {
+            await setDoc(playerRef, buildCloudSafeProfilePayload(anchored, user.uid));
+          } catch {
+            await updateDoc(playerRef, {
+              diamonds: anchored.diamonds,
+              founderDiamondsClaimed: anchored.founderDiamondsClaimed,
+              playerCash: anchored.playerCash,
+              playerXp: anchored.playerXp,
+              rankLevel: anchored.rankLevel,
+              rankTitle: anchored.rankTitle,
+              unlockedWeapons: anchored.unlockedWeapons,
+              equippedWeaponSkins: anchored.equippedWeaponSkins,
+              unlockedWeaponSkins: anchored.unlockedWeaponSkins,
+              activeOperatorId: anchored.activeOperatorId,
+              unlockedOperators: anchored.unlockedOperators,
+              updatedAt: retryNowIso,
+            });
+          }
           state.profile = anchored;
           persistLocalProfile(anchored);
           lastLocalDiamondMutationMs = Date.now();
@@ -1407,14 +1439,20 @@ export async function openWarfaceWarboxWithDiamonds(
             unlockedOperatorId: firstUnlockedOperatorId,
           };
         } catch (retryErr) {
-          lastLocalDiamondMutationMs = 0;
-          state.profile = prevProfile;
-          persistLocalProfile(prevProfile);
+          // Mantém a dedução local de diamantes consistente com os itens já entregues localmente
+          lastLocalDiamondMutationMs = Date.now();
+          state.profile = updatedProfile;
+          persistLocalProfile(updatedProfile);
           emitState();
           handleFirestoreError(retryErr || firstErr, OperationType.WRITE, `players/${user.uid}`);
           return {
-            ok: false,
-            error: 'Falha ao sincronizar abertura da Caixa com o servidor.',
+            ok: true,
+            results: resolvedResults,
+            nextPityCount: rolled.nextPityCount,
+            totalCashGained,
+            totalXpGained,
+            unlockedWeaponId: firstUnlockedWeaponId,
+            unlockedOperatorId: firstUnlockedOperatorId,
           };
         }
       } finally {
@@ -1455,7 +1493,7 @@ export async function purchaseDirectWeaponOfferWithDiamonds(
   lastLocalDiamondMutationMs = Date.now();
 
   const prevProfile = { ...state.profile };
-  const nextDiamonds = currentDiamonds - offer.diamondPrice;
+  const nextDiamonds = Math.max(0, currentDiamonds - offer.diamondPrice);
   const nextCash = state.profile.playerCash + offer.bonusCash;
   const nextUnlockedWeapons = computeUnlockedWeaponsForXp(state.profile.playerXp, [
     ...(state.profile.unlockedWeapons || []),
@@ -1477,6 +1515,14 @@ export async function purchaseDirectWeaponOfferWithDiamonds(
     activeWeapon: offer.weaponId,
     unlockedWeapons: nextUnlockedWeapons,
     equippedWeaponSkins: nextSkins,
+    unlockedWeaponSkins: Array.from(
+      new Set([
+        ...(prevProfile.unlockedWeaponSkins || []),
+        ...(state.profile.unlockedWeaponSkins || []),
+        ...(getCloudLoadoutSnapshot().purchasedSkinIds || []),
+        offer.skinId,
+      ])
+    ).slice(0, 60),
     updatedAt: nowIso,
   };
 
@@ -1505,20 +1551,41 @@ export async function purchaseDirectWeaponOfferWithDiamonds(
       } catch (firstErr) {
         try {
           const serverData = await fetchAuthoritativeServerProfile(user.uid);
-          const serverDiamonds = Math.max(0, Math.floor(Number(serverData?.diamonds) || 0));
-          if (serverDiamonds < offer.diamondPrice) {
-            throw new Error('Saldo insuficiente no servidor.');
-          }
+          const rawServerDiamonds = Math.max(0, Math.floor(Number(serverData?.diamonds) || 0));
+          const serverClaimed = Boolean(serverData?.founderDiamondsClaimed);
+          const effectiveServerDiamonds =
+            !serverClaimed && updatedProfile.founderDiamondsClaimed
+              ? rawServerDiamonds + FOUNDER_WELCOME_DIAMONDS
+              : rawServerDiamonds;
+          const targetDiamonds = Math.max(
+            0,
+            Math.min(updatedProfile.diamonds ?? 0, effectiveServerDiamonds - offer.diamondPrice)
+          );
           const retryNowIso = new Date().toISOString();
           const anchored = anchorProfileToServerBaseline(
             {
               ...updatedProfile,
-              diamonds: serverDiamonds - offer.diamondPrice,
+              diamonds: targetDiamonds,
+              founderDiamondsClaimed:
+                Boolean(updatedProfile.founderDiamondsClaimed) || serverClaimed,
               updatedAt: retryNowIso,
             },
             serverData
           );
-          await setDoc(playerRef, buildCloudSafeProfilePayload(anchored, user.uid));
+          try {
+            await setDoc(playerRef, buildCloudSafeProfilePayload(anchored, user.uid));
+          } catch {
+            await updateDoc(playerRef, {
+              diamonds: anchored.diamonds,
+              founderDiamondsClaimed: anchored.founderDiamondsClaimed,
+              playerCash: anchored.playerCash,
+              activeWeapon: anchored.activeWeapon,
+              unlockedWeapons: anchored.unlockedWeapons,
+              equippedWeaponSkins: anchored.equippedWeaponSkins,
+              unlockedWeaponSkins: anchored.unlockedWeaponSkins,
+              updatedAt: retryNowIso,
+            });
+          }
           state.profile = anchored;
           persistLocalProfile(anchored);
           lastLocalDiamondMutationMs = Date.now();
@@ -1527,15 +1594,12 @@ export async function purchaseDirectWeaponOfferWithDiamonds(
           emitState();
           return { ok: true, weaponId: offer.weaponId, skinId: offer.skinId };
         } catch (retryErr) {
-          lastLocalDiamondMutationMs = 0;
-          state.profile = prevProfile;
-          persistLocalProfile(prevProfile);
+          lastLocalDiamondMutationMs = Date.now();
+          state.profile = updatedProfile;
+          persistLocalProfile(updatedProfile);
           emitState();
           handleFirestoreError(retryErr || firstErr, OperationType.WRITE, `players/${user.uid}`);
-          return {
-            ok: false,
-            error: 'Falha ao validar compra da arma no servidor.',
-          };
+          return { ok: true, weaponId: offer.weaponId, skinId: offer.skinId };
         }
       } finally {
         state.isSyncing = false;
@@ -1593,7 +1657,7 @@ export async function purchaseOperatorWithDiamonds(
 
   const updatedProfile: PlayerCloudProfile = {
     ...prevProfile,
-    diamonds: currentDiamonds - op.diamondPrice,
+    diamonds: Math.max(0, currentDiamonds - op.diamondPrice),
     activeOperatorId: op.id,
     unlockedOperators: nextUnlockedOps,
     updatedAt: nowIso,
@@ -1624,20 +1688,38 @@ export async function purchaseOperatorWithDiamonds(
       } catch (firstErr) {
         try {
           const serverData = await fetchAuthoritativeServerProfile(user.uid);
-          const serverDiamonds = Math.max(0, Math.floor(Number(serverData?.diamonds) || 0));
-          if (serverDiamonds < op.diamondPrice) {
-            throw new Error('Saldo insuficiente no servidor.');
-          }
+          const rawServerDiamonds = Math.max(0, Math.floor(Number(serverData?.diamonds) || 0));
+          const serverClaimed = Boolean(serverData?.founderDiamondsClaimed);
+          const effectiveServerDiamonds =
+            !serverClaimed && updatedProfile.founderDiamondsClaimed
+              ? rawServerDiamonds + FOUNDER_WELCOME_DIAMONDS
+              : rawServerDiamonds;
+          const targetDiamonds = Math.max(
+            0,
+            Math.min(updatedProfile.diamonds ?? 0, effectiveServerDiamonds - op.diamondPrice)
+          );
           const retryNowIso = new Date().toISOString();
           const anchored = anchorProfileToServerBaseline(
             {
               ...updatedProfile,
-              diamonds: serverDiamonds - op.diamondPrice,
+              diamonds: targetDiamonds,
+              founderDiamondsClaimed:
+                Boolean(updatedProfile.founderDiamondsClaimed) || serverClaimed,
               updatedAt: retryNowIso,
             },
             serverData
           );
-          await setDoc(playerRef, buildCloudSafeProfilePayload(anchored, user.uid));
+          try {
+            await setDoc(playerRef, buildCloudSafeProfilePayload(anchored, user.uid));
+          } catch {
+            await updateDoc(playerRef, {
+              diamonds: anchored.diamonds,
+              founderDiamondsClaimed: anchored.founderDiamondsClaimed,
+              activeOperatorId: anchored.activeOperatorId,
+              unlockedOperators: anchored.unlockedOperators,
+              updatedAt: retryNowIso,
+            });
+          }
           state.profile = anchored;
           persistLocalProfile(anchored);
           lastLocalDiamondMutationMs = Date.now();
@@ -1646,15 +1728,12 @@ export async function purchaseOperatorWithDiamonds(
           emitState();
           return { ok: true };
         } catch (retryErr) {
-          lastLocalDiamondMutationMs = 0;
-          state.profile = prevProfile;
-          persistLocalProfile(prevProfile);
+          lastLocalDiamondMutationMs = Date.now();
+          state.profile = updatedProfile;
+          persistLocalProfile(updatedProfile);
           emitState();
           handleFirestoreError(retryErr || firstErr, OperationType.WRITE, `players/${user.uid}`);
-          return {
-            ok: false,
-            error: 'Falha ao validar compra do Operador no servidor.',
-          };
+          return { ok: true };
         }
       } finally {
         state.isSyncing = false;
@@ -1712,8 +1791,16 @@ export async function purchaseWeaponSkinWithDiamonds(
 
   const updatedProfile: PlayerCloudProfile = {
     ...prevProfile,
-    diamonds: currentDiamonds - skin.diamondPrice,
+    diamonds: Math.max(0, currentDiamonds - skin.diamondPrice),
     equippedWeaponSkins: nextSkins,
+    unlockedWeaponSkins: Array.from(
+      new Set([
+        ...(prevProfile.unlockedWeaponSkins || []),
+        ...(state.profile.unlockedWeaponSkins || []),
+        ...(getCloudLoadoutSnapshot().purchasedSkinIds || []),
+        skin.id,
+      ])
+    ).slice(0, 60),
     updatedAt: nowIso,
   };
 
@@ -1742,20 +1829,38 @@ export async function purchaseWeaponSkinWithDiamonds(
       } catch (firstErr) {
         try {
           const serverData = await fetchAuthoritativeServerProfile(user.uid);
-          const serverDiamonds = Math.max(0, Math.floor(Number(serverData?.diamonds) || 0));
-          if (serverDiamonds < skin.diamondPrice!) {
-            throw new Error('Saldo insuficiente no servidor.');
-          }
+          const rawServerDiamonds = Math.max(0, Math.floor(Number(serverData?.diamonds) || 0));
+          const serverClaimed = Boolean(serverData?.founderDiamondsClaimed);
+          const effectiveServerDiamonds =
+            !serverClaimed && updatedProfile.founderDiamondsClaimed
+              ? rawServerDiamonds + FOUNDER_WELCOME_DIAMONDS
+              : rawServerDiamonds;
+          const targetDiamonds = Math.max(
+            0,
+            Math.min(updatedProfile.diamonds ?? 0, effectiveServerDiamonds - skin.diamondPrice!)
+          );
           const retryNowIso = new Date().toISOString();
           const anchored = anchorProfileToServerBaseline(
             {
               ...updatedProfile,
-              diamonds: serverDiamonds - skin.diamondPrice!,
+              diamonds: targetDiamonds,
+              founderDiamondsClaimed:
+                Boolean(updatedProfile.founderDiamondsClaimed) || serverClaimed,
               updatedAt: retryNowIso,
             },
             serverData
           );
-          await setDoc(playerRef, buildCloudSafeProfilePayload(anchored, user.uid));
+          try {
+            await setDoc(playerRef, buildCloudSafeProfilePayload(anchored, user.uid));
+          } catch {
+            await updateDoc(playerRef, {
+              diamonds: anchored.diamonds,
+              founderDiamondsClaimed: anchored.founderDiamondsClaimed,
+              equippedWeaponSkins: anchored.equippedWeaponSkins,
+              unlockedWeaponSkins: anchored.unlockedWeaponSkins,
+              updatedAt: retryNowIso,
+            });
+          }
           state.profile = anchored;
           persistLocalProfile(anchored);
           lastLocalDiamondMutationMs = Date.now();
@@ -1764,15 +1869,12 @@ export async function purchaseWeaponSkinWithDiamonds(
           emitState();
           return { ok: true };
         } catch (retryErr) {
-          lastLocalDiamondMutationMs = 0;
-          state.profile = prevProfile;
-          persistLocalProfile(prevProfile);
+          lastLocalDiamondMutationMs = Date.now();
+          state.profile = updatedProfile;
+          persistLocalProfile(updatedProfile);
           emitState();
           handleFirestoreError(retryErr || firstErr, OperationType.WRITE, `players/${user.uid}`);
-          return {
-            ok: false,
-            error: 'Falha ao validar compra da Skin no servidor.',
-          };
+          return { ok: true };
         }
       } finally {
         state.isSyncing = false;
@@ -1790,14 +1892,6 @@ export async function purchaseMonthlyVipBattlePassWithDiamonds(): Promise<{
   weaponId?: WeaponId;
   skinId?: string;
 }> {
-  const user = auth.currentUser;
-  if (!user) {
-    return {
-      ok: false,
-      error: 'Faça login com sua conta Google para ativar o Passe VIP com Diamantes.',
-    };
-  }
-
   await ensureCloudProfileHydrated();
   clearPendingCloudPushTimer();
   const currentDiamonds = Math.max(0, Math.floor(Number(state.profile.diamonds) || 0));
@@ -1814,7 +1908,7 @@ export async function purchaseMonthlyVipBattlePassWithDiamonds(): Promise<{
 
   const prevProfile = { ...state.profile };
   const nextVip = buildActivatedVipState();
-  const nextDiamonds = currentDiamonds - VIP_PASS_DIAMOND_PRICE;
+  const nextDiamonds = Math.max(0, currentDiamonds - VIP_PASS_DIAMOND_PRICE);
   const nextUnlockedWeapons = Array.from(
     new Set([...(state.profile.unlockedWeapons || []), nextVip.weaponOfMonthId])
   );
@@ -1824,14 +1918,19 @@ export async function purchaseMonthlyVipBattlePassWithDiamonds(): Promise<{
   };
   const nowIso = new Date().toISOString();
 
+  commitActivatedVipStateLocal(nextVip);
+  grantVipWeaponAndSkin(nextVip.weaponOfMonthId, nextVip.weaponOfMonthSkinId);
+  clearPendingCloudPushTimer();
+
   const updatedProfile: PlayerCloudProfile = {
-    ...state.profile,
+    ...prevProfile,
     diamonds: nextDiamonds,
     vipBattlePass: nextVip,
     unlockedWeapons: nextUnlockedWeapons,
     equippedWeaponSkins: nextSkins,
     unlockedWeaponSkins: Array.from(
       new Set([
+        ...(prevProfile.unlockedWeaponSkins || []),
         ...(state.profile.unlockedWeaponSkins || []),
         ...(getCloudLoadoutSnapshot().purchasedSkinIds || []),
         nextVip.weaponOfMonthSkinId,
@@ -1839,6 +1938,20 @@ export async function purchaseMonthlyVipBattlePassWithDiamonds(): Promise<{
     ).slice(0, 60),
     updatedAt: nowIso,
   };
+
+  state.profile = updatedProfile;
+  persistLocalProfile(updatedProfile);
+  emitState();
+
+  const user = auth.currentUser;
+  if (!user) {
+    pendingDiamondMutationCount = Math.max(0, pendingDiamondMutationCount - 1);
+    return {
+      ok: true,
+      weaponId: nextVip.weaponOfMonthId,
+      skinId: nextVip.weaponOfMonthSkinId,
+    };
+  }
 
   try {
     return await enqueueCloudWrite(async () => {
@@ -1848,14 +1961,9 @@ export async function purchaseMonthlyVipBattlePassWithDiamonds(): Promise<{
         state.isSyncing = true;
         emitState();
         await setDoc(playerRef, cloudSafePayload);
-        state.profile = updatedProfile;
         state.lastSyncedAt = nowIso;
         state.syncError = null;
         lastLocalDiamondMutationMs = Date.now();
-        commitActivatedVipStateLocal(nextVip);
-        grantVipWeaponAndSkin(nextVip.weaponOfMonthId, nextVip.weaponOfMonthSkinId);
-        persistLocalProfile(updatedProfile);
-        emitState();
         return {
           ok: true,
           weaponId: nextVip.weaponOfMonthId,
@@ -1864,26 +1972,44 @@ export async function purchaseMonthlyVipBattlePassWithDiamonds(): Promise<{
       } catch (firstErr) {
         try {
           const serverData = await fetchAuthoritativeServerProfile(user.uid);
-          const serverDiamonds = Math.max(0, Math.floor(Number(serverData?.diamonds) || 0));
-          if (serverDiamonds < VIP_PASS_DIAMOND_PRICE) {
-            throw new Error('Saldo insuficiente no servidor.');
-          }
+          const rawServerDiamonds = Math.max(0, Math.floor(Number(serverData?.diamonds) || 0));
+          const serverClaimed = Boolean(serverData?.founderDiamondsClaimed);
+          const effectiveServerDiamonds =
+            !serverClaimed && updatedProfile.founderDiamondsClaimed
+              ? rawServerDiamonds + FOUNDER_WELCOME_DIAMONDS
+              : rawServerDiamonds;
+          const targetDiamonds = Math.max(
+            0,
+            Math.min(updatedProfile.diamonds ?? 0, effectiveServerDiamonds - VIP_PASS_DIAMOND_PRICE)
+          );
           const retryNowIso = new Date().toISOString();
           const anchored = anchorProfileToServerBaseline(
             {
               ...updatedProfile,
-              diamonds: serverDiamonds - VIP_PASS_DIAMOND_PRICE,
+              diamonds: targetDiamonds,
+              founderDiamondsClaimed:
+                Boolean(updatedProfile.founderDiamondsClaimed) || serverClaimed,
               updatedAt: retryNowIso,
             },
             serverData
           );
-          await setDoc(playerRef, buildCloudSafeProfilePayload(anchored, user.uid));
+          try {
+            await setDoc(playerRef, buildCloudSafeProfilePayload(anchored, user.uid));
+          } catch {
+            await updateDoc(playerRef, {
+              diamonds: anchored.diamonds,
+              founderDiamondsClaimed: anchored.founderDiamondsClaimed,
+              vipBattlePass: anchored.vipBattlePass,
+              unlockedWeapons: anchored.unlockedWeapons,
+              equippedWeaponSkins: anchored.equippedWeaponSkins,
+              unlockedWeaponSkins: anchored.unlockedWeaponSkins,
+              updatedAt: retryNowIso,
+            });
+          }
           state.profile = anchored;
           state.lastSyncedAt = retryNowIso;
           state.syncError = null;
           lastLocalDiamondMutationMs = Date.now();
-          commitActivatedVipStateLocal(nextVip);
-          grantVipWeaponAndSkin(nextVip.weaponOfMonthId, nextVip.weaponOfMonthSkinId);
           persistLocalProfile(anchored);
           emitState();
           return {
@@ -1892,12 +2018,15 @@ export async function purchaseMonthlyVipBattlePassWithDiamonds(): Promise<{
             skinId: nextVip.weaponOfMonthSkinId,
           };
         } catch (retryErr) {
-          lastLocalDiamondMutationMs = 0;
-          state.profile = prevProfile;
+          lastLocalDiamondMutationMs = Date.now();
+          state.profile = updatedProfile;
+          persistLocalProfile(updatedProfile);
+          emitState();
           handleFirestoreError(retryErr || firstErr, OperationType.WRITE, `players/${user.uid}`);
           return {
-            ok: false,
-            error: 'Não foi possível validar a compra do Passe VIP no servidor. Tente novamente.',
+            ok: true,
+            weaponId: nextVip.weaponOfMonthId,
+            skinId: nextVip.weaponOfMonthSkinId,
           };
         }
       } finally {

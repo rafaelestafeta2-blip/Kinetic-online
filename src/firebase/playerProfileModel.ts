@@ -471,12 +471,26 @@ export function mergeLocalAndCloudProfiles(
 
   const cloudHasFounderClaim = Boolean(cloud?.founderDiamondsClaimed);
   const localHasFounderClaim = Boolean(local.founderDiamondsClaimed);
-  const mergedFounderClaimed = cloud
+  const mergedFounderClaimed = isFreshGuestHydration
     ? cloudHasFounderClaim
-    : localHasFounderClaim;
-  const mergedDiamonds = cloud
-    ? Math.max(0, Math.floor(Number(cloud.diamonds) || 0))
-    : Math.max(0, Math.floor(Number(local.diamonds) || 0));
+    : cloudHasFounderClaim || localHasFounderClaim;
+  const cloudDiamonds = Math.max(0, Math.floor(Number(cloud?.diamonds) || 0));
+  const localDiamonds = Math.max(0, Math.floor(Number(local.diamonds) || 0));
+  let mergedDiamonds: number;
+  if (!cloud) {
+    mergedDiamonds = localDiamonds;
+  } else if (isFreshGuestHydration) {
+    mergedDiamonds = cloudDiamonds;
+  } else if (localHasFounderClaim && !cloudHasFounderClaim) {
+    mergedDiamonds = localDiamonds;
+  } else if (localHasFounderClaim && cloudHasFounderClaim) {
+    mergedDiamonds =
+      localDiamonds < cloudDiamonds && cloudDiamonds <= 1500
+        ? localDiamonds
+        : cloudDiamonds;
+  } else {
+    mergedDiamonds = cloudDiamonds;
+  }
 
   savePlayerXpDirect(mergedXp);
   savePlayerCashDirect(mergedCash);
