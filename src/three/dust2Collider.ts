@@ -11,6 +11,7 @@ export interface Dust2TriEntry {
   maxY: number;
   minZ: number;
   maxZ: number;
+  playerClipOnly?: boolean;
 }
 
 export interface LadderZone {
@@ -59,7 +60,11 @@ export class Dust2TriangleCollider {
     this.radarDataUrl = '';
   }
 
-  public buildFromGroup(rootGroup: THREE.Object3D, customLadders: LadderZone[] = []): void {
+  public buildFromGroup(
+    rootGroup: THREE.Object3D,
+    customLadders: LadderZone[] = [],
+    xzBounds?: { minX: number; maxX: number; minZ: number; maxZ: number }
+  ): void {
     this.clear();
     this.ladders = customLadders.map((l) => ({ ...l }));
     rootGroup.updateMatrixWorld(true);
@@ -71,11 +76,26 @@ export class Dust2TriangleCollider {
     rootGroup.traverse((child) => {
       if (!(child instanceof THREE.Mesh) || !child.geometry) return;
       if (child.userData.targetId || child.userData.ignoreCollider) return;
+      const isPlayerClipOnly = Boolean(child.userData.playerClipOnly);
 
       const geom = child.geometry as THREE.BufferGeometry;
       if (!geom.boundingBox) geom.computeBoundingBox();
-      if (geom.boundingBox) {
+      if (geom.boundingBox && !isPlayerClipOnly) {
         const worldBox = geom.boundingBox.clone().applyMatrix4(child.matrixWorld);
+        if (xzBounds) {
+          if (
+            worldBox.max.x < xzBounds.minX ||
+            worldBox.min.x > xzBounds.maxX ||
+            worldBox.max.z < xzBounds.minZ ||
+            worldBox.min.z > xzBounds.maxZ
+          ) {
+            return;
+          }
+          worldBox.min.x = Math.max(worldBox.min.x, xzBounds.minX);
+          worldBox.max.x = Math.min(worldBox.max.x, xzBounds.maxX);
+          worldBox.min.z = Math.max(worldBox.min.z, xzBounds.minZ);
+          worldBox.max.z = Math.min(worldBox.max.z, xzBounds.maxZ);
+        }
         this.boundingBoxes.push(worldBox);
         this.worldBounds.union(worldBox);
       }
@@ -106,6 +126,21 @@ export class Dust2TriangleCollider {
         _bB.fromBufferAttribute(posAttr, i1).applyMatrix4(matWorld);
         _bC.fromBufferAttribute(posAttr, i2).applyMatrix4(matWorld);
 
+        const minX = Math.min(_bA.x, _bB.x, _bC.x);
+        const maxX = Math.max(_bA.x, _bB.x, _bC.x);
+        const minZ = Math.min(_bA.z, _bB.z, _bC.z);
+        const maxZ = Math.max(_bA.z, _bB.z, _bC.z);
+        if (
+          xzBounds &&
+          !isPlayerClipOnly &&
+          (maxX < xzBounds.minX ||
+            minX > xzBounds.maxX ||
+            maxZ < xzBounds.minZ ||
+            minZ > xzBounds.maxZ)
+        ) {
+          continue;
+        }
+
         _bE1.subVectors(_bB, _bA);
         _bE2.subVectors(_bC, _bA);
         _bN.crossVectors(_bE1, _bE2);
@@ -119,12 +154,8 @@ export class Dust2TriangleCollider {
         const c = _bC.clone();
         const normal = _bN.clone();
 
-        const minX = Math.min(a.x, b.x, c.x);
-        const maxX = Math.max(a.x, b.x, c.x);
         const minY = Math.min(a.y, b.y, c.y);
         const maxY = Math.max(a.y, b.y, c.y);
-        const minZ = Math.min(a.z, b.z, c.z);
-        const maxZ = Math.max(a.z, b.z, c.z);
 
         const spanX = maxX - minX;
         const spanZ = maxZ - minZ;
@@ -148,6 +179,7 @@ export class Dust2TriangleCollider {
           maxY,
           minZ,
           maxZ,
+          playerClipOnly: isPlayerClipOnly || undefined,
         };
 
         const absNy = Math.abs(normal.y);
@@ -157,7 +189,9 @@ export class Dust2TriangleCollider {
         const maxCz = Math.floor(entry.maxZ / this.cellSize);
 
         if (absNy >= 0.45) {
-          allFloors.push(entry);
+          if (!isPlayerClipOnly) {
+            allFloors.push(entry);
+          }
           for (let cx = minCx; cx <= maxCx; cx++) {
             for (let cz = minCz; cz <= maxCz; cz++) {
               const key = this.cellKey(cx, cz);
@@ -171,8 +205,10 @@ export class Dust2TriangleCollider {
           }
         }
 
-        if (absNy < 0.72) {
-          allWalls.push(entry);
+        if (absNy < (isPlayerClipOnly ? 0.88 : 0.72)) {
+          if (!isPlayerClipOnly) {
+            allWalls.push(entry);
+          }
           for (let cx = minCx; cx <= maxCx; cx++) {
             for (let cz = minCz; cz <= maxCz; cz++) {
               const key = this.cellKey(cx, cz);
@@ -281,6 +317,7 @@ export class Dust2TriangleCollider {
 
         for (let i = 0; i < bucket.length; i++) {
           const t = bucket[i];
+          if (t.playerClipOnly) continue;
           if (
             x < t.minX - 0.05 ||
             x > t.maxX + 0.05 ||
@@ -329,6 +366,7 @@ export class Dust2TriangleCollider {
 
         for (let i = 0; i < bucket.length; i++) {
           const t = bucket[i];
+          if (t.playerClipOnly) continue;
           if (
             x < t.minX - 0.05 ||
             x > t.maxX + 0.05 ||
@@ -524,6 +562,7 @@ export class Dust2TriangleCollider {
         if (!bucket) continue;
         for (let i = 0; i < bucket.length; i++) {
           const t = bucket[i];
+          if (t.playerClipOnly) continue;
           const upward = t.normal.y >= 0.45;
           const flippedFloor = t.normal.y <= -0.45;
           if (!upward && !flippedFloor) continue;
@@ -750,6 +789,7 @@ export class Dust2TriangleCollider {
       if (walls) {
         for (let i = 0; i < walls.length; i++) {
           const w = walls[i];
+          if (w.playerClipOnly) continue;
           if (py + step < w.minY || py - step > w.maxY) continue;
           if (_ray.intersectTriangle(w.a, w.b, w.c, false, _hitPt)) {
             const dist = origin.distanceTo(_hitPt);
@@ -765,6 +805,7 @@ export class Dust2TriangleCollider {
       if (floors) {
         for (let i = 0; i < floors.length; i++) {
           const f = floors[i];
+          if (f.playerClipOnly) continue;
           if (py + step < f.minY || py - step > f.maxY) continue;
           if (_ray.intersectTriangle(f.a, f.b, f.c, false, _hitPt)) {
             const dist = origin.distanceTo(_hitPt);

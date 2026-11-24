@@ -220,7 +220,7 @@ export async function loadV23MapGeometry(
         /decal|graffiti|graf|wall_dirt|wall_leaks|wall_cracks|wall_old_paint|puddle|stain|overlay|poster|e_logo|plant_arrow|plant_two|notes|grass_floor|carpet_fringe|ivy|leaves_narrow|round_leaved|barbed_wire|washing|house_wires|rags|distance_bushes|oak_tree|background_house/i;
       const isSource2Yard = mode === 'YARD_V2_BOMB_5V5';
       const _tmpBox = new THREE.Box3();
-      const _tmpCenter = new THREE.Vector3();
+      mapTransformGroup.updateMatrixWorld(true);
 
       mapTransformGroup.traverse((child) => {
         if (!(child instanceof THREE.Mesh)) return;
@@ -232,6 +232,24 @@ export async function loadV23MapGeometry(
           ? child.material
           : [child.material];
 
+        // Official CS2 world_physics playerclip / skyclip invisible boundary meshes
+        const isCs2ClipMesh =
+          meshNameLower.includes('__cs2_playerclip__') ||
+          meshNameLower.includes('__cs2_skyclip__') ||
+          mats.some((m) =>
+            ((m as THREE.Material)?.name || '')
+              .toLowerCase()
+              .includes('__cs2_playerclip_mat__')
+          );
+        if (isCs2ClipMesh) {
+          child.visible = false;
+          child.castShadow = false;
+          child.receiveShadow = false;
+          child.userData.playerClipOnly = true;
+          child.userData.ignoreCollider = false;
+          return;
+        }
+
         let shouldCastShadow = !isSoftwareGl;
         let shouldReceiveShadow = !isSoftwareGl;
         let isNonColliderDecal = false;
@@ -239,14 +257,14 @@ export async function loadV23MapGeometry(
         if (isSource2Yard && child.geometry) {
           if (!child.geometry.boundingBox) child.geometry.computeBoundingBox();
           if (child.geometry.boundingBox) {
-            _tmpBox.copy(child.geometry.boundingBox);
-            _tmpBox.getCenter(_tmpCenter);
-            // Distant out-of-bounds 3D skybox geometry never needs shadows or collision triangles
+            _tmpBox.copy(child.geometry.boundingBox).applyMatrix4(child.matrixWorld);
+            // Only skip meshes whose ENTIRE world AABB is completely outside the playable arena
+            // (never check center alone, because Source 2 merges playable ground + distant skybox into one mesh!)
             if (
-              _tmpCenter.x < -75 ||
-              _tmpCenter.x > 92 ||
-              _tmpCenter.z < -82 ||
-              _tmpCenter.z > 96
+              _tmpBox.max.x < -82 ||
+              _tmpBox.min.x > 96 ||
+              _tmpBox.max.z < -85 ||
+              _tmpBox.min.z > 98
             ) {
               shouldCastShadow = false;
               isNonColliderDecal = true;
@@ -360,7 +378,11 @@ export async function loadV23MapGeometry(
       bundle.levelGroup.updateMatrixWorld(true);
       bundle.mapGeometryGroup = mapTransformGroup;
 
-      bundle.collider.buildFromGroup(mapTransformGroup, []);
+      bundle.collider.buildFromGroup(
+        mapTransformGroup,
+        [],
+        isSource2Yard ? { minX: -76, maxX: 90, minZ: -80, maxZ: 94 } : undefined
+      );
 
       for (let i = 0; i < bundle.targets.length; i++) {
         const bot = bundle.targets[i];
