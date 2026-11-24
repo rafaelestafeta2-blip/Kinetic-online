@@ -40,6 +40,10 @@ export function isNewGlbBombArena(mode: DrillMode): boolean {
     a === 'HANGAR_BOMB_5V5' ||
     a === 'EASTERN_CITY_BOMB_5V5' ||
     a === 'MIRAGE_ANUBIS_BOMB_5V5' ||
+    a === 'CSGO_ASSAULT_BOMB_5V5' ||
+    a === 'DE_DST_BOMB_5V5' ||
+    a === 'MP_NUKED_BOMB_5V5' ||
+    a === 'DE_SUPPLY_BOMB_5V5' ||
     a === 'STATION_CAPTURE_5V5' ||
     a === 'STATION_TDM_5V5'
   );

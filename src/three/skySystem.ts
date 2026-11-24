@@ -202,6 +202,10 @@ export class TacticalSkySystem {
       mode === 'EASTERN_CITY_BOMB_5V5' || mode === 'MAP_TEST_EASTERN';
     const isMirageAnubis =
       mode === 'MIRAGE_ANUBIS_BOMB_5V5' || mode === 'MAP_TEST_MIRAGE';
+    const isCsgoAssault = mode === 'CSGO_ASSAULT_BOMB_5V5';
+    const isDeDst = mode === 'DE_DST_BOMB_5V5';
+    const isMpNuked = mode === 'MP_NUKED_BOMB_5V5';
+    const isDeSupply = mode === 'DE_SUPPLY_BOMB_5V5';
     const isStationArena = mode === 'STATION_CAPTURE_5V5' || mode === 'STATION_TDM_5V5';
     const isYard = mode === 'YARD_BOMB_5V5';
     this.isOutdoor =
@@ -211,6 +215,10 @@ export class TacticalSkySystem {
       isHangar ||
       isEasternCity ||
       isMirageAnubis ||
+      isCsgoAssault ||
+      isDeDst ||
+      isMpNuked ||
+      isDeSupply ||
       isStationArena ||
       isYard;
 
@@ -218,7 +226,7 @@ export class TacticalSkySystem {
     const uniforms = this.sky.material.uniforms;
     const isMobile = isMobileGpuTarget();
 
-    if (isDust2 || isMirageAnubis) {
+    if (isDust2 || isMirageAnubis || isDeDst || isMpNuked) {
       this.activeBiome = 'desert';
       // Vivid azure sky + warm golden sandstone contrast with unified single-sun shadows
       const phi = THREE.MathUtils.degToRad(90 - 44);

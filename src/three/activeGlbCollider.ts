@@ -16,6 +16,10 @@ export interface GlbColliderHost {
   hangarLevelData: LevelWithCollider;
   easternCityLevelData: LevelWithCollider;
   mirageAnubisLevelData: LevelWithCollider;
+  csgoAssaultLevelData: LevelWithCollider;
+  deDstLevelData: LevelWithCollider;
+  mpNukedLevelData: LevelWithCollider;
+  deSupplyLevelData: LevelWithCollider;
   stationArenaLevelData: LevelWithCollider;
 }
 
@@ -35,6 +39,14 @@ export function getActiveGlbCollider(
       return engine.easternCityLevelData.collider;
     case 'MIRAGE_ANUBIS_BOMB_5V5':
       return engine.mirageAnubisLevelData.collider;
+    case 'CSGO_ASSAULT_BOMB_5V5':
+      return engine.csgoAssaultLevelData.collider;
+    case 'DE_DST_BOMB_5V5':
+      return engine.deDstLevelData.collider;
+    case 'MP_NUKED_BOMB_5V5':
+      return engine.mpNukedLevelData.collider;
+    case 'DE_SUPPLY_BOMB_5V5':
+      return engine.deSupplyLevelData.collider;
     case 'STATION_CAPTURE_5V5':
     case 'STATION_TDM_5V5':
       return engine.stationArenaLevelData.collider;
@@ -52,6 +64,10 @@ export function isGlbNavMeshMode(mode: DrillMode): boolean {
     mode === 'HANGAR_BOMB_5V5' ||
     mode === 'EASTERN_CITY_BOMB_5V5' ||
     mode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
+    mode === 'CSGO_ASSAULT_BOMB_5V5' ||
+    mode === 'DE_DST_BOMB_5V5' ||
+    mode === 'MP_NUKED_BOMB_5V5' ||
+    mode === 'DE_SUPPLY_BOMB_5V5' ||
     mode === 'STATION_CAPTURE_5V5' ||
     mode === 'STATION_TDM_5V5'
   );

@@ -65,6 +65,14 @@ export function updatePlayerMovementAndCollision(engine: any, dt: number): void 
                   ? engine.easternCityLevelData.collider
                 : engine.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5'
                   ? engine.mirageAnubisLevelData.collider
+                : engine.state.drillMode === 'CSGO_ASSAULT_BOMB_5V5'
+                  ? engine.csgoAssaultLevelData.collider
+                : engine.state.drillMode === 'DE_DST_BOMB_5V5'
+                  ? engine.deDstLevelData.collider
+                : engine.state.drillMode === 'MP_NUKED_BOMB_5V5'
+                  ? engine.mpNukedLevelData.collider
+                : engine.state.drillMode === 'DE_SUPPLY_BOMB_5V5'
+                  ? engine.deSupplyLevelData.collider
                 : engine.state.drillMode === 'STATION_CAPTURE_5V5' ||
                     engine.state.drillMode === 'STATION_TDM_5V5'
                   ? engine.stationArenaLevelData.collider
@@ -135,6 +143,30 @@ export function updatePlayerMovementAndCollision(engine: any, dt: number): void 
       );
     } else if (engine.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5') {
       lowCeilingAbove = engine.mirageAnubisLevelData.collider.hasLowCeiling(
+        engine.playerPos.x,
+        engine.playerPos.y,
+        engine.playerPos.z
+      );
+    } else if (engine.state.drillMode === 'CSGO_ASSAULT_BOMB_5V5') {
+      lowCeilingAbove = engine.csgoAssaultLevelData.collider.hasLowCeiling(
+        engine.playerPos.x,
+        engine.playerPos.y,
+        engine.playerPos.z
+      );
+    } else if (engine.state.drillMode === 'DE_DST_BOMB_5V5') {
+      lowCeilingAbove = engine.deDstLevelData.collider.hasLowCeiling(
+        engine.playerPos.x,
+        engine.playerPos.y,
+        engine.playerPos.z
+      );
+    } else if (engine.state.drillMode === 'MP_NUKED_BOMB_5V5') {
+      lowCeilingAbove = engine.mpNukedLevelData.collider.hasLowCeiling(
+        engine.playerPos.x,
+        engine.playerPos.y,
+        engine.playerPos.z
+      );
+    } else if (engine.state.drillMode === 'DE_SUPPLY_BOMB_5V5') {
+      lowCeilingAbove = engine.deSupplyLevelData.collider.hasLowCeiling(
         engine.playerPos.x,
         engine.playerPos.y,
         engine.playerPos.z
@@ -412,6 +444,10 @@ export function updatePlayerMovementAndCollision(engine: any, dt: number): void 
     const isHangar = engine.state.drillMode === 'HANGAR_BOMB_5V5';
     const isEasternCity = engine.state.drillMode === 'EASTERN_CITY_BOMB_5V5';
     const isMirageAnubis = engine.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5';
+    const isCsgoAssault = engine.state.drillMode === 'CSGO_ASSAULT_BOMB_5V5';
+    const isDeDst = engine.state.drillMode === 'DE_DST_BOMB_5V5';
+    const isMpNuked = engine.state.drillMode === 'MP_NUKED_BOMB_5V5';
+    const isDeSupply = engine.state.drillMode === 'DE_SUPPLY_BOMB_5V5';
     const isStationArena =
       engine.state.drillMode === 'STATION_CAPTURE_5V5' ||
       engine.state.drillMode === 'STATION_TDM_5V5';
@@ -427,6 +463,14 @@ export function updatePlayerMovementAndCollision(engine: any, dt: number): void 
               ? engine.easternCityLevelData.collider
             : isMirageAnubis
               ? engine.mirageAnubisLevelData.collider
+            : isCsgoAssault
+              ? engine.csgoAssaultLevelData.collider
+            : isDeDst
+              ? engine.deDstLevelData.collider
+            : isMpNuked
+              ? engine.mpNukedLevelData.collider
+            : isDeSupply
+              ? engine.deSupplyLevelData.collider
             : isStationArena
               ? engine.stationArenaLevelData.collider
             : null;

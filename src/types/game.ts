@@ -54,6 +54,10 @@ export type DrillMode =
   | 'HANGAR_BOMB_5V5'
   | 'EASTERN_CITY_BOMB_5V5'
   | 'MIRAGE_ANUBIS_BOMB_5V5'
+  | 'CSGO_ASSAULT_BOMB_5V5'
+  | 'DE_DST_BOMB_5V5'
+  | 'MP_NUKED_BOMB_5V5'
+  | 'DE_SUPPLY_BOMB_5V5'
   | 'STATION_CAPTURE_5V5'
   | 'STATION_TDM_5V5'
   /** Isolated GLB+floor harness (no online / bomb / bots). */

@@ -137,6 +137,10 @@ export function updateTargetsAndCombatAI(engine: any, dt: number): void {
       engine.state.drillMode === 'HANGAR_BOMB_5V5' ||
       engine.state.drillMode === 'EASTERN_CITY_BOMB_5V5' ||
       engine.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
+      engine.state.drillMode === 'CSGO_ASSAULT_BOMB_5V5' ||
+      engine.state.drillMode === 'DE_DST_BOMB_5V5' ||
+      engine.state.drillMode === 'MP_NUKED_BOMB_5V5' ||
+      engine.state.drillMode === 'DE_SUPPLY_BOMB_5V5' ||
       engine.state.drillMode === 'STATION_CAPTURE_5V5';
 
     if (engine.state.drillMode !== 'FREE_RANGE' && engine.targets.length > 0) {

@@ -18,6 +18,10 @@ import {
   MIRAGE_ANUBIS_BOMB_SITE_B,
 } from '../three/mirageAnubisLevelBuilder';
 import {
+  V23_MAP_CONFIGS,
+  isV23BombMapMode,
+} from '../three/v23MapsLevelBuilder';
+import {
   STATION_ARENA_VANGUARD_FLAG_BASE,
   STATION_ARENA_BLACKTHORN_FLAG_BASE,
 } from '../three/stationArenaLevelBuilder';
@@ -72,14 +76,15 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
       const isHangar = drillMode === 'HANGAR_BOMB_5V5';
       const isEasternCity = drillMode === 'EASTERN_CITY_BOMB_5V5';
       const isMirageAnubis = drillMode === 'MIRAGE_ANUBIS_BOMB_5V5';
+      const isV23Map = isV23BombMapMode(drillMode);
       const isStationCapture = drillMode === 'STATION_CAPTURE_5V5';
       const isStationTdm = drillMode === 'STATION_TDM_5V5';
-      const isBombMode = isYard || isDust2 || isAssault || isIndustria || isHangar || isEasternCity || isMirageAnubis;
-      const scale = isStationCapture || isStationTdm ? 1.35 : isDust2 || isAssault || isIndustria || isHangar || isEasternCity || isMirageAnubis ? 0.88 : isYard ? 1.38 : 2.0;
+      const isBombMode = isYard || isDust2 || isAssault || isIndustria || isHangar || isEasternCity || isMirageAnubis || isV23Map;
+      const scale = isStationCapture || isStationTdm ? 1.35 : isDust2 || isAssault || isIndustria || isHangar || isEasternCity || isMirageAnubis || isV23Map ? 0.88 : isYard ? 1.38 : 2.0;
       const maxRange = center - 7;
 
       ctx.clearRect(0, 0, size, size);
-      ctx.fillStyle = isDust2 || isMirageAnubis ? '#1e1914' : '#121820';
+      ctx.fillStyle = isDust2 || isMirageAnubis || drillMode === 'DE_DST_BOMB_5V5' ? '#1e1914' : '#121820';
       ctx.fillRect(0, 0, size, size);
 
       ctx.save();
@@ -142,6 +147,11 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
       } else if (isMirageAnubis) {
         drawSectorRect(-32.5, -31.5, 110, 112, '#6c5844');
         drawSectorRect(-33, -40, 22, 18, '#826b53');
+      } else if (isV23Map && drillMode && isV23BombMapMode(drillMode)) {
+        const cfg = V23_MAP_CONFIGS[drillMode];
+        drawSectorRect(0, 0, 110, 110, drillMode === 'DE_DST_BOMB_5V5' ? '#6c5844' : '#283548');
+        drawSectorRect(cfg.bombSiteA.x, cfg.bombSiteA.z, 18, 18, '#4c2626', 'rgba(248,113,113,0.55)');
+        drawSectorRect(cfg.bombSiteB.x, cfg.bombSiteB.z, 18, 18, '#233b4e', 'rgba(56,189,248,0.55)');
       } else if (isStationCapture || isStationTdm) {
         drawSectorRect(0, 0, 56, 48, '#243042');
         drawSectorRect(-10, -16, 16, 12, '#12355b', 'rgba(56,189,248,0.75)');
@@ -167,32 +177,38 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
 
       // Draw Bomb Site A and B pins on minimap
       if (isBombMode) {
-        const siteA = isDust2
-          ? DUST2_BOMB_SITE_A
-          : isAssault
-            ? ASSAULT_BOMB_SITE_A
-            : isIndustria
-              ? INDUSTRIA_BOMB_SITE_A
-              : isHangar
-                ? HANGAR_BOMB_SITE_A
-                : isEasternCity
-                  ? EASTERN_CITY_BOMB_SITE_A
-                : isMirageAnubis
-                  ? MIRAGE_ANUBIS_BOMB_SITE_A
-                : YARD_BOMB_SITE_A;
-        const siteB = isDust2
-          ? DUST2_BOMB_SITE_B
-          : isAssault
-            ? ASSAULT_BOMB_SITE_B
-            : isIndustria
-              ? INDUSTRIA_BOMB_SITE_B
-              : isHangar
-                ? HANGAR_BOMB_SITE_B
-                : isEasternCity
-                  ? EASTERN_CITY_BOMB_SITE_B
-                : isMirageAnubis
-                  ? MIRAGE_ANUBIS_BOMB_SITE_B
-                : YARD_BOMB_SITE_B;
+        const siteA =
+          isV23Map && drillMode && isV23BombMapMode(drillMode)
+            ? V23_MAP_CONFIGS[drillMode].bombSiteA
+            : isDust2
+            ? DUST2_BOMB_SITE_A
+            : isAssault
+              ? ASSAULT_BOMB_SITE_A
+              : isIndustria
+                ? INDUSTRIA_BOMB_SITE_A
+                : isHangar
+                  ? HANGAR_BOMB_SITE_A
+                  : isEasternCity
+                    ? EASTERN_CITY_BOMB_SITE_A
+                  : isMirageAnubis
+                    ? MIRAGE_ANUBIS_BOMB_SITE_A
+                  : YARD_BOMB_SITE_A;
+        const siteB =
+          isV23Map && drillMode && isV23BombMapMode(drillMode)
+            ? V23_MAP_CONFIGS[drillMode].bombSiteB
+            : isDust2
+            ? DUST2_BOMB_SITE_B
+            : isAssault
+              ? ASSAULT_BOMB_SITE_B
+              : isIndustria
+                ? INDUSTRIA_BOMB_SITE_B
+                : isHangar
+                  ? HANGAR_BOMB_SITE_B
+                  : isEasternCity
+                    ? EASTERN_CITY_BOMB_SITE_B
+                  : isMirageAnubis
+                    ? MIRAGE_ANUBIS_BOMB_SITE_B
+                  : YARD_BOMB_SITE_B;
         const drawSitePin = (sx: number, sz: number, label: string, color: string) => {
           let rx = (sx - playerX) * scale;
           let rz = (sz - playerZ) * scale;

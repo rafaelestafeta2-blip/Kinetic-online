@@ -91,6 +91,10 @@ export function tryStartMantle(engine: any): boolean {
   const isHangar = engine.state.drillMode === 'HANGAR_BOMB_5V5';
   const isEasternCity = engine.state.drillMode === 'EASTERN_CITY_BOMB_5V5';
   const isMirageAnubis = engine.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5';
+  const isCsgoAssault = engine.state.drillMode === 'CSGO_ASSAULT_BOMB_5V5';
+  const isDeDst = engine.state.drillMode === 'DE_DST_BOMB_5V5';
+  const isMpNuked = engine.state.drillMode === 'MP_NUKED_BOMB_5V5';
+  const isDeSupply = engine.state.drillMode === 'DE_SUPPLY_BOMB_5V5';
   const isStationArena =
     engine.state.drillMode === 'STATION_CAPTURE_5V5' ||
     engine.state.drillMode === 'STATION_TDM_5V5';
@@ -106,6 +110,14 @@ export function tryStartMantle(engine: any): boolean {
             ? engine.easternCityLevelData.collider
           : isMirageAnubis
             ? engine.mirageAnubisLevelData.collider
+          : isCsgoAssault
+            ? engine.csgoAssaultLevelData.collider
+          : isDeDst
+            ? engine.deDstLevelData.collider
+          : isMpNuked
+            ? engine.mpNukedLevelData.collider
+          : isDeSupply
+            ? engine.deSupplyLevelData.collider
           : isStationArena
             ? engine.stationArenaLevelData.collider
           : null;

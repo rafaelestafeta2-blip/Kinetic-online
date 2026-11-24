@@ -34,6 +34,13 @@ import {
   loadMirageAnubisMapGeometry,
 } from './mirageAnubisLevelBuilder';
 import {
+  disposeV23MapGeometry,
+  isV23BombMapMode,
+  loadV23MapGeometry,
+  V23_MAP_CONFIGS,
+  V23BombMapMode,
+} from './v23MapsLevelBuilder';
+import {
   disposeStationArenaMapGeometry,
   loadStationArenaMapGeometry,
 } from './stationArenaLevelBuilder';
@@ -87,6 +94,10 @@ export interface MatchArenaPrepareParams {
   hangarLevelData: Dust2LevelBundle;
   easternCityLevelData: Dust2LevelBundle;
   mirageAnubisLevelData: Dust2LevelBundle;
+  csgoAssaultLevelData: Dust2LevelBundle;
+  deDstLevelData: Dust2LevelBundle;
+  mpNukedLevelData: Dust2LevelBundle;
+  deSupplyLevelData: Dust2LevelBundle;
   stationArenaLevelData: Dust2LevelBundle;
   skySystem: TacticalSkySystem;
   grenadeSystem: TacticalGrenadeSystem;
@@ -122,6 +133,10 @@ export async function prepareMatchArena(
     hangarLevelData,
     easternCityLevelData,
     mirageAnubisLevelData,
+    csgoAssaultLevelData,
+    deDstLevelData,
+    mpNukedLevelData,
+    deSupplyLevelData,
     stationArenaLevelData,
     skySystem,
     grenadeSystem,
@@ -138,6 +153,17 @@ export async function prepareMatchArena(
   const isHangar = assetMode === 'HANGAR_BOMB_5V5';
   const isEasternCity = assetMode === 'EASTERN_CITY_BOMB_5V5';
   const isMirageAnubis = assetMode === 'MIRAGE_ANUBIS_BOMB_5V5';
+  const isV23Map = isV23BombMapMode(assetMode);
+  const v23Bundle =
+    assetMode === 'CSGO_ASSAULT_BOMB_5V5'
+      ? csgoAssaultLevelData
+      : assetMode === 'DE_DST_BOMB_5V5'
+        ? deDstLevelData
+        : assetMode === 'MP_NUKED_BOMB_5V5'
+          ? mpNukedLevelData
+          : assetMode === 'DE_SUPPLY_BOMB_5V5'
+            ? deSupplyLevelData
+            : null;
   const isStationArena =
     assetMode === 'STATION_CAPTURE_5V5' || assetMode === 'STATION_TDM_5V5';
   const isYard = assetMode === 'YARD_BOMB_5V5';
@@ -176,7 +202,7 @@ export async function prepareMatchArena(
   // Hide GLB arenas until geometry+collider bake finishes (no under-map flash).
   standerTiroLevelData.levelGroup.visible = false;
   facilityLevelData.levelGroup.visible =
-    !isDust2 && !isAssault && !isIndustria && !isHangar && !isEasternCity && !isMirageAnubis && !isStationArena && !isYard && !isFreeRange;
+    !isDust2 && !isAssault && !isIndustria && !isHangar && !isEasternCity && !isMirageAnubis && !isV23Map && !isStationArena && !isYard && !isFreeRange;
   yardLevelData.levelGroup.visible = isYard;
   dust2LevelData.levelGroup.visible = false;
   assaultLevelData.levelGroup.visible = false;
@@ -184,6 +210,10 @@ export async function prepareMatchArena(
   hangarLevelData.levelGroup.visible = false;
   easternCityLevelData.levelGroup.visible = false;
   mirageAnubisLevelData.levelGroup.visible = false;
+  csgoAssaultLevelData.levelGroup.visible = false;
+  deDstLevelData.levelGroup.visible = false;
+  mpNukedLevelData.levelGroup.visible = false;
+  deSupplyLevelData.levelGroup.visible = false;
   stationArenaLevelData.levelGroup.visible = false;
 
   const loadingManager = new THREE.LoadingManager();
@@ -218,7 +248,9 @@ export async function prepareMatchArena(
       const mappedPct = 6 + ratio * 52;
       const shortName =
         url.split('/').pop() ||
-        (isMirageAnubis
+        (isV23Map
+          ? V23_MAP_CONFIGS[assetMode as V23BombMapMode].glbUrl.split('/').pop() || 'arena_2k.glb'
+          : isMirageAnubis
           ? 'mirage_anubis_2k.glb'
           : isEasternCity
           ? 'eastern_city_2k.glb'
@@ -362,6 +394,30 @@ export async function prepareMatchArena(
       70,
       `COLISORES BOX3 (${mirageAnubisLevelData.collider.boundingBoxes.length}) E ${mirageAnubisLevelData.collider.triangleCount} TRIÂNGULOS PRONTOS!`
     );
+  } else if (isV23Map && v23Bundle) {
+    const v23Mode = assetMode as V23BombMapMode;
+    const v23Label = V23_MAP_CONFIGS[v23Mode].label;
+    reportProgress(8, `ABRINDO ARENA ${v23Label} NA GPU...`);
+    await loadV23MapGeometry(
+      v23Mode,
+      v23Bundle,
+      isSoftwareGl,
+      loadingManager,
+      (byteRatio) => {
+        const mappedPct = 8 + byteRatio * 52;
+        reportProgress(
+          mappedPct,
+          `ENVIANDO ${v23Label} PARA A GPU (${Math.round(byteRatio * 100)}%)...`
+        );
+      }
+    );
+
+    v23Bundle.levelGroup.visible = true;
+    assertGlbFloorReady(v23Mode, v23Bundle);
+    reportProgress(
+      70,
+      `COLISORES BOX3 (${v23Bundle.collider.boundingBoxes.length}) E ${v23Bundle.collider.triangleCount} TRIÂNGULOS PRONTOS!`
+    );
   } else if (isStationArena) {
     reportProgress(
       8,
@@ -432,6 +488,8 @@ export async function prepareMatchArena(
               ? easternCityLevelData.targets
             : isMirageAnubis
               ? mirageAnubisLevelData.targets
+            : isV23Map && v23Bundle
+              ? v23Bundle.targets
             : isStationArena
               ? stationArenaLevelData.targets
             : isYard
@@ -475,6 +533,8 @@ export async function prepareMatchArena(
             ? easternCityLevelData.levelGroup
           : isMirageAnubis
             ? mirageAnubisLevelData.levelGroup
+          : isV23Map && v23Bundle
+            ? v23Bundle.levelGroup
           : isStationArena
             ? stationArenaLevelData.levelGroup
           : isYard
@@ -492,6 +552,7 @@ export async function prepareMatchArena(
     (isHangar && hangarLevelData.mapGeometryGroup) ||
     (isEasternCity && easternCityLevelData.mapGeometryGroup) ||
     (isMirageAnubis && mirageAnubisLevelData.mapGeometryGroup) ||
+    (isV23Map && v23Bundle?.mapGeometryGroup) ||
     (isStationArena && stationArenaLevelData.mapGeometryGroup) ||
     null;
 
@@ -625,6 +686,10 @@ export function cleanupMatchArenaAssets(
   hangarLevelData: Dust2LevelBundle,
   easternCityLevelData: Dust2LevelBundle,
   mirageAnubisLevelData: Dust2LevelBundle,
+  csgoAssaultLevelData: Dust2LevelBundle,
+  deDstLevelData: Dust2LevelBundle,
+  mpNukedLevelData: Dust2LevelBundle,
+  deSupplyLevelData: Dust2LevelBundle,
   stationArenaLevelData: Dust2LevelBundle,
   grenadeSystem?: TacticalGrenadeSystem
 ): void {
@@ -635,6 +700,10 @@ export function cleanupMatchArenaAssets(
   hangarLevelData.levelGroup.visible = false;
   easternCityLevelData.levelGroup.visible = false;
   mirageAnubisLevelData.levelGroup.visible = false;
+  csgoAssaultLevelData.levelGroup.visible = false;
+  deDstLevelData.levelGroup.visible = false;
+  mpNukedLevelData.levelGroup.visible = false;
+  deSupplyLevelData.levelGroup.visible = false;
   stationArenaLevelData.levelGroup.visible = false;
   yardLevelData.levelGroup.visible = false;
   facilityLevelData.levelGroup.visible = false;
@@ -647,6 +716,10 @@ export function cleanupMatchArenaAssets(
   disposeHangarMapGeometry(hangarLevelData);
   disposeEasternCityMapGeometry(easternCityLevelData);
   disposeMirageAnubisMapGeometry(mirageAnubisLevelData);
+  disposeV23MapGeometry(csgoAssaultLevelData);
+  disposeV23MapGeometry(deDstLevelData);
+  disposeV23MapGeometry(mpNukedLevelData);
+  disposeV23MapGeometry(deSupplyLevelData);
   disposeStationArenaMapGeometry(stationArenaLevelData);
 
   // 3. Limpa granadas ativas, fumaça e luzes temporárias

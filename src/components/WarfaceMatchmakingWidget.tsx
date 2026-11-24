@@ -31,6 +31,10 @@ const CASUAL_MAP_POOL: Array<{
   { id: 'HANGAR_BOMB_5V5', title: 'HANGAR', subtitle: 'Base Aérea • Bomb A / B' },
   { id: 'EASTERN_CITY_BOMB_5V5', title: 'EASTERN CITY', subtitle: 'Cidade Leste • Bomb A / B' },
   { id: 'MIRAGE_ANUBIS_BOMB_5V5', title: 'MIRAGE ANUBIS', subtitle: 'Fortaleza Deserto • Bomb A / B' },
+  { id: 'CSGO_ASSAULT_BOMB_5V5', title: 'CSGO ASSAULT HD', subtitle: 'Complexo Industrial • Bomb A / B' },
+  { id: 'DE_DST_BOMB_5V5', title: 'DE_DST DESERT', subtitle: 'Arena Desértica • Bomb A / B' },
+  { id: 'MP_NUKED_BOMB_5V5', title: 'MP_NUKED TOWN', subtitle: 'Vila Nuclear • Bomb A / B' },
+  { id: 'DE_SUPPLY_BOMB_5V5', title: 'DE_SUPPLY BASE', subtitle: 'Base de Suprimentos • Bomb A / B' },
 ];
 
 export const WarfaceMatchmakingWidget: React.FC<WarfaceMatchmakingWidgetProps> = ({

@@ -40,6 +40,10 @@ import {
   getMirageAnubisCalloutForPos,
 } from './mirageAnubisLevelBuilder';
 import {
+  V23_MAP_CONFIGS,
+  isV23BombMapMode,
+} from './v23MapsLevelBuilder';
+import {
   STATION_ARENA_BLACKTHORN_FLAG_BASE,
   STATION_ARENA_VANGUARD_FLAG_BASE,
   getStationArenaCalloutForPos,
@@ -248,6 +252,10 @@ export class YardBombSystem {
   }
 
   private getActiveBombSites(): { siteA: THREE.Vector3; siteB: THREE.Vector3 } {
+    if (isV23BombMapMode(this.activeMode)) {
+      const cfg = V23_MAP_CONFIGS[this.activeMode];
+      return { siteA: cfg.bombSiteA, siteB: cfg.bombSiteB };
+    }
     const isDust2 = this.activeMode === 'DUST2_BOMB_5V5';
     const isAssault = this.activeMode === 'ASSAULT_BOMB_5V5';
     const isIndustria = this.activeMode === 'INDUSTRIA_BOMB_5V5';
@@ -262,7 +270,7 @@ export class YardBombSystem {
       : isAssault
         ? ASSAULT_BOMB_SITE_A
         : isIndustria
-          ? INDUSTRIA_BOMB_SITE_A
+           ? INDUSTRIA_BOMB_SITE_A
           : isHangar
             ? HANGAR_BOMB_SITE_A
             : isEasternCity
@@ -370,7 +378,9 @@ export class YardBombSystem {
       bombStatus: 'CARRIED', plantedSite: null, nearSite: null, plantProgress: 0,
       roundTimerSec: isTdm ? 300 : 125, c4TimerSec: 40, alliesAlive: 5, enemiesAlive: 5,
       calloutLabel:
-        mode === 'DUST2_BOMB_5V5'
+        isV23BombMapMode(mode)
+          ? `BASE VANGUARD (${V23_MAP_CONFIGS[mode].label})`
+          : mode === 'DUST2_BOMB_5V5'
           ? 'BASE VANGUARD (TR SPAWN · SUL)'
           : mode === 'ASSAULT_BOMB_5V5'
             ? 'BASE VANGUARD (CT STREET SPAWN)'
@@ -742,7 +752,9 @@ export class YardBombSystem {
     const isStationTdm = this.activeMode === 'STATION_TDM_5V5';
     const { siteA, siteB } = this.getActiveBombSites();
 
-    this.info.calloutLabel = isDust2
+    this.info.calloutLabel = isV23BombMapMode(this.activeMode)
+      ? V23_MAP_CONFIGS[this.activeMode].getCallout(playerPos.x, playerPos.y, playerPos.z)
+      : isDust2
       ? getDust2CalloutForPos(playerPos.x, playerPos.y, playerPos.z)
       : isAssault
         ? getAssaultCalloutForPos(playerPos.x, playerPos.y, playerPos.z)

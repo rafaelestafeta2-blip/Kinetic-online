@@ -196,6 +196,34 @@ export function getTeamSpawnForArena(
     return { x: -20.0 + offsetX, y: 7.59, z: 0.0 - offsetZ, yaw: Math.PI };
   }
 
+  if (mode === 'CSGO_ASSAULT_BOMB_5V5') {
+    if (team === 'VANGUARD') {
+      return { x: -22.79 + offsetX, y: -0.41, z: -33.44 + offsetZ, yaw: Math.PI };
+    }
+    return { x: 22.11 + offsetX, y: 6.30, z: 25.64 - offsetZ, yaw: 0 };
+  }
+
+  if (mode === 'DE_DST_BOMB_5V5') {
+    if (team === 'VANGUARD') {
+      return { x: -19.93 + offsetX, y: 0.0, z: -64.31 + offsetZ, yaw: Math.PI };
+    }
+    return { x: -11.34 + offsetX, y: 1.42, z: 62.84 - offsetZ, yaw: 0 };
+  }
+
+  if (mode === 'MP_NUKED_BOMB_5V5') {
+    if (team === 'VANGUARD') {
+      return { x: -43.23 + offsetX, y: -0.13, z: -13.92 + offsetZ, yaw: -Math.PI / 2 };
+    }
+    return { x: 42.10 + offsetX, y: -0.13, z: 3.68 - offsetZ, yaw: Math.PI / 2 };
+  }
+
+  if (mode === 'DE_SUPPLY_BOMB_5V5') {
+    if (team === 'VANGUARD') {
+      return { x: -34.95 + offsetX, y: 4.27, z: -43.08 + offsetZ, yaw: Math.PI };
+    }
+    return { x: -26.82 + offsetX, y: 0.13, z: 32.11 - offsetZ, yaw: 0 };
+  }
+
   if (mode === 'STATION_CAPTURE_5V5' || mode === 'STATION_TDM_5V5') {
     if (team === 'VANGUARD') {
       return { x: -14.0 + offsetX, y: 0.15, z: -18.0 + offsetZ, yaw: Math.PI };

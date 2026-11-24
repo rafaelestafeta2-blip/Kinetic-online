@@ -29,6 +29,10 @@ const PRIVATE_ROOM_MAPS: DrillMode[] = [
   'HANGAR_BOMB_5V5',
   'EASTERN_CITY_BOMB_5V5',
   'MIRAGE_ANUBIS_BOMB_5V5',
+  'CSGO_ASSAULT_BOMB_5V5',
+  'DE_DST_BOMB_5V5',
+  'MP_NUKED_BOMB_5V5',
+  'DE_SUPPLY_BOMB_5V5',
   'YARD_BOMB_5V5',
 ];
 
@@ -47,6 +51,10 @@ const MAP_LABELS: Record<string, { title: string; subtitle: string }> = {
   HANGAR_BOMB_5V5: { title: 'HANGAR', subtitle: 'Hangar Militar • Bomb A / B' },
   EASTERN_CITY_BOMB_5V5: { title: 'EASTERN CITY', subtitle: 'Cidade Leste • Bomb A / B' },
   MIRAGE_ANUBIS_BOMB_5V5: { title: 'MIRAGE ANUBIS', subtitle: 'Fortaleza Deserto • Bomb A / B' },
+  CSGO_ASSAULT_BOMB_5V5: { title: 'CSGO ASSAULT HD', subtitle: 'Complexo Industrial • Bomb A / B' },
+  DE_DST_BOMB_5V5: { title: 'DE_DST DESERT', subtitle: 'Arena Desértica • Bomb A / B' },
+  MP_NUKED_BOMB_5V5: { title: 'MP_NUKED TOWN', subtitle: 'Vila Nuclear • Bomb A / B' },
+  DE_SUPPLY_BOMB_5V5: { title: 'DE_SUPPLY BASE', subtitle: 'Base de Suprimentos • Bomb A / B' },
   YARD_BOMB_5V5: { title: 'YARD TÁTICO', subtitle: 'Pátio de Contêineres • Bomb A / B' },
 };
 

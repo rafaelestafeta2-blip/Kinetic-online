@@ -34,6 +34,14 @@ export function thumbForDrillMode(mode: DrillMode | string): string {
       return MAP_SELECT_THUMBS.easternCity;
     case 'MIRAGE_ANUBIS_BOMB_5V5':
       return MAP_SELECT_THUMBS.mirageAnubis;
+    case 'CSGO_ASSAULT_BOMB_5V5':
+      return MAP_SELECT_THUMBS.assault;
+    case 'DE_DST_BOMB_5V5':
+      return MAP_SELECT_THUMBS.dust2;
+    case 'MP_NUKED_BOMB_5V5':
+      return MAP_SELECT_THUMBS.easternCity;
+    case 'DE_SUPPLY_BOMB_5V5':
+      return MAP_SELECT_THUMBS.industria;
     case 'STATION_CAPTURE_5V5':
     case 'STATION_TDM_5V5':
       return MAP_SELECT_THUMBS.stationArena;

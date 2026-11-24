@@ -1458,6 +1458,10 @@ const OFFICIAL_AUTO_DRAW_5V5_MAPS: DrillMode[] = [
   'HANGAR_BOMB_5V5',
   'EASTERN_CITY_BOMB_5V5',
   'MIRAGE_ANUBIS_BOMB_5V5',
+  'CSGO_ASSAULT_BOMB_5V5',
+  'DE_DST_BOMB_5V5',
+  'MP_NUKED_BOMB_5V5',
+  'DE_SUPPLY_BOMB_5V5',
 ];
 
 export function pickRandomOfficial5v5Map(currentMode?: DrillMode): DrillMode {

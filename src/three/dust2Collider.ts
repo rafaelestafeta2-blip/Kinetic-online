@@ -90,22 +90,34 @@ export class Dust2TriangleCollider {
         : Math.floor(posAttr.count / 3);
       totalTris += triCount;
 
+      const _bA = new THREE.Vector3();
+      const _bB = new THREE.Vector3();
+      const _bC = new THREE.Vector3();
+      const _bE1 = new THREE.Vector3();
+      const _bE2 = new THREE.Vector3();
+      const _bN = new THREE.Vector3();
+
       for (let i = 0; i < triCount; i++) {
         const i0 = indexAttr ? indexAttr.getX(i * 3) : i * 3;
         const i1 = indexAttr ? indexAttr.getX(i * 3 + 1) : i * 3 + 1;
         const i2 = indexAttr ? indexAttr.getX(i * 3 + 2) : i * 3 + 2;
 
-        const a = new THREE.Vector3().fromBufferAttribute(posAttr, i0).applyMatrix4(matWorld);
-        const b = new THREE.Vector3().fromBufferAttribute(posAttr, i1).applyMatrix4(matWorld);
-        const c = new THREE.Vector3().fromBufferAttribute(posAttr, i2).applyMatrix4(matWorld);
+        _bA.fromBufferAttribute(posAttr, i0).applyMatrix4(matWorld);
+        _bB.fromBufferAttribute(posAttr, i1).applyMatrix4(matWorld);
+        _bC.fromBufferAttribute(posAttr, i2).applyMatrix4(matWorld);
 
-        const e1 = new THREE.Vector3().subVectors(b, a);
-        const e2 = new THREE.Vector3().subVectors(c, a);
-        const normal = new THREE.Vector3().crossVectors(e1, e2);
-        const areaSq = normal.lengthSq();
-        if (areaSq < 1e-6) continue;
+        _bE1.subVectors(_bB, _bA);
+        _bE2.subVectors(_bC, _bA);
+        _bN.crossVectors(_bE1, _bE2);
+        const areaSq = _bN.lengthSq();
+        if (areaSq < 1e-4) continue;
         const area = Math.sqrt(areaSq) * 0.5;
-        normal.normalize();
+        _bN.normalize();
+
+        const a = _bA.clone();
+        const b = _bB.clone();
+        const c = _bC.clone();
+        const normal = _bN.clone();
 
         const minX = Math.min(a.x, b.x, c.x);
         const maxX = Math.max(a.x, b.x, c.x);

@@ -223,6 +223,10 @@ function isBombMode(mode: string): boolean {
     mode === 'HANGAR_BOMB_5V5' ||
     mode === 'EASTERN_CITY_BOMB_5V5' ||
     mode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
+    mode === 'CSGO_ASSAULT_BOMB_5V5' ||
+    mode === 'DE_DST_BOMB_5V5' ||
+    mode === 'MP_NUKED_BOMB_5V5' ||
+    mode === 'DE_SUPPLY_BOMB_5V5' ||
     mode === 'STATION_CAPTURE_5V5'
   );
 }

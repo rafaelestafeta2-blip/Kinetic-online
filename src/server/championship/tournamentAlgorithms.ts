@@ -7,6 +7,10 @@ export const CHAMPIONSHIP_MAP_POOL = [
   'HANGAR_BOMB_5V5',
   'EASTERN_CITY_BOMB_5V5',
   'MIRAGE_ANUBIS_BOMB_5V5',
+  'CSGO_ASSAULT_BOMB_5V5',
+  'DE_DST_BOMB_5V5',
+  'MP_NUKED_BOMB_5V5',
+  'DE_SUPPLY_BOMB_5V5',
 ] as const;
 
 export interface RoundRobinClanSeed {

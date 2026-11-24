@@ -90,6 +90,10 @@ export const TacticalHudOverlay: React.FC<TacticalHudOverlayProps> = ({
         hud.drillMode === 'HANGAR_BOMB_5V5' ||
         hud.drillMode === 'EASTERN_CITY_BOMB_5V5' ||
         hud.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
+        hud.drillMode === 'CSGO_ASSAULT_BOMB_5V5' ||
+        hud.drillMode === 'DE_DST_BOMB_5V5' ||
+        hud.drillMode === 'MP_NUKED_BOMB_5V5' ||
+        hud.drillMode === 'DE_SUPPLY_BOMB_5V5' ||
         hud.drillMode === 'STATION_CAPTURE_5V5' ||
         hud.drillMode === 'STATION_TDM_5V5')
   );
@@ -456,6 +460,10 @@ export const TacticalHudOverlay: React.FC<TacticalHudOverlayProps> = ({
         hud.drillMode === 'HANGAR_BOMB_5V5' ||
         hud.drillMode === 'EASTERN_CITY_BOMB_5V5' ||
         hud.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
+        hud.drillMode === 'CSGO_ASSAULT_BOMB_5V5' ||
+        hud.drillMode === 'DE_DST_BOMB_5V5' ||
+        hud.drillMode === 'MP_NUKED_BOMB_5V5' ||
+        hud.drillMode === 'DE_SUPPLY_BOMB_5V5' ||
         hud.drillMode === 'STATION_CAPTURE_5V5' ||
         hud.drillMode === 'STATION_TDM_5V5') &&
         hud.yardBomb && (

@@ -72,6 +72,26 @@ const OFFICIAL_RANKED_MAP_POOL: Array<{
     subtitle: 'Fortaleza de Arenito · Plant the Bomb 5v5',
   },
   {
+    id: 'CSGO_ASSAULT_BOMB_5V5',
+    title: 'CSGO ASSAULT HD',
+    subtitle: 'Complexo Industrial e Viaduto · Plant the Bomb 5v5',
+  },
+  {
+    id: 'DE_DST_BOMB_5V5',
+    title: 'DE_DST DESERT',
+    subtitle: 'Arena Desértica Tática · Plant the Bomb 5v5',
+  },
+  {
+    id: 'MP_NUKED_BOMB_5V5',
+    title: 'MP_NUKED TOWN',
+    subtitle: 'Subúrbio de Testes Nucleares · Plant the Bomb 5v5',
+  },
+  {
+    id: 'DE_SUPPLY_BOMB_5V5',
+    title: 'DE_SUPPLY BASE',
+    subtitle: 'Base Militar de Suprimentos · Plant the Bomb 5v5',
+  },
+  {
     id: 'STATION_TDM_5V5',
     title: 'STATION ARENA',
     subtitle: 'Estação Ferroviária · Mata-Mata em Equipe 5v5 (Alvo 40 Abates)',

@@ -162,6 +162,24 @@ export function formatArenaDisplayName(arenaMode: string): string {
   switch (arenaMode) {
     case 'DUST2_BOMB_5V5':
       return 'DUST II · PLANTAR BOMBA 5V5';
+    case 'ASSAULT_BOMB_5V5':
+      return 'CS_ASSAULT · PLANTAR BOMBA 5V5';
+    case 'INDUSTRIA_BOMB_5V5':
+      return 'INDÚSTRIA · PLANTAR BOMBA 5V5';
+    case 'HANGAR_BOMB_5V5':
+      return 'HANGAR · PLANTAR BOMBA 5V5';
+    case 'EASTERN_CITY_BOMB_5V5':
+      return 'EASTERN CITY · PLANTAR BOMBA 5V5';
+    case 'MIRAGE_ANUBIS_BOMB_5V5':
+      return 'MIRAGE ANUBIS · PLANTAR BOMBA 5V5';
+    case 'CSGO_ASSAULT_BOMB_5V5':
+      return 'CSGO ASSAULT HD · PLANTAR BOMBA 5V5';
+    case 'DE_DST_BOMB_5V5':
+      return 'DE_DST DESERT · PLANTAR BOMBA 5V5';
+    case 'MP_NUKED_BOMB_5V5':
+      return 'MP_NUKED TOWN · PLANTAR BOMBA 5V5';
+    case 'DE_SUPPLY_BOMB_5V5':
+      return 'DE_SUPPLY BASE · PLANTAR BOMBA 5V5';
     case 'YARD_BOMB_5V5':
       return 'YARD · PLANTAR BOMBA 5V5';
     case 'STORAGE_BOMB_5V5':

@@ -145,6 +145,26 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
                   title: 'MIRAGE ANUBIS',
                   sub: 'Deserto · WebP 2K',
                 },
+                {
+                  id: 'CSGO_ASSAULT_BOMB_5V5' as DrillMode,
+                  title: 'CSGO ASSAULT HD',
+                  sub: 'Complexo Industrial · 2K',
+                },
+                {
+                  id: 'DE_DST_BOMB_5V5' as DrillMode,
+                  title: 'DE_DST DESERT',
+                  sub: 'Arena Desértica · 2K',
+                },
+                {
+                  id: 'MP_NUKED_BOMB_5V5' as DrillMode,
+                  title: 'MP_NUKED TOWN',
+                  sub: 'Vila Nuclear · 2K',
+                },
+                {
+                  id: 'DE_SUPPLY_BOMB_5V5' as DrillMode,
+                  title: 'DE_SUPPLY BASE',
+                  sub: 'Base de Suprimentos · 2K',
+                },
               ] as const
             ).map((m) => {
               const active = selectedMap === m.id;
@@ -200,6 +220,14 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
                         ? 'EASTERN CITY (.GLB)'
                       : selectedMap === 'MIRAGE_ANUBIS_BOMB_5V5'
                         ? 'MIRAGE ANUBIS (.GLB)'
+                      : selectedMap === 'CSGO_ASSAULT_BOMB_5V5'
+                        ? 'CSGO ASSAULT HD (.GLB)'
+                      : selectedMap === 'DE_DST_BOMB_5V5'
+                        ? 'DE_DST DESERT (.GLB)'
+                      : selectedMap === 'MP_NUKED_BOMB_5V5'
+                        ? 'MP_NUKED TOWN (.GLB)'
+                      : selectedMap === 'DE_SUPPLY_BOMB_5V5'
+                        ? 'DE_SUPPLY BASE (.GLB)'
                       : 'DE_DUST2 (.GLB)'}
             </span>
           </div>

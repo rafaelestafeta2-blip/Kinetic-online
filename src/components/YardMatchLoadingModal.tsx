@@ -269,6 +269,14 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
             ? mode === 'MAP_TEST_MIRAGE'
               ? 'TESTE · MIRAGE'
               : 'MIRAGE ANUBIS'
+          : mode === 'CSGO_ASSAULT_BOMB_5V5'
+            ? 'CSGO ASSAULT HD'
+          : mode === 'DE_DST_BOMB_5V5'
+            ? 'DE_DST DESERT'
+          : mode === 'MP_NUKED_BOMB_5V5'
+            ? 'MP_NUKED TOWN'
+          : mode === 'DE_SUPPLY_BOMB_5V5'
+            ? 'DE_SUPPLY BASE'
           : mode === 'STATION_CAPTURE_5V5' || mode === 'STATION_TDM_5V5'
             ? 'STATION ARENA'
           : mode === 'ASSAULT_BOMB_5V5'
@@ -368,6 +376,10 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
       mode === 'HANGAR_BOMB_5V5' ||
       mode === 'EASTERN_CITY_BOMB_5V5' ||
       mode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
+      mode === 'CSGO_ASSAULT_BOMB_5V5' ||
+      mode === 'DE_DST_BOMB_5V5' ||
+      mode === 'MP_NUKED_BOMB_5V5' ||
+      mode === 'DE_SUPPLY_BOMB_5V5' ||
       mode === 'STATION_CAPTURE_5V5' ||
       mode === 'STATION_TDM_5V5' ||
       mode === 'FREE_RANGE' ||
