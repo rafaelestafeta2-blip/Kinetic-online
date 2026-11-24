@@ -231,12 +231,12 @@ export class TacticalSkySystem {
     if (isDust2 || isMirageAnubis || isDeDst || isMpNuked || isYardV2) {
       this.activeBiome = 'desert';
       // Vivid azure sky + warm golden sandstone contrast with unified single-sun shadows
-      const phi = THREE.MathUtils.degToRad(90 - 44);
-      const theta = THREE.MathUtils.degToRad(isMirageAnubis ? 42 : 35);
+      const phi = THREE.MathUtils.degToRad(90 - (isYardV2 ? 34 : 44));
+      const theta = THREE.MathUtils.degToRad(isYardV2 ? 46 : isMirageAnubis ? 42 : 35);
       this.sunDirection.setFromSphericalCoords(1, phi, theta).normalize();
 
-      uniforms.turbidity.value = 1.75;
-      uniforms.rayleigh.value = 2.45;
+      uniforms.turbidity.value = isYardV2 ? 2.1 : 1.75;
+      uniforms.rayleigh.value = isYardV2 ? 2.1 : 2.45;
       uniforms.mieCoefficient.value = 0.0028;
       uniforms.mieDirectionalG.value = 0.86;
       uniforms.sunPosition.value.copy(this.sunDirection);
@@ -251,31 +251,41 @@ export class TacticalSkySystem {
       this.outdoorFallbackBg.setHex(0x3b82f6);
       this.scene.background = this.outdoorFallbackBg;
       this.scene.fog = fogEnabled
-        ? new THREE.FogExp2(0xd6c9b4, isMirageAnubis ? 0.0013 : 0.0015)
+        ? new THREE.FogExp2(0xd6c9b4, isYardV2 ? 0.0011 : isMirageAnubis ? 0.0013 : 0.0015)
         : null;
 
       this.keyLightTarget.position.set(
-        isMirageAnubis ? -33 : -6,
-        isMirageAnubis ? 8 : 4.8,
-        isMirageAnubis ? -30 : -24
+        isMirageAnubis ? -33 : isYardV2 ? 0 : -6,
+        isMirageAnubis ? 8 : isYardV2 ? 4.0 : 4.8,
+        isMirageAnubis ? -30 : isYardV2 ? 8 : -24
       );
       this.keyLight.position
         .copy(this.keyLightTarget.position)
         .addScaledVector(this.sunDirection, isMirageAnubis ? 90 : 85);
-      this.keyLight.color.setHex(0xffebd0);
+      this.keyLight.color.setHex(isYardV2 ? 0xffe6bc : 0xffebd0);
       // Unified single desert sun (duplicate per-map lights removed to cut mobile PBR ALU ~45%)
-      this.keyLight.intensity = isMirageAnubis ? 2.25 : 2.35;
+      this.keyLight.intensity = isYardV2 ? 2.75 : isMirageAnubis ? 2.25 : 2.35;
+      this.keyLight.castShadow = !!(this.renderer && this.renderer.shadowMap.enabled);
       this.updateShadowFrustum(isMirageAnubis ? 100 : 68, 175);
-      this.applyFillRig('desert', isMobile, true);
+      this.applyFillRig('desert', isMobile, true, isYardV2);
       this.applyBiomeEnvironment('desert');
       if ('environmentIntensity' in this.scene) {
         (this.scene as THREE.Scene & { environmentIntensity: number }).environmentIntensity =
-          isMirageAnubis ? 0.58 : 0.64;
+          isYardV2 ? 0.48 : isMirageAnubis ? 0.58 : 0.64;
       }
-    } else if (isAssault || isIndustria || isHangar || isEasternCity || isStationArena || isYard) {
+    } else if (
+      isAssault ||
+      isCsgoAssault ||
+      isDeSupply ||
+      isIndustria ||
+      isHangar ||
+      isEasternCity ||
+      isStationArena ||
+      isYard
+    ) {
       const biomeKind: Exclude<SkyBiomeKind, 'indoor'> = isHangar ? 'hangar' : 'outdoor';
       this.activeBiome = biomeKind;
-      const phi = THREE.MathUtils.degToRad(90 - 44);
+      const phi = THREE.MathUtils.degToRad(90 - 40);
       const theta = THREE.MathUtils.degToRad(52);
       this.sunDirection.setFromSphericalCoords(1, phi, theta).normalize();
 
@@ -292,13 +302,20 @@ export class TacticalSkySystem {
       if (uniforms.cloudDensity) uniforms.cloudDensity.value = 0.5;
       if (uniforms.cloudElevation) uniforms.cloudElevation.value = 0.48;
 
-      const industrialSky = isAssault || isIndustria || isHangar || isEasternCity || isStationArena;
+      const industrialSky =
+        isAssault ||
+        isCsgoAssault ||
+        isDeSupply ||
+        isIndustria ||
+        isHangar ||
+        isEasternCity ||
+        isStationArena;
       this.outdoorFallbackBg.setHex(isHangar ? 0x60a5fa : industrialSky ? 0x4f94e8 : 0x60a5fa);
       this.scene.background = this.outdoorFallbackBg;
       this.scene.fog = fogEnabled
         ? new THREE.FogExp2(
             0xc4d7eb,
-            isEasternCity ? 0.001 : isHangar ? 0.00105 : isIndustria ? 0.0009 : isAssault ? 0.00105 : 0.0022
+            isEasternCity ? 0.001 : isHangar ? 0.00105 : isIndustria ? 0.0009 : isAssault || isCsgoAssault || isDeSupply ? 0.00105 : 0.0022
           )
         : null;
 
@@ -311,20 +328,21 @@ export class TacticalSkySystem {
         .copy(this.keyLightTarget.position)
         .addScaledVector(this.sunDirection, 80);
       this.keyLight.color.setHex(0xfff1d8);
-      // Eastern City & Industria now use this single unified sun (duplicate map lights removed)
-      const unifiedSingleSun = isEasternCity || isIndustria;
+      // Eastern City, Industria, CS:GO Assault & DE_Supply use this single unified sun
+      const unifiedSingleSun = isEasternCity || isIndustria || isCsgoAssault || isDeSupply;
       this.keyLight.intensity = unifiedSingleSun
-        ? 2.25
+        ? 2.35
         : isHangar
           ? 1.85
           : industrialSky
             ? 1.8
             : 1.9;
+      this.keyLight.castShadow = !!(this.renderer && this.renderer.shadowMap.enabled);
       this.updateShadowFrustum(isEasternCity ? 95 : isHangar ? 55 : isIndustria ? 90 : isAssault ? 65 : 52, 165);
-      this.applyFillRig(biomeKind, isMobile, unifiedSingleSun);
+      this.applyFillRig(biomeKind, isMobile, unifiedSingleSun, false);
       this.applyBiomeEnvironment(biomeKind);
       if ('environmentIntensity' in this.scene) {
-        (this.scene as THREE.Scene & { environmentIntensity: number }).environmentIntensity = 0.72;
+        (this.scene as THREE.Scene & { environmentIntensity: number }).environmentIntensity = 0.62;
       }
     } else {
       this.activeBiome = 'indoor';
@@ -338,7 +356,7 @@ export class TacticalSkySystem {
       this.keyLight.color.setHex(0xe2e8f0);
       this.keyLight.intensity = 1.1;
       this.keyLight.castShadow = false;
-      this.applyFillRig('indoor', isMobile, false);
+      this.applyFillRig('indoor', isMobile, false, false);
       this.applyBiomeEnvironment('indoor');
       if ('environmentIntensity' in this.scene) {
         (this.scene as THREE.Scene & { environmentIntensity: number }).environmentIntensity = 0.95;
@@ -351,13 +369,14 @@ export class TacticalSkySystem {
   private applyFillRig(
     kind: SkyBiomeKind,
     isMobile: boolean,
-    unifiedSingleSun: boolean
+    unifiedSingleSun: boolean,
+    highContrastSun: boolean
   ): void {
     if (this.hemiLight) {
       if (kind === 'desert') {
         this.hemiLight.color.setHex(0x9bd6ff);
-        this.hemiLight.groundColor.setHex(0x7c5d3d);
-        this.hemiLight.intensity = unifiedSingleSun ? 0.92 : 0.42;
+        this.hemiLight.groundColor.setHex(highContrastSun ? 0x5c442c : 0x7c5d3d);
+        this.hemiLight.intensity = highContrastSun ? 0.56 : unifiedSingleSun ? 0.82 : 0.42;
       } else if (kind === 'hangar') {
         this.hemiLight.color.setHex(0x8fd2ff);
         this.hemiLight.groundColor.setHex(0x555b64);

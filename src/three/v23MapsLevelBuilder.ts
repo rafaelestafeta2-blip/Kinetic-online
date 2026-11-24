@@ -215,13 +215,15 @@ export async function loadV23MapGeometry(
       mapTransformGroup.add(modelRoot);
 
       const softDecalOrGlassRe =
-        /decal|graffiti|graf|wall_dirt|wall_leaks|wall_cracks|wall_old_paint|puddle|stain|overlay|poster|e_logo|plant_arrow|glass|window|water/i;
+        /decal|graffiti|graf|wall_dirt|wall_leaks|wall_cracks|wall_old_paint|puddle|stain|overlay|poster|e_logo|plant_arrow|plant_two|notes|glass|window|water/i;
+      const nonColliderDecalRe =
+        /decal|graffiti|graf|wall_dirt|wall_leaks|wall_cracks|wall_old_paint|puddle|stain|overlay|poster|e_logo|plant_arrow|plant_two|notes|grass_floor|carpet_fringe|ivy|leaves_narrow|round_leaved|barbed_wire|washing|house_wires|rags|distance_bushes|oak_tree|background_house/i;
       const isSource2Yard = mode === 'YARD_V2_BOMB_5V5';
+      const _tmpBox = new THREE.Box3();
+      const _tmpCenter = new THREE.Vector3();
 
       mapTransformGroup.traverse((child) => {
         if (!(child instanceof THREE.Mesh)) return;
-        child.castShadow = false;
-        child.receiveShadow = !isSoftwareGl;
         child.frustumCulled = false;
         child.userData.isEnvironment = true;
 
@@ -229,6 +231,29 @@ export async function loadV23MapGeometry(
         const mats = Array.isArray(child.material)
           ? child.material
           : [child.material];
+
+        let shouldCastShadow = !isSoftwareGl;
+        let shouldReceiveShadow = !isSoftwareGl;
+        let isNonColliderDecal = false;
+
+        if (isSource2Yard && child.geometry) {
+          if (!child.geometry.boundingBox) child.geometry.computeBoundingBox();
+          if (child.geometry.boundingBox) {
+            _tmpBox.copy(child.geometry.boundingBox);
+            _tmpBox.getCenter(_tmpCenter);
+            // Distant out-of-bounds 3D skybox geometry never needs shadows or collision triangles
+            if (
+              _tmpCenter.x < -75 ||
+              _tmpCenter.x > 92 ||
+              _tmpCenter.z < -82 ||
+              _tmpCenter.z > 96
+            ) {
+              shouldCastShadow = false;
+              isNonColliderDecal = true;
+            }
+          }
+        }
+
         mats.forEach((m) => {
           const std = m as THREE.MeshStandardMaterial;
           if (!std) return;
@@ -239,13 +264,19 @@ export async function loadV23MapGeometry(
             std.map.anisotropy = isSoftwareGl ? 1 : 4;
             std.map.needsUpdate = true;
           }
-          std.roughness = Math.max(0.65, std.roughness ?? 0.85);
-          std.metalness = Math.min(0.18, std.metalness ?? 0.05);
-          std.envMapIntensity = isSource2Yard ? 0.78 : 0.42;
+          std.roughness = Math.max(0.68, std.roughness ?? 0.85);
+          std.metalness = Math.min(0.16, std.metalness ?? 0.05);
+          std.envMapIntensity = isSource2Yard ? 0.48 : 0.42;
 
           const matName = (std.name || '').toLowerCase();
           const isWaterPlaceholder = !std.map && meshNameLower.includes('water');
           const isUntexturedGlass = !std.map && /glass|window/i.test(matName);
+          const isYardDecorativeGlass =
+            isSource2Yard && /afghan_glass|ural_afghan_glass|window_glass/i.test(matName);
+
+          if (nonColliderDecalRe.test(matName)) {
+            isNonColliderDecal = true;
+          }
 
           if (isWaterPlaceholder) {
             std.color.setHex(0x283a46);
@@ -255,15 +286,30 @@ export async function loadV23MapGeometry(
             std.opacity = 0.58;
             std.depthWrite = false;
             std.side = THREE.DoubleSide;
+            shouldCastShadow = false;
+            shouldReceiveShadow = false;
+          } else if (isYardDecorativeGlass) {
+            // Solid dark reflective tinted glass on unenterable decorative houses/trucks
+            // so players never look through hollow building shells into the void
+            std.color.setHex(0x1b2630);
+            std.roughness = 0.22;
+            std.metalness = 0.35;
+            std.envMapIntensity = 0.85;
+            std.transparent = false;
+            std.opacity = 1.0;
+            std.alphaTest = 0;
+            std.depthWrite = true;
+            std.side = THREE.DoubleSide;
           } else if (isUntexturedGlass) {
-            std.color.setHex(0x3a4d5c);
-            std.roughness = 0.18;
-            std.metalness = 0.1;
+            std.color.setHex(0x2d3f4e);
+            std.roughness = 0.20;
+            std.metalness = 0.18;
             std.transparent = true;
-            std.opacity = 0.30;
+            std.opacity = 0.42;
             std.depthWrite = false;
             std.side = THREE.DoubleSide;
             child.renderOrder = 2;
+            shouldCastShadow = false;
           } else if (std.transparent && softDecalOrGlassRe.test(matName)) {
             // Preserve smooth alpha blending on decals, graffiti, puddles, and real glass
             std.transparent = true;
@@ -274,24 +320,40 @@ export async function loadV23MapGeometry(
             std.polygonOffsetFactor = -2;
             std.polygonOffsetUnits = -2;
             child.renderOrder = 2;
+            shouldCastShadow = false;
           } else if (std.alphaTest > 0 || std.transparent) {
             // True alpha cutouts (foliage, fences, barbed wire, grates, hanging fabric)
             std.alphaTest = Math.max(std.alphaTest || 0, 0.35);
             std.transparent = false;
             std.depthWrite = true;
             std.side = THREE.DoubleSide;
+            // Canopies/fabric/trees cast shadows; tiny grass tufts/wires skip shadow pass for 60 FPS
+            if (/grass|flower|wire|barb|rope|chain|washing|fringe|rags|leaves|ivy|bushes/i.test(matName)) {
+              shouldCastShadow = false;
+            }
           } else {
             // Solid opaque architecture & vehicles (never apply alphaTest on specular-in-alpha textures!)
             std.alphaTest = 0;
             std.transparent = false;
             std.depthWrite = true;
             std.side = THREE.DoubleSide;
-            if (isSource2Yard && std.map && std.color.r + std.color.g + std.color.b < 2.3) {
-              std.color.lerp(_yardDaylightLiftColor, 0.35);
+            // Ground/sand/dirt never needs to cast shadows onto itself (saves huge mobile shadow-pass cost)
+            if (/sand_a|groundrough|asphalt|road|dirt|stones_a|rubble|background_house/i.test(matName)) {
+              shouldCastShadow = false;
+            }
+            // Only lift very dark Source 2 linear tints mildly so sunlight vs shadow contrast stays rich
+            if (isSource2Yard && std.map && std.color.r + std.color.g + std.color.b < 1.55) {
+              std.color.lerp(_yardDaylightLiftColor, 0.16);
             }
           }
           std.needsUpdate = true;
         });
+
+        child.castShadow = shouldCastShadow;
+        child.receiveShadow = shouldReceiveShadow;
+        if (isNonColliderDecal) {
+          child.userData.ignoreCollider = true;
+        }
       });
 
       bundle.levelGroup.add(mapTransformGroup);

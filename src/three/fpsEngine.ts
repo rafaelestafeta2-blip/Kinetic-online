@@ -1705,6 +1705,7 @@ export class TacticalFPSEngine {
       if (cur !== expectedMode && arenaAssetMode(cur) !== expectedMode) return;
       this.placePlayerOnPlayableSpawn(bundle.collider, hint, false);
       this.syncYawObjectToPlayerFeet();
+      requestShadowRefresh(this.shadowBudget);
     };
     if (bundle.isLoaded && bundle.collider.ready) {
       placeNow();

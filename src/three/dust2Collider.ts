@@ -260,6 +260,51 @@ export class Dust2TriangleCollider {
    * near a ceiling never snaps the player onto the roof of the map, and rescues the player
    * onto the nearest walkable floor above if `yBottom` ever drops below the terrain.
    */
+  /**
+   * Samples upward floor support directly near feet (`yBottom - 0.85 .. yBottom + 0.65`)
+   * at a single `(x, z)` column. Zero-GC helper used for foot-capsule crack bridging.
+   */
+  private sampleNearFeetFloor(
+    x: number,
+    yBottom: number,
+    z: number,
+    skyCut: number
+  ): number {
+    const cx = Math.floor(x / this.cellSize);
+    const cz = Math.floor(z / this.cellSize);
+    let bestY = -999;
+
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        const bucket = this.floorGrid.get(this.cellKey(cx + dx, cz + dz));
+        if (!bucket || bucket.length === 0) continue;
+
+        for (let i = 0; i < bucket.length; i++) {
+          const t = bucket[i];
+          if (
+            x < t.minX - 0.05 ||
+            x > t.maxX + 0.05 ||
+            z < t.minZ - 0.05 ||
+            z > t.maxZ + 0.05
+          ) {
+            continue;
+          }
+          if (t.normal.y < 0.45) continue;
+          const yOnTri = this.sampleTriangleY(t, x, z);
+          if (yOnTri === null || yOnTri > skyCut) continue;
+          if (
+            yOnTri <= yBottom + 0.65 &&
+            yOnTri >= yBottom - 0.85 &&
+            yOnTri > bestY
+          ) {
+            bestY = yOnTri;
+          }
+        }
+      }
+    }
+    return bestY;
+  }
+
   public getGroundHeight(x: number, yBottom: number, z: number): number {
     if (!this.ready) return yBottom;
 
@@ -341,6 +386,16 @@ export class Dust2TriangleCollider {
 
     // 1. Direct near-feet support surface always wins.
     if (bestY > -900) return bestY;
+
+    // 1b. Foot-capsule crack bridge (±0.28m): walking across broken tiles, potholes, or narrow
+    // floor seams never drops the player into an underground foundation or void below the map.
+    const r = 0.28;
+    const f1 = this.sampleNearFeetFloor(x + r, yBottom, z, skyCut);
+    const f2 = this.sampleNearFeetFloor(x - r, yBottom, z, skyCut);
+    const f3 = this.sampleNearFeetFloor(x, yBottom, z + r, skyCut);
+    const f4 = this.sampleNearFeetFloor(x, yBottom, z - r, skyCut);
+    const footSupportY = Math.max(f1, f2, f3, f4);
+    if (footSupportY > -900) return footSupportY;
 
     // 2. Airborne above a valid floor (jumping or dropping from a ledge):
     // return the highest floor below feet so gravity brings the player back down
