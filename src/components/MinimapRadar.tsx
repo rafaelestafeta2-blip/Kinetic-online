@@ -168,7 +168,24 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
         drawSectorRect(-33, -40, 22, 18, '#826b53');
       } else if (isV23Map && drillMode && isV23BombMapMode(drillMode)) {
         const cfg = V23_MAP_CONFIGS[drillMode];
-        drawSectorRect(0, 0, 110, 110, drillMode === 'DE_DST_BOMB_5V5' ? '#6c5844' : '#283548');
+        if (drillMode === 'DE_DST_BOMB_5V5') {
+          drawSectorRect(6, 0, 118, 156, '#6c5844');
+          drawSectorRect(-16, -64, 34, 22, '#5a4937');
+          drawSectorRect(-11, 62, 34, 22, '#5a4937');
+        } else if (drillMode === 'MP_NUKED_BOMB_5V5') {
+          drawSectorRect(0, -4, 108, 56, '#283548');
+          drawSectorRect(-23, -2, 22, 26, '#3b4d66');
+          drawSectorRect(21, -4, 22, 26, '#3b4d66');
+          drawSectorRect(0, 2, 16, 22, '#334155');
+        } else if (drillMode === 'CSGO_ASSAULT_BOMB_5V5') {
+          drawSectorRect(0, -3, 94, 98, '#283548');
+          drawSectorRect(12, 18, 42, 42, '#334155');
+        } else if (drillMode === 'DE_SUPPLY_BOMB_5V5') {
+          drawSectorRect(0, -5, 98, 102, '#283548');
+          drawSectorRect(0, 6, 76, 36, '#334155');
+        } else {
+          drawSectorRect(0, 0, 110, 110, '#283548');
+        }
         drawSectorRect(cfg.bombSiteA.x, cfg.bombSiteA.z, 18, 18, '#4c2626', 'rgba(248,113,113,0.55)');
         drawSectorRect(cfg.bombSiteB.x, cfg.bombSiteB.z, 18, 18, '#233b4e', 'rgba(56,189,248,0.55)');
       } else if (isStationCapture || isStationTdm) {

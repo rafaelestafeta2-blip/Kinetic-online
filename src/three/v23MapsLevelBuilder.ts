@@ -164,6 +164,8 @@ export function buildV23MapLevel(
   };
 }
 
+const _yardDaylightLiftColor = new THREE.Color(0xffffff);
+
 export async function loadV23MapGeometry(
   mode: V23BombMapMode,
   bundle: Dust2LevelBundle,
@@ -195,10 +197,26 @@ export async function loadV23MapGeometry(
       const modelRoot = gltf.scene;
       modelRoot.name = `${mode}_GLB`;
 
+      // Strip any embedded punctual/directional lights exported by Source 2 / CoD tools
+      // (e.g. Source 2 light_environment with intensity=3415 that blows out the whole scene + 1P rifle to pure white)
+      const embeddedLights: THREE.Object3D[] = [];
+      modelRoot.traverse((obj) => {
+        if ((obj as THREE.Light).isLight) {
+          embeddedLights.push(obj);
+        }
+      });
+      for (let i = 0; i < embeddedLights.length; i++) {
+        embeddedLights[i].parent?.remove(embeddedLights[i]);
+      }
+
       const mapTransformGroup = new THREE.Group();
       mapTransformGroup.name = `${mode}_NormalizedGeometry`;
       mapTransformGroup.position.set(0, cfg.floorYLift, 0);
       mapTransformGroup.add(modelRoot);
+
+      const softDecalOrGlassRe =
+        /decal|graffiti|graf|wall_dirt|wall_leaks|wall_cracks|wall_old_paint|puddle|stain|overlay|poster|e_logo|plant_arrow|glass|window|water/i;
+      const isSource2Yard = mode === 'YARD_V2_BOMB_5V5';
 
       mapTransformGroup.traverse((child) => {
         if (!(child instanceof THREE.Mesh)) return;
@@ -207,6 +225,7 @@ export async function loadV23MapGeometry(
         child.frustumCulled = false;
         child.userData.isEnvironment = true;
 
+        const meshNameLower = (child.name || '').toLowerCase();
         const mats = Array.isArray(child.material)
           ? child.material
           : [child.material];
@@ -215,33 +234,63 @@ export async function loadV23MapGeometry(
           if (!std) return;
           if (std.map) {
             std.map.colorSpace = THREE.SRGBColorSpace;
+            std.map.magFilter = THREE.LinearFilter;
+            std.map.minFilter = THREE.LinearMipmapLinearFilter;
             std.map.anisotropy = isSoftwareGl ? 1 : 4;
             std.map.needsUpdate = true;
           }
           std.roughness = Math.max(0.65, std.roughness ?? 0.85);
           std.metalness = Math.min(0.18, std.metalness ?? 0.05);
-          std.envMapIntensity = 0.42;
+          std.envMapIntensity = isSource2Yard ? 0.78 : 0.42;
+
           const matName = (std.name || '').toLowerCase();
-          const isCutout =
-            std.alphaTest > 0 ||
-            std.transparent ||
-            /fence|chainlink|grate|foliage|tree|shrub|bush|grass|plant|flower|leaf|wire|glass|window|decal|sign_alpha/i.test(
-              matName
-            );
-          if (isCutout) {
-            std.alphaTest = Math.max(std.alphaTest || 0, 0.4);
+          const isWaterPlaceholder = !std.map && meshNameLower.includes('water');
+          const isUntexturedGlass = !std.map && /glass|window/i.test(matName);
+
+          if (isWaterPlaceholder) {
+            std.color.setHex(0x283a46);
+            std.roughness = 0.16;
+            std.metalness = 0.08;
+            std.transparent = true;
+            std.opacity = 0.58;
+            std.depthWrite = false;
+            std.side = THREE.DoubleSide;
+          } else if (isUntexturedGlass) {
+            std.color.setHex(0x3a4d5c);
+            std.roughness = 0.18;
+            std.metalness = 0.1;
+            std.transparent = true;
+            std.opacity = 0.30;
+            std.depthWrite = false;
+            std.side = THREE.DoubleSide;
+            child.renderOrder = 2;
+          } else if (std.transparent && softDecalOrGlassRe.test(matName)) {
+            // Preserve smooth alpha blending on decals, graffiti, puddles, and real glass
+            std.transparent = true;
+            std.depthWrite = false;
+            std.alphaTest = 0.02;
+            std.side = THREE.DoubleSide;
+            std.polygonOffset = true;
+            std.polygonOffsetFactor = -2;
+            std.polygonOffsetUnits = -2;
+            child.renderOrder = 2;
+          } else if (std.alphaTest > 0 || std.transparent) {
+            // True alpha cutouts (foliage, fences, barbed wire, grates, hanging fabric)
+            std.alphaTest = Math.max(std.alphaTest || 0, 0.35);
             std.transparent = false;
             std.depthWrite = true;
             std.side = THREE.DoubleSide;
           } else {
-            // DoubleSide prevents any single-sided brush/prop seam from appearing transparent
+            // Solid opaque architecture & vehicles (never apply alphaTest on specular-in-alpha textures!)
+            std.alphaTest = 0;
+            std.transparent = false;
+            std.depthWrite = true;
             std.side = THREE.DoubleSide;
+            if (isSource2Yard && std.map && std.color.r + std.color.g + std.color.b < 2.3) {
+              std.color.lerp(_yardDaylightLiftColor, 0.35);
+            }
           }
-          if (/decal|graf|poster|stain|overlay/i.test(matName)) {
-            std.polygonOffset = true;
-            std.polygonOffsetFactor = -1;
-            std.polygonOffsetUnits = -1;
-          }
+          std.needsUpdate = true;
         });
       });
 

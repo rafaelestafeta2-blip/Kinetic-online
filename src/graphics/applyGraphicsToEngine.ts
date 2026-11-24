@@ -254,14 +254,18 @@ export function applyGraphicsToEngine(
   }
   const mode = (engine.state as { drillMode?: string }).drillMode;
   if (
+    mode === 'DE_DST_BOMB_5V5' ||
+    mode === 'YARD_V2_BOMB_5V5' ||
+    mode === 'CSGO_ASSAULT_BOMB_5V5' ||
+    mode === 'MP_NUKED_BOMB_5V5' ||
+    mode === 'DE_SUPPLY_BOMB_5V5'
+  ) {
+    // Large CS/Source2 yards (de_dst spans ~360m, yard_v2 ~260m+): prevent far wall clipping into sky.
+    targetFar = Math.max(targetFar, 360);
+  } else if (
     mode === 'INDUSTRIA_BOMB_5V5' ||
     mode === 'EASTERN_CITY_BOMB_5V5' ||
     mode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
-    mode === 'CSGO_ASSAULT_BOMB_5V5' ||
-    mode === 'DE_DST_BOMB_5V5' ||
-    mode === 'MP_NUKED_BOMB_5V5' ||
-    mode === 'DE_SUPPLY_BOMB_5V5' ||
-    mode === 'YARD_V2_BOMB_5V5' ||
     mode === 'STATION_CAPTURE_5V5' ||
     mode === 'STATION_TDM_5V5' ||
     mode === 'MAP_TEST_INDUSTRIA' ||
