@@ -44,6 +44,7 @@ export function isNewGlbBombArena(mode: DrillMode): boolean {
     a === 'DE_DST_BOMB_5V5' ||
     a === 'MP_NUKED_BOMB_5V5' ||
     a === 'DE_SUPPLY_BOMB_5V5' ||
+    a === 'YARD_V2_BOMB_5V5' ||
     a === 'STATION_CAPTURE_5V5' ||
     a === 'STATION_TDM_5V5'
   );

@@ -172,6 +172,7 @@ export function handleTargetHit(engine: any, targetId: string, hitZone: 'HEAD' |
         engine.state.drillMode === 'DE_DST_BOMB_5V5' ||
         engine.state.drillMode === 'MP_NUKED_BOMB_5V5' ||
         engine.state.drillMode === 'DE_SUPPLY_BOMB_5V5' ||
+        engine.state.drillMode === 'YARD_V2_BOMB_5V5' ||
         engine.state.drillMode === 'STATION_CAPTURE_5V5' ||
         engine.state.drillMode === 'STATION_TDM_5V5'
       ) {

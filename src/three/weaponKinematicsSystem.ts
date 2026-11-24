@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { getActiveGlbCollider } from './activeGlbCollider';
 import { updatePlayerSprintPantingAudio } from '../audio/characterAndBombAudio';
 import { soundEngine } from '../audio/soundEngine';
 import { getWeaponGunsmithModifiers } from '../progression/loadoutSystem';
@@ -102,23 +103,7 @@ export function updateWeaponKinematicsAndOptics(engine: any, dt: number): void {
     }
 
     // Consolidated Single Forward Camera Raycast for Wall Avoidance, Aim Focus & Green PEQ Laser (Throttled for Mobile Performance)
-    const activeGlbCollider =
-      engine.state.drillMode === 'DUST2_BOMB_5V5'
-        ? engine.dust2LevelData.collider
-        : engine.state.drillMode === 'ASSAULT_BOMB_5V5'
-          ? engine.assaultLevelData.collider
-          : engine.state.drillMode === 'INDUSTRIA_BOMB_5V5'
-            ? engine.industriaLevelData.collider
-            : engine.state.drillMode === 'HANGAR_BOMB_5V5'
-              ? engine.hangarLevelData.collider
-            : engine.state.drillMode === 'EASTERN_CITY_BOMB_5V5'
-              ? engine.easternCityLevelData.collider
-            : engine.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5'
-              ? engine.mirageAnubisLevelData.collider
-            : engine.state.drillMode === 'STATION_CAPTURE_5V5' ||
-                engine.state.drillMode === 'STATION_TDM_5V5'
-              ? engine.stationArenaLevelData.collider
-            : null;
+    const activeGlbCollider = getActiveGlbCollider(engine);
 
     const aimInterval = getAimRaycastIntervalSec({
       laserActive: engine.state.laserActive && engine.state.activeWeapon !== 'KNIFE_TACTICAL',

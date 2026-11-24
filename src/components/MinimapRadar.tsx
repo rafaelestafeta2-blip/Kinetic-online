@@ -52,12 +52,18 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
   ({ playerX, playerZ, playerYaw, drillMode, yardBomb, targets, empJammedSec = 0 }) => {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const radarImgRef = useRef<HTMLImageElement | null>(null);
+    const yardV2RadarImgRef = useRef<HTMLImageElement | null>(null);
 
     useEffect(() => {
       const img = new Image();
       img.src = YARD_RADAR_SRC;
       img.onload = () => {
         radarImgRef.current = img;
+      };
+      const imgV2 = new Image();
+      imgV2.src = '/assets/yard_v2_radar.webp';
+      imgV2.onload = () => {
+        yardV2RadarImgRef.current = imgV2;
       };
     }, []);
 
@@ -70,6 +76,7 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
       const size = 112;
       const center = size / 2;
       const isYard = drillMode === 'YARD_BOMB_5V5';
+      const isYardV2 = drillMode === 'YARD_V2_BOMB_5V5';
       const isDust2 = drillMode === 'DUST2_BOMB_5V5';
       const isAssault = drillMode === 'ASSAULT_BOMB_5V5';
       const isIndustria = drillMode === 'INDUSTRIA_BOMB_5V5';
@@ -84,7 +91,7 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
       const maxRange = center - 7;
 
       ctx.clearRect(0, 0, size, size);
-      ctx.fillStyle = isDust2 || isMirageAnubis || drillMode === 'DE_DST_BOMB_5V5' ? '#1e1914' : '#121820';
+      ctx.fillStyle = isDust2 || isMirageAnubis || isYardV2 || drillMode === 'DE_DST_BOMB_5V5' ? '#1e1914' : '#121820';
       ctx.fillRect(0, 0, size, size);
 
       ctx.save();
@@ -107,6 +114,18 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
         const imgCenterZ = (1 - playerZ) * scale;
         ctx.drawImage(
           radarImgRef.current,
+          imgCenterX - worldW / 2,
+          imgCenterZ - worldH / 2,
+          worldW,
+          worldH
+        );
+      } else if (isYardV2 && yardV2RadarImgRef.current) {
+        const worldW = 128 * scale;
+        const worldH = 148 * scale;
+        const imgCenterX = (7 - playerX) * scale;
+        const imgCenterZ = (9 - playerZ) * scale;
+        ctx.drawImage(
+          yardV2RadarImgRef.current,
           imgCenterX - worldW / 2,
           imgCenterZ - worldH / 2,
           worldW,

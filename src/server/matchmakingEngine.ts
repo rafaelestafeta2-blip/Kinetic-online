@@ -44,6 +44,7 @@ export const OFFICIAL_5V5_BOMB_MAPS: readonly string[] = [
   'DE_DST_BOMB_5V5',
   'MP_NUKED_BOMB_5V5',
   'DE_SUPPLY_BOMB_5V5',
+  'YARD_V2_BOMB_5V5',
 ];
 
 /**

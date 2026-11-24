@@ -52,9 +52,10 @@ import {
   getPlayerInventoryState,
 } from '../progression/loadoutSystem';
 import { getOperatorOwnershipState } from '../progression/operatorSkinsSystem';
-import { WeaponId } from '../types/game';
+import { DrillMode, WeaponId } from '../types/game';
 import { ClanCenterTab } from './ClanCenterModal';
 import { ClanEmblemIcon, ClanEmblemId } from './ClanEmblemIcons';
+import { thumbForDrillMode } from './mapSelectThumbs';
 import { CompetitiveRankBadgeSvg } from './RankedInsigniasSvg';
 import {
   SquadFormation3DCanvas,
@@ -62,6 +63,14 @@ import {
 } from './SquadFormation3DCanvas';
 import { OperatorTacticalAvatar, WarfaceClassId } from './WarfaceClassIcons';
 import { WarfaceRankIcon } from './WarfaceRankIcon';
+
+const NEW_MAP_BADGE_IDS = new Set<DrillMode>([
+  'CSGO_ASSAULT_BOMB_5V5',
+  'DE_DST_BOMB_5V5',
+  'MP_NUKED_BOMB_5V5',
+  'DE_SUPPLY_BOMB_5V5',
+  'YARD_V2_BOMB_5V5',
+]);
 
 interface SquadReadyRoomModalProps {
   isOpen: boolean;
@@ -706,11 +715,11 @@ export const SquadReadyRoomModal: React.FC<SquadReadyRoomModalProps> = ({
                       type="button"
                       onClick={() => {
                         soundEngine.playMenuSelect();
-                        setShowPrivateMapPicker((prev) => !prev);
+                        setShowPrivateMapPicker(true);
                       }}
-                      className="px-1.5 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/50 text-[8px] font-display font-black text-amber-200 uppercase cursor-pointer shrink-0"
+                      className="px-1.5 py-0.5 rounded bg-amber-500/25 hover:bg-amber-500/40 border border-amber-400/60 text-[8px] font-display font-black text-amber-200 uppercase cursor-pointer shrink-0"
                     >
-                      MAPA ▾
+                      TROCAR ▾
                     </button>
                   )}
                 </div>
@@ -742,56 +751,6 @@ export const SquadReadyRoomModal: React.FC<SquadReadyRoomModalProps> = ({
                     >
                       🤖 BOTS: {includeBots ? 'ON' : 'OFF'}
                     </button>
-                  </div>
-                )}
-
-                {showPrivateMapPicker && isHost && (
-                  <div className="absolute left-0 top-full mt-1 w-48 rounded-lg bg-[#0b0f18]/98 border border-amber-400/55 p-1.5 shadow-2xl z-40 grid grid-cols-1 gap-1 max-h-44 overflow-y-auto">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        soundEngine.playMenuSelect();
-                        updateSquadRoomConfig(
-                          getDefaultArenaForCategory(currentCategory),
-                          queueType,
-                          room.isPrivate,
-                          { randomMap: true, includeBots }
-                        );
-                        setShowPrivateMapPicker(false);
-                      }}
-                      className={`px-2 py-1 rounded text-left text-[9px] font-display font-bold uppercase flex items-center justify-between cursor-pointer ${
-                        isRandomMap
-                          ? 'bg-amber-500 text-slate-950'
-                          : 'bg-white/5 text-amber-200 hover:bg-white/10'
-                      }`}
-                    >
-                      <span>🎲 ALEATÓRIO</span>
-                      <span className="text-[7px] font-mono opacity-80">SORTEIO</span>
-                    </button>
-                    {categoryMaps.map((m) => (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => {
-                          soundEngine.playMenuSelect();
-                          updateSquadRoomConfig(m.id, queueType, room.isPrivate, {
-                            randomMap: false,
-                            includeBots,
-                          });
-                          setShowPrivateMapPicker(false);
-                        }}
-                        className={`px-2 py-1 rounded text-left text-[9px] font-display font-bold uppercase flex items-center justify-between cursor-pointer ${
-                          !isRandomMap && room.arenaMode === m.id
-                            ? 'bg-amber-500 text-slate-950'
-                            : 'bg-white/5 text-slate-200 hover:bg-white/10'
-                        }`}
-                      >
-                        <span className="truncate">{m.label}</span>
-                        <span className="text-[7px] font-mono opacity-80">
-                          {m.shortTag}
-                        </span>
-                      </button>
-                    ))}
                   </div>
                 )}
               </div>
@@ -1275,6 +1234,152 @@ export const SquadReadyRoomModal: React.FC<SquadReadyRoomModalProps> = ({
           </div>
         </div>
       </div>
+
+      {/* FULL-OVERLAY MAP PICKER MODAL (Unclipped on mobile landscape & desktop; shows all 12+ maps cleanly) */}
+      {showPrivateMapPicker && isHost && !isSearching && !isRankedRoom && (
+        <div
+          onClick={() => setShowPrivateMapPicker(false)}
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-2.5 sm:p-4 pointer-events-auto"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-[740px] max-h-[90vh] rounded-2xl border border-amber-400/55 bg-[#0a0f18]/98 shadow-2xl flex flex-col overflow-hidden"
+          >
+            <div className="flex items-center justify-between gap-2 px-3.5 py-2.5 border-b border-white/10 bg-[#101724] shrink-0">
+              <div className="min-w-0">
+                <h3 className="font-display font-black text-xs sm:text-base uppercase tracking-wider text-amber-300 truncate">
+                  SELECIONAR MAPA · {currentCategoryMeta.label} ({categoryMaps.length})
+                </h3>
+                <p className="text-[10px] font-mono text-slate-400 truncate">
+                  {currentCategoryMeta.subtitle}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  soundEngine.playMenuSelect();
+                  setShowPrivateMapPicker(false);
+                }}
+                className="px-2.5 py-1 rounded bg-white/10 hover:bg-white/20 border border-white/15 text-[10px] font-mono font-bold text-slate-200 uppercase cursor-pointer shrink-0"
+              >
+                FECHAR ✕
+              </button>
+            </div>
+
+            {/* Category tabs inside modal so host can switch Bomb / TDM / Capture directly */}
+            <div className="flex items-center gap-1.5 px-3.5 py-2 border-b border-white/10 bg-black/30 shrink-0">
+              {GAME_MODE_CATALOG.map((cat) => {
+                const active = currentCategory === cat.id;
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => handleSelectGameModeCategory(cat.id)}
+                    className={`px-2.5 py-1 rounded text-[10px] font-display font-black uppercase tracking-wider cursor-pointer transition-all ${
+                      active
+                        ? 'bg-amber-500 text-slate-950 shadow'
+                        : 'bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white border border-white/10'
+                    }`}
+                  >
+                    {cat.icon} {cat.label} ({cat.maps.length})
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Scrollable Map Grid */}
+            <div className="p-3 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  soundEngine.playMenuSelect();
+                  updateSquadRoomConfig(
+                    getDefaultArenaForCategory(currentCategory),
+                    queueType,
+                    room.isPrivate,
+                    { randomMap: true, includeBots }
+                  );
+                  setShowPrivateMapPicker(false);
+                }}
+                className={`rounded-xl border text-left transition-all cursor-pointer overflow-hidden flex flex-col justify-between p-2.5 min-h-[104px] ${
+                  isRandomMap
+                    ? 'bg-amber-500/20 border-2 border-amber-400 text-white shadow-[0_0_16px_rgba(245,158,11,0.3)]'
+                    : 'bg-[#121926] border-white/15 text-slate-200 hover:border-amber-400/60'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-lg leading-none">🎲</span>
+                  {isRandomMap && (
+                    <span className="px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 font-mono font-black text-[8px] uppercase">
+                      ATIVO ✓
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <div className="font-display font-black text-xs uppercase tracking-wider text-amber-200">
+                    ALEATÓRIO
+                  </div>
+                  <div className="text-[9px] font-mono text-slate-400 mt-0.5">
+                    Sorteia entre os {categoryMaps.length} mapas
+                  </div>
+                </div>
+              </button>
+
+              {categoryMaps.map((m) => {
+                const isSelected = !isRandomMap && room.arenaMode === m.id;
+                const isNewMap = NEW_MAP_BADGE_IDS.has(m.id);
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => {
+                      soundEngine.playMenuSelect();
+                      updateSquadRoomConfig(m.id, queueType, room.isPrivate, {
+                        randomMap: false,
+                        includeBots,
+                      });
+                      setShowPrivateMapPicker(false);
+                    }}
+                    className={`group rounded-xl border text-left transition-all cursor-pointer overflow-hidden flex flex-col ${
+                      isSelected
+                        ? 'bg-amber-500/20 border-2 border-amber-400 text-white shadow-[0_0_16px_rgba(245,158,11,0.3)]'
+                        : 'bg-[#111722] border-white/15 text-slate-200 hover:border-amber-400/60'
+                    }`}
+                  >
+                    <div className="relative h-16 sm:h-20 w-full overflow-hidden bg-slate-900">
+                      <img
+                        src={thumbForDrillMode(m.id)}
+                        alt={m.label}
+                        className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
+                        draggable={false}
+                      />
+                      <div className="absolute inset-x-0 bottom-0 h-7 bg-gradient-to-t from-black/80 to-transparent" />
+                      {isNewMap && (
+                        <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-emerald-500 text-slate-950 font-mono font-black text-[8px] uppercase tracking-wider shadow">
+                          NOVO
+                        </span>
+                      )}
+                      {isSelected && (
+                        <span className="absolute top-1 right-1 px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 font-mono font-black text-[8px] uppercase shadow">
+                          ATIVO ✓
+                        </span>
+                      )}
+                    </div>
+                    <div className="px-2 py-1.5">
+                      <div className="font-display font-black text-[11px] uppercase tracking-wider text-white truncate">
+                        {m.label}
+                      </div>
+                      <div className="text-[8px] font-mono text-slate-400 uppercase truncate">
+                        {m.shortTag}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

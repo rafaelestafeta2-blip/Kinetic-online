@@ -1462,6 +1462,7 @@ const OFFICIAL_AUTO_DRAW_5V5_MAPS: DrillMode[] = [
   'DE_DST_BOMB_5V5',
   'MP_NUKED_BOMB_5V5',
   'DE_SUPPLY_BOMB_5V5',
+  'YARD_V2_BOMB_5V5',
 ];
 
 export function pickRandomOfficial5v5Map(currentMode?: DrillMode): DrillMode {

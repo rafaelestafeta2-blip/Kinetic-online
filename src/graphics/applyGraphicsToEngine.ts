@@ -257,6 +257,11 @@ export function applyGraphicsToEngine(
     mode === 'INDUSTRIA_BOMB_5V5' ||
     mode === 'EASTERN_CITY_BOMB_5V5' ||
     mode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
+    mode === 'CSGO_ASSAULT_BOMB_5V5' ||
+    mode === 'DE_DST_BOMB_5V5' ||
+    mode === 'MP_NUKED_BOMB_5V5' ||
+    mode === 'DE_SUPPLY_BOMB_5V5' ||
+    mode === 'YARD_V2_BOMB_5V5' ||
     mode === 'STATION_CAPTURE_5V5' ||
     mode === 'STATION_TDM_5V5' ||
     mode === 'MAP_TEST_INDUSTRIA' ||
@@ -276,9 +281,24 @@ export function applyGraphicsToEngine(
     scene.fog = null;
   } else if (!scene.fog) {
     const mode = (engine.state as { drillMode?: string }).drillMode;
-    if (mode === 'DUST2_BOMB_5V5' || mode === 'MIRAGE_ANUBIS_BOMB_5V5') {
+    if (
+      mode === 'DUST2_BOMB_5V5' ||
+      mode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
+      mode === 'DE_DST_BOMB_5V5' ||
+      mode === 'YARD_V2_BOMB_5V5'
+    ) {
       scene.fog = new THREE.FogExp2(0xdccbb1, 0.0032);
-    } else if (mode === 'ASSAULT_BOMB_5V5' || mode === 'INDUSTRIA_BOMB_5V5' || mode === 'HANGAR_BOMB_5V5' || mode === 'EASTERN_CITY_BOMB_5V5' || mode === 'STATION_CAPTURE_5V5' || mode === 'STATION_TDM_5V5') {
+    } else if (
+      mode === 'ASSAULT_BOMB_5V5' ||
+      mode === 'INDUSTRIA_BOMB_5V5' ||
+      mode === 'HANGAR_BOMB_5V5' ||
+      mode === 'EASTERN_CITY_BOMB_5V5' ||
+      mode === 'CSGO_ASSAULT_BOMB_5V5' ||
+      mode === 'MP_NUKED_BOMB_5V5' ||
+      mode === 'DE_SUPPLY_BOMB_5V5' ||
+      mode === 'STATION_CAPTURE_5V5' ||
+      mode === 'STATION_TDM_5V5'
+    ) {
       scene.fog = new THREE.FogExp2(0xcbd5e1, 0.0036);
     } else if (mode === 'YARD_BOMB_5V5') {
       scene.fog = new THREE.FogExp2(0xcbd5e1, 0.0052);

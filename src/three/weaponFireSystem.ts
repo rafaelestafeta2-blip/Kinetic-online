@@ -184,6 +184,8 @@ export function executeSingleShot(engine: any): void {
                   ? engine.mpNukedLevelData.collider
                 : engine.state.drillMode === 'DE_SUPPLY_BOMB_5V5'
                   ? engine.deSupplyLevelData.collider
+                : engine.state.drillMode === 'YARD_V2_BOMB_5V5'
+                  ? engine.yardV2LevelData.collider
                 : engine.state.drillMode === 'STATION_CAPTURE_5V5' ||
                     engine.state.drillMode === 'STATION_TDM_5V5'
                   ? engine.stationArenaLevelData.collider
@@ -486,10 +488,12 @@ export function executeSingleShot(engine: any): void {
                             ? engine.mpNukedLevelData.collider
                             : engine.state.drillMode === 'DE_SUPPLY_BOMB_5V5'
                               ? engine.deSupplyLevelData.collider
-                              : engine.state.drillMode === 'STATION_CAPTURE_5V5' ||
-                                  engine.state.drillMode === 'STATION_TDM_5V5'
-                                ? engine.stationArenaLevelData.collider
-                                : null;
+                              : engine.state.drillMode === 'YARD_V2_BOMB_5V5'
+                                ? engine.yardV2LevelData.collider
+                                : engine.state.drillMode === 'STATION_CAPTURE_5V5' ||
+                                    engine.state.drillMode === 'STATION_TDM_5V5'
+                                  ? engine.stationArenaLevelData.collider
+                                  : null;
 
         const hit = raycastCombatShot(
           engine.raycaster,

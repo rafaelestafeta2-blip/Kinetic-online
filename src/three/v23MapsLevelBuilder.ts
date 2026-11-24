@@ -11,7 +11,8 @@ export type V23BombMapMode =
   | 'CSGO_ASSAULT_BOMB_5V5'
   | 'DE_DST_BOMB_5V5'
   | 'MP_NUKED_BOMB_5V5'
-  | 'DE_SUPPLY_BOMB_5V5';
+  | 'DE_SUPPLY_BOMB_5V5'
+  | 'YARD_V2_BOMB_5V5';
 
 export interface V23MapConfig {
   mode: V23BombMapMode;
@@ -101,6 +102,25 @@ export const V23_MAP_CONFIGS: Record<V23BombMapMode, V23MapConfig> = {
       return 'COMPLEXO CENTRAL (SUPPLY MID)';
     },
   },
+  YARD_V2_BOMB_5V5: {
+    mode: 'YARD_V2_BOMB_5V5',
+    label: 'YARD 2.0 HD',
+    glbUrl: resolveAssetUrl('/models/maps/yard_v2_2k.glb'),
+    floorYLift: 0,
+    attackerSpawn: new THREE.Vector3(-36.73, 1.38, 28.27),
+    defenderSpawn: new THREE.Vector3(50.60, 0.15, -4.95),
+    spawnYaw: -Math.PI * 0.65,
+    bombSiteA: new THREE.Vector3(-7.75, 4.98, 51.92),
+    bombSiteB: new THREE.Vector3(-32.45, 5.00, -21.10),
+    getCallout: (x, y, z) => {
+      if (x > 34) return 'BASE BLACKTHORN (EAST MARKET SPAWN)';
+      if (x < -28 && z > 16) return 'BASE VANGUARD (WEST ROAD SPAWN)';
+      if (z > 36 && x > -24 && x < 12) return 'BOMBA A (CAMO TENT / NORTH YARD)';
+      if (z < -8 && x < -18) return 'BOMBA B (SOUTH-WEST COMPOUND)';
+      if (y > 7.5) return 'VARANDA / PASSARELA SUPERIOR (UPPER BALCONY)';
+      return 'PÁTIO CENTRAL (YARD 2.0 MID)';
+    },
+  },
 };
 
 export function isV23BombMapMode(mode: DrillMode | undefined | null): mode is V23BombMapMode {
@@ -108,7 +128,8 @@ export function isV23BombMapMode(mode: DrillMode | undefined | null): mode is V2
     mode === 'CSGO_ASSAULT_BOMB_5V5' ||
     mode === 'DE_DST_BOMB_5V5' ||
     mode === 'MP_NUKED_BOMB_5V5' ||
-    mode === 'DE_SUPPLY_BOMB_5V5'
+    mode === 'DE_SUPPLY_BOMB_5V5' ||
+    mode === 'YARD_V2_BOMB_5V5'
   );
 }
 

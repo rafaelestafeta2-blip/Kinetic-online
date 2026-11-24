@@ -313,6 +313,7 @@ export class TacticalFPSEngine {
   private deDstLevelData: Dust2LevelBundle;
   private mpNukedLevelData: Dust2LevelBundle;
   private deSupplyLevelData: Dust2LevelBundle;
+  private yardV2LevelData: Dust2LevelBundle;
   private stationArenaLevelData: Dust2LevelBundle;
   private yardBombSystem: YardBombSystem;
   private colliders: ColliderBox[] = [];
@@ -847,6 +848,10 @@ export class TacticalFPSEngine {
     this.deSupplyLevelData.levelGroup.visible = false;
     this.scene.add(this.deSupplyLevelData.levelGroup);
 
+    this.yardV2LevelData = buildV23MapLevel('YARD_V2_BOMB_5V5', this.isSoftwareGl);
+    this.yardV2LevelData.levelGroup.visible = false;
+    this.scene.add(this.yardV2LevelData.levelGroup);
+
     this.stationArenaLevelData = buildStationArenaLevel(this.isSoftwareGl);
     this.stationArenaLevelData.levelGroup.visible = false;
     this.scene.add(this.stationArenaLevelData.levelGroup);
@@ -976,6 +981,7 @@ export class TacticalFPSEngine {
       deDstLevelData: this.deDstLevelData,
       mpNukedLevelData: this.mpNukedLevelData,
       deSupplyLevelData: this.deSupplyLevelData,
+      yardV2LevelData: this.yardV2LevelData,
       stationArenaLevelData: this.stationArenaLevelData,
       skySystem: this.skySystem,
       grenadeSystem: this.grenadeSystem,
@@ -1007,6 +1013,7 @@ export class TacticalFPSEngine {
       this.deDstLevelData,
       this.mpNukedLevelData,
       this.deSupplyLevelData,
+      this.yardV2LevelData,
       this.stationArenaLevelData,
       this.grenadeSystem
     );
@@ -1619,6 +1626,7 @@ export class TacticalFPSEngine {
     if (mode === 'DE_DST_BOMB_5V5') return this.deDstLevelData.collider;
     if (mode === 'MP_NUKED_BOMB_5V5') return this.mpNukedLevelData.collider;
     if (mode === 'DE_SUPPLY_BOMB_5V5') return this.deSupplyLevelData.collider;
+    if (mode === 'YARD_V2_BOMB_5V5') return this.yardV2LevelData.collider;
     if (mode === 'STATION_CAPTURE_5V5' || mode === 'STATION_TDM_5V5') {
       return this.stationArenaLevelData.collider;
     }
@@ -1769,6 +1777,9 @@ export class TacticalFPSEngine {
     }
     if (mode === 'DE_SUPPLY_BOMB_5V5') {
       return this.deSupplyLevelData.collider.getGroundHeight(x, y, z);
+    }
+    if (mode === 'YARD_V2_BOMB_5V5') {
+      return this.yardV2LevelData.collider.getGroundHeight(x, y, z);
     }
     if (mode === 'STATION_CAPTURE_5V5' || mode === 'STATION_TDM_5V5') {
       return this.stationArenaLevelData.collider.getGroundHeight(x, y, z);
@@ -3701,7 +3712,8 @@ export class TacticalFPSEngine {
     const isDeDst = assetMode === 'DE_DST_BOMB_5V5';
     const isMpNuked = assetMode === 'MP_NUKED_BOMB_5V5';
     const isDeSupply = assetMode === 'DE_SUPPLY_BOMB_5V5';
-    const isV23Map = isCsgoAssault || isDeDst || isMpNuked || isDeSupply;
+    const isYardV2 = assetMode === 'YARD_V2_BOMB_5V5';
+    const isV23Map = isCsgoAssault || isDeDst || isMpNuked || isDeSupply || isYardV2;
     const isStationArena =
       assetMode === 'STATION_CAPTURE_5V5' || assetMode === 'STATION_TDM_5V5';
     const isFreeRange = assetMode === 'FREE_RANGE';
@@ -3744,6 +3756,7 @@ export class TacticalFPSEngine {
     this.deDstLevelData.levelGroup.visible = isDeDst;
     this.mpNukedLevelData.levelGroup.visible = isMpNuked;
     this.deSupplyLevelData.levelGroup.visible = isDeSupply;
+    this.yardV2LevelData.levelGroup.visible = isYardV2;
     this.stationArenaLevelData.levelGroup.visible = isStationArena;
 
     const activeLevel = isDust2
@@ -3766,6 +3779,8 @@ export class TacticalFPSEngine {
               ? this.mpNukedLevelData
             : isDeSupply
               ? this.deSupplyLevelData
+            : isYardV2
+              ? this.yardV2LevelData
             : isStationArena
               ? this.stationArenaLevelData
             : isYard
@@ -3943,7 +3958,9 @@ export class TacticalFPSEngine {
             ? this.deDstLevelData
             : v23Mode === 'MP_NUKED_BOMB_5V5'
               ? this.mpNukedLevelData
-              : this.deSupplyLevelData;
+              : v23Mode === 'DE_SUPPLY_BOMB_5V5'
+                ? this.deSupplyLevelData
+                : this.yardV2LevelData;
       this.ensureGlbMapThenPlace(
         v23Bundle,
         () =>

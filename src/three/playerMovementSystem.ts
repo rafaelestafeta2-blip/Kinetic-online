@@ -73,6 +73,8 @@ export function updatePlayerMovementAndCollision(engine: any, dt: number): void 
                   ? engine.mpNukedLevelData.collider
                 : engine.state.drillMode === 'DE_SUPPLY_BOMB_5V5'
                   ? engine.deSupplyLevelData.collider
+                : engine.state.drillMode === 'YARD_V2_BOMB_5V5'
+                  ? engine.yardV2LevelData.collider
                 : engine.state.drillMode === 'STATION_CAPTURE_5V5' ||
                     engine.state.drillMode === 'STATION_TDM_5V5'
                   ? engine.stationArenaLevelData.collider
@@ -167,6 +169,12 @@ export function updatePlayerMovementAndCollision(engine: any, dt: number): void 
       );
     } else if (engine.state.drillMode === 'DE_SUPPLY_BOMB_5V5') {
       lowCeilingAbove = engine.deSupplyLevelData.collider.hasLowCeiling(
+        engine.playerPos.x,
+        engine.playerPos.y,
+        engine.playerPos.z
+      );
+    } else if (engine.state.drillMode === 'YARD_V2_BOMB_5V5') {
+      lowCeilingAbove = engine.yardV2LevelData.collider.hasLowCeiling(
         engine.playerPos.x,
         engine.playerPos.y,
         engine.playerPos.z
@@ -448,6 +456,7 @@ export function updatePlayerMovementAndCollision(engine: any, dt: number): void 
     const isDeDst = engine.state.drillMode === 'DE_DST_BOMB_5V5';
     const isMpNuked = engine.state.drillMode === 'MP_NUKED_BOMB_5V5';
     const isDeSupply = engine.state.drillMode === 'DE_SUPPLY_BOMB_5V5';
+    const isYardV2 = engine.state.drillMode === 'YARD_V2_BOMB_5V5';
     const isStationArena =
       engine.state.drillMode === 'STATION_CAPTURE_5V5' ||
       engine.state.drillMode === 'STATION_TDM_5V5';
@@ -471,6 +480,8 @@ export function updatePlayerMovementAndCollision(engine: any, dt: number): void 
               ? engine.mpNukedLevelData.collider
             : isDeSupply
               ? engine.deSupplyLevelData.collider
+            : isYardV2
+              ? engine.yardV2LevelData.collider
             : isStationArena
               ? engine.stationArenaLevelData.collider
             : null;

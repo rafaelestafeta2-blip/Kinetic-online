@@ -224,6 +224,13 @@ export function getTeamSpawnForArena(
     return { x: -26.82 + offsetX, y: 0.13, z: 32.11 - offsetZ, yaw: 0 };
   }
 
+  if (mode === 'YARD_V2_BOMB_5V5') {
+    if (team === 'VANGUARD') {
+      return { x: -36.73 + offsetX, y: 1.38, z: 28.27 + offsetZ, yaw: -Math.PI * 0.65 };
+    }
+    return { x: 50.60 + offsetX, y: 0.15, z: -4.95 - offsetZ, yaw: Math.PI * 0.45 };
+  }
+
   if (mode === 'STATION_CAPTURE_5V5' || mode === 'STATION_TDM_5V5') {
     if (team === 'VANGUARD') {
       return { x: -14.0 + offsetX, y: 0.15, z: -18.0 + offsetZ, yaw: Math.PI };

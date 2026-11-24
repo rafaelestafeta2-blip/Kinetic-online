@@ -180,6 +180,8 @@ export function formatArenaDisplayName(arenaMode: string): string {
       return 'MP_NUKED TOWN · PLANTAR BOMBA 5V5';
     case 'DE_SUPPLY_BOMB_5V5':
       return 'DE_SUPPLY BASE · PLANTAR BOMBA 5V5';
+    case 'YARD_V2_BOMB_5V5':
+      return 'YARD 2.0 HD · PLANTAR BOMBA 5V5';
     case 'YARD_BOMB_5V5':
       return 'YARD · PLANTAR BOMBA 5V5';
     case 'STORAGE_BOMB_5V5':

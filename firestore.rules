@@ -294,6 +294,11 @@ service cloud.firestore {
         || mode == 'HANGAR_BOMB_5V5'
         || mode == 'EASTERN_CITY_BOMB_5V5'
         || mode == 'MIRAGE_ANUBIS_BOMB_5V5'
+        || mode == 'CSGO_ASSAULT_BOMB_5V5'
+        || mode == 'DE_DST_BOMB_5V5'
+        || mode == 'MP_NUKED_BOMB_5V5'
+        || mode == 'DE_SUPPLY_BOMB_5V5'
+        || mode == 'YARD_V2_BOMB_5V5'
         || mode == 'STATION_TDM_5V5'
         || mode == 'STATION_CAPTURE_5V5';
     }
@@ -347,6 +352,15 @@ service cloud.firestore {
         && (request.auth.uid in existing().players || existing().hostUid == request.auth.uid)
         && incoming().diff(existing()).affectedKeys().hasOnly([
           'status', 'currentRound', 'vanguardScore', 'blackthornScore',
+          'bombStatus', 'plantedSite', 'players', 'lastHitEvent', 'averageMmr', 'updatedAtMs'
+        ]);
+    }
+
+    function isRoomHostConfigOrStartAction() {
+      return existing().status == 'WAITING'
+        && existing().hostUid == request.auth.uid
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'arenaMode', 'status', 'currentRound', 'vanguardScore', 'blackthornScore',
           'bombStatus', 'plantedSite', 'players', 'lastHitEvent', 'averageMmr', 'updatedAtMs'
         ]);
     }
@@ -425,11 +439,13 @@ service cloud.firestore {
         && isValidMultiplayerRoom(incoming())
         && incoming().roomId == existing().roomId
         && incoming().hostUid == existing().hostUid
-        && incoming().arenaMode == existing().arenaMode
         && incoming().isPrivate == existing().isPrivate
         && incoming().createdAt == existing().createdAt
         && (!('queueType' in existing()) || incoming().queueType == existing().queueType)
-        && (isRoomJoinAction() || isRoomLeaveAction() || isRoomActivePlayAction());
+        && (
+          (incoming().arenaMode == existing().arenaMode && (isRoomJoinAction() || isRoomLeaveAction() || isRoomActivePlayAction()))
+          || isRoomHostConfigOrStartAction()
+        );
       allow delete: if isAuthenticated() && isValidId(roomId) && existing().hostUid == request.auth.uid;
     }
 

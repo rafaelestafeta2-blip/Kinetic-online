@@ -98,6 +98,7 @@ export interface MatchArenaPrepareParams {
   deDstLevelData: Dust2LevelBundle;
   mpNukedLevelData: Dust2LevelBundle;
   deSupplyLevelData: Dust2LevelBundle;
+  yardV2LevelData: Dust2LevelBundle;
   stationArenaLevelData: Dust2LevelBundle;
   skySystem: TacticalSkySystem;
   grenadeSystem: TacticalGrenadeSystem;
@@ -137,6 +138,7 @@ export async function prepareMatchArena(
     deDstLevelData,
     mpNukedLevelData,
     deSupplyLevelData,
+    yardV2LevelData,
     stationArenaLevelData,
     skySystem,
     grenadeSystem,
@@ -163,7 +165,9 @@ export async function prepareMatchArena(
           ? mpNukedLevelData
           : assetMode === 'DE_SUPPLY_BOMB_5V5'
             ? deSupplyLevelData
-            : null;
+            : assetMode === 'YARD_V2_BOMB_5V5'
+              ? yardV2LevelData
+              : null;
   const isStationArena =
     assetMode === 'STATION_CAPTURE_5V5' || assetMode === 'STATION_TDM_5V5';
   const isYard = assetMode === 'YARD_BOMB_5V5';
@@ -690,6 +694,7 @@ export function cleanupMatchArenaAssets(
   deDstLevelData: Dust2LevelBundle,
   mpNukedLevelData: Dust2LevelBundle,
   deSupplyLevelData: Dust2LevelBundle,
+  yardV2LevelData: Dust2LevelBundle,
   stationArenaLevelData: Dust2LevelBundle,
   grenadeSystem?: TacticalGrenadeSystem
 ): void {
@@ -704,6 +709,7 @@ export function cleanupMatchArenaAssets(
   deDstLevelData.levelGroup.visible = false;
   mpNukedLevelData.levelGroup.visible = false;
   deSupplyLevelData.levelGroup.visible = false;
+  yardV2LevelData.levelGroup.visible = false;
   stationArenaLevelData.levelGroup.visible = false;
   yardLevelData.levelGroup.visible = false;
   facilityLevelData.levelGroup.visible = false;
@@ -720,6 +726,7 @@ export function cleanupMatchArenaAssets(
   disposeV23MapGeometry(deDstLevelData);
   disposeV23MapGeometry(mpNukedLevelData);
   disposeV23MapGeometry(deSupplyLevelData);
+  disposeV23MapGeometry(yardV2LevelData);
   disposeStationArenaMapGeometry(stationArenaLevelData);
 
   // 3. Limpa granadas ativas, fumaça e luzes temporárias

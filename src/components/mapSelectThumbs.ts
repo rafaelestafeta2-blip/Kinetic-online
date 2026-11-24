@@ -45,6 +45,7 @@ export function thumbForDrillMode(mode: DrillMode | string): string {
     case 'STATION_CAPTURE_5V5':
     case 'STATION_TDM_5V5':
       return MAP_SELECT_THUMBS.stationArena;
+    case 'YARD_V2_BOMB_5V5':
     case 'YARD_BOMB_5V5':
       return MAP_SELECT_THUMBS.yard;
     case 'FREE_RANGE':
