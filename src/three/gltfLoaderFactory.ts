@@ -18,8 +18,10 @@ import {
 } from '../utils/assetDownloadTracker';
 import {
   cacheFetchedAssetBuffer,
+  fetchChunkedAssetBuffer,
   readCachedAssetBuffer,
 } from '../utils/resourcePackManager';
+import { getChunkedAssetDescriptor } from '../utils/chunkedAssetRegistry';
 import { resolveLocalOrBackendAssetUrl } from '../utils/assetUrl';
 
 const DRACO_DECODER_PATH = '/draco/';
@@ -128,6 +130,46 @@ export function createGameGltfLoader(loadingManager?: THREE.LoadingManager): GLT
           }
         );
         return;
+      }
+
+      // 1b. Chunked multi-part asset (e.g. yard_v2_lod0.glb -> 3x 13MB .bin parts)
+      if (getChunkedAssetDescriptor(url)) {
+        manager?.itemStart(url);
+        try {
+          const assembled = await fetchChunkedAssetBuffer(url, {
+            onProgress: (loaded, total) => {
+              onProgress?.(
+                new ProgressEvent('progress', {
+                  lengthComputable: total > 0,
+                  loaded,
+                  total,
+                })
+              );
+            },
+          });
+          if (!assembled || assembled.byteLength === 0) {
+            throw new Error('Chunked asset returned empty buffer');
+          }
+          loader.parse(
+            assembled,
+            resourcePath,
+            (gltf) => {
+              manager?.itemEnd(url);
+              onLoad(gltf);
+            },
+            (parseErr) => {
+              manager?.itemError(url);
+              manager?.itemEnd(url);
+              onError?.(parseErr);
+            }
+          );
+          return;
+        } catch (chunkErr) {
+          manager?.itemError(url);
+          manager?.itemEnd(url);
+          onError?.(chunkErr);
+          return;
+        }
       }
 
       // 2. Fetch + stream progress + save to persistent Cache Storage

@@ -12,6 +12,10 @@ import {
   updateAssetDownloadProgress,
 } from './assetDownloadTracker';
 import { resolveAssetUrl, resolveLocalOrBackendAssetUrl } from './assetUrl';
+import {
+  getChunkedAssetDescriptor,
+  normalizeAssetPathKey,
+} from './chunkedAssetRegistry';
 
 export const RESOURCE_PACK_CACHE_NAME = 'kinetic-resource-packs-v2';
 
@@ -213,7 +217,11 @@ export const RESOURCE_PACK_DEFINITIONS: ResourcePackDefinition[] = [
     category: 'MAPS',
     recommended: true,
     mapMode: 'YARD_V2_BOMB_5V5',
-    files: [{ path: '/models/maps/yard_v2_lod0.glb', sizeBytes: 40_516_864 }],
+    files: [
+      { path: '/models/maps/yard_v2_lod0.p0.bin', sizeBytes: 13_504_114 },
+      { path: '/models/maps/yard_v2_lod0.p1.bin', sizeBytes: 13_504_114 },
+      { path: '/models/maps/yard_v2_lod0.p2.bin', sizeBytes: 13_504_112 },
+    ],
   },
   {
     id: 'pack_accessories',
@@ -267,21 +275,7 @@ function isCacheApiAvailable(): boolean {
 }
 
 function normalizeAssetKey(urlOrPath: string): string {
-  if (!urlOrPath) return '';
-  try {
-    const parsed = new URL(urlOrPath, window.location.origin);
-    // Support Firebase Storage encoded path URLs too
-    const decodedPath = decodeURIComponent(parsed.pathname);
-    const modelsIdx = decodedPath.indexOf('/models/');
-    if (modelsIdx >= 0) return decodedPath.slice(modelsIdx);
-    const mapsIdx = decodedPath.indexOf('/maps/');
-    if (mapsIdx >= 0) return decodedPath.slice(mapsIdx);
-    const soundsIdx = decodedPath.indexOf('/sounds/');
-    if (soundsIdx >= 0) return decodedPath.slice(soundsIdx);
-    return parsed.pathname;
-  } catch {
-    return urlOrPath.split('?')[0];
-  }
+  return normalizeAssetPathKey(urlOrPath);
 }
 
 function cacheRequestKeyForPath(localPath: string): string {
@@ -294,18 +288,43 @@ function cacheRequestKeyForPath(localPath: string): string {
   return `${origin}/__kinetic_pack_cache__${clean}`;
 }
 
+async function readSingleCachedAssetBuffer(
+  cache: Cache,
+  urlOrPath: string
+): Promise<ArrayBuffer | null> {
+  const key = cacheRequestKeyForPath(urlOrPath);
+  const match = await cache.match(key);
+  if (!match || !match.ok) return null;
+  const buffer = await match.arrayBuffer();
+  if (buffer.byteLength === 0) return null;
+  return buffer;
+}
+
 export async function readCachedAssetBuffer(
   urlOrPath: string
 ): Promise<ArrayBuffer | null> {
   if (!isCacheApiAvailable()) return null;
   try {
     const cache = await window.caches.open(RESOURCE_PACK_CACHE_NAME);
-    const key = cacheRequestKeyForPath(urlOrPath);
-    const match = await cache.match(key);
-    if (!match || !match.ok) return null;
-    const buffer = await match.arrayBuffer();
-    if (buffer.byteLength === 0) return null;
-    return buffer;
+    const chunked = getChunkedAssetDescriptor(urlOrPath);
+    if (chunked) {
+      const partBuffers: ArrayBuffer[] = [];
+      let totalLen = 0;
+      for (const part of chunked.parts) {
+        const partBuf = await readSingleCachedAssetBuffer(cache, part.path);
+        if (!partBuf) return null;
+        partBuffers.push(partBuf);
+        totalLen += partBuf.byteLength;
+      }
+      const merged = new Uint8Array(totalLen);
+      let offset = 0;
+      for (const partBuf of partBuffers) {
+        merged.set(new Uint8Array(partBuf), offset);
+        offset += partBuf.byteLength;
+      }
+      return merged.buffer;
+    }
+    return await readSingleCachedAssetBuffer(cache, urlOrPath);
   } catch {
     return null;
   }
@@ -316,6 +335,17 @@ export async function isAssetCachedInResourcePacks(
 ): Promise<boolean> {
   if (!isHydrated) {
     await hydrateResourcePacksFromCache();
+  }
+  const chunked = getChunkedAssetDescriptor(urlOrPath);
+  if (chunked) {
+    for (const part of chunked.parts) {
+      if (!cachedPathSet.has(part.path)) {
+        const buf = await readCachedAssetBuffer(part.path);
+        if (!buf || buf.byteLength === 0) return false;
+        cachedPathSet.add(part.path);
+      }
+    }
+    return true;
   }
   const normalized = normalizeAssetKey(urlOrPath);
   if (cachedPathSet.has(normalized)) {
@@ -532,6 +562,148 @@ function scheduleEmit(immediate = false): void {
   }, 90);
 }
 
+async function fetchRawFileBuffer(
+  localPath: string,
+  expectedSizeBytes: number,
+  signal: AbortSignal | undefined,
+  onDeltaBytes?: (delta: number) => void,
+  trackUrl?: string
+): Promise<{ buffer: ArrayBuffer; contentType: string }> {
+  const resolvedUrl = resolveAssetUrl(localPath);
+  const tracked = trackUrl ?? resolvedUrl;
+  let response = await fetch(resolvedUrl, {
+    mode: 'cors',
+    credentials: 'omit',
+    signal,
+  });
+  if (!response.ok) {
+    const fallbackUrl = resolveLocalOrBackendAssetUrl(localPath);
+    if (fallbackUrl && fallbackUrl !== resolvedUrl) {
+      try {
+        const retryRes = await fetch(fallbackUrl, {
+          mode: 'cors',
+          credentials: 'omit',
+          signal,
+        });
+        if (retryRes.ok) {
+          response = retryRes;
+        }
+      } catch {
+        // keep original response status
+      }
+    }
+  }
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} ao baixar ${localPath}`);
+  }
+
+  const headerLen = Number(response.headers.get('content-length') || '0');
+  const expectedTotal = headerLen > 0 ? headerLen : expectedSizeBytes;
+  const contentType = response.headers.get('content-type') || 'application/octet-stream';
+
+  if (response.body && typeof response.body.getReader === 'function') {
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let received = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value && value.byteLength > 0) {
+        chunks.push(value);
+        received += value.byteLength;
+        if (!trackUrl) {
+          updateAssetDownloadProgress(tracked, received, expectedTotal);
+        }
+        onDeltaBytes?.(value.byteLength);
+      }
+    }
+
+    const merged = new Uint8Array(received);
+    let offset = 0;
+    for (const chunk of chunks) {
+      merged.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return { buffer: merged.buffer, contentType };
+  }
+
+  const buffer = await response.arrayBuffer();
+  if (!trackUrl) {
+    updateAssetDownloadProgress(tracked, buffer.byteLength, expectedTotal);
+  }
+  onDeltaBytes?.(buffer.byteLength);
+  return { buffer, contentType };
+}
+
+/**
+ * Fetches a chunked multi-part asset (e.g. yard_v2_lod0.glb -> 3x 13MB .bin chunks),
+ * reusing any parts already present in Cache Storage, caching newly fetched parts,
+ * and returning the concatenated GLB ArrayBuffer.
+ */
+export async function fetchChunkedAssetBuffer(
+  urlOrPath: string,
+  options?: {
+    signal?: AbortSignal;
+    onProgress?: (loadedBytes: number, totalBytes: number) => void;
+  }
+): Promise<ArrayBuffer | null> {
+  const chunked = getChunkedAssetDescriptor(urlOrPath);
+  if (!chunked) return null;
+
+  const trackKey = resolveAssetUrl(chunked.virtualPath);
+  beginAssetDownload(trackKey);
+  let loadedTotal = 0;
+  const totalBytes = chunked.totalBytes;
+
+  try {
+    const partBuffers: ArrayBuffer[] = [];
+    const cache = isCacheApiAvailable()
+      ? await window.caches.open(RESOURCE_PACK_CACHE_NAME).catch(() => null)
+      : null;
+
+    for (const part of chunked.parts) {
+      let partBuf: ArrayBuffer | null = null;
+      if (cache) {
+        partBuf = await readSingleCachedAssetBuffer(cache, part.path).catch(() => null);
+      }
+      if (partBuf) {
+        loadedTotal += partBuf.byteLength;
+        updateAssetDownloadProgress(trackKey, loadedTotal, totalBytes);
+        options?.onProgress?.(loadedTotal, totalBytes);
+        partBuffers.push(partBuf);
+        continue;
+      }
+
+      const { buffer, contentType } = await fetchRawFileBuffer(
+        part.path,
+        part.sizeBytes,
+        options?.signal,
+        (delta) => {
+          loadedTotal += delta;
+          updateAssetDownloadProgress(trackKey, loadedTotal, totalBytes);
+          options?.onProgress?.(loadedTotal, totalBytes);
+        },
+        trackKey
+      );
+      await cacheFetchedAssetBuffer(part.path, buffer, contentType);
+      partBuffers.push(buffer);
+    }
+
+    let finalLen = 0;
+    for (const b of partBuffers) finalLen += b.byteLength;
+    const merged = new Uint8Array(finalLen);
+    let offset = 0;
+    for (const b of partBuffers) {
+      merged.set(new Uint8Array(b), offset);
+      offset += b.byteLength;
+    }
+    return merged.buffer;
+  } finally {
+    endAssetDownload(trackKey);
+  }
+}
+
 async function fetchAndStoreSingleFile(
   file: ResourcePackFileEntry,
   signal: AbortSignal,
@@ -541,63 +713,13 @@ async function fetchAndStoreSingleFile(
   beginAssetDownload(resolvedUrl);
 
   try {
-    let response = await fetch(resolvedUrl, {
-      mode: 'cors',
-      credentials: 'omit',
+    const { buffer, contentType } = await fetchRawFileBuffer(
+      file.path,
+      file.sizeBytes,
       signal,
-    });
-    if (!response.ok) {
-      const fallbackUrl = resolveLocalOrBackendAssetUrl(file.path);
-      if (fallbackUrl && fallbackUrl !== resolvedUrl) {
-        const retryRes = await fetch(fallbackUrl, {
-          mode: 'cors',
-          credentials: 'omit',
-          signal,
-        });
-        if (retryRes.ok) {
-          response = retryRes;
-        }
-      }
-    }
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status} ao baixar ${file.path}`);
-    }
-
-    const headerLen = Number(response.headers.get('content-length') || '0');
-    const expectedTotal = headerLen > 0 ? headerLen : file.sizeBytes;
-    const contentType = response.headers.get('content-type') || 'model/gltf-binary';
-
-    let finalBuffer: ArrayBuffer;
-    if (response.body && typeof response.body.getReader === 'function') {
-      const reader = response.body.getReader();
-      const chunks: Uint8Array[] = [];
-      let received = 0;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value && value.byteLength > 0) {
-          chunks.push(value);
-          received += value.byteLength;
-          updateAssetDownloadProgress(resolvedUrl, received, expectedTotal);
-          onDeltaBytes(value.byteLength);
-        }
-      }
-
-      const merged = new Uint8Array(received);
-      let offset = 0;
-      for (const chunk of chunks) {
-        merged.set(chunk, offset);
-        offset += chunk.byteLength;
-      }
-      finalBuffer = merged.buffer;
-    } else {
-      finalBuffer = await response.arrayBuffer();
-      updateAssetDownloadProgress(resolvedUrl, finalBuffer.byteLength, expectedTotal);
-      onDeltaBytes(finalBuffer.byteLength);
-    }
-
-    await cacheFetchedAssetBuffer(file.path, finalBuffer, contentType);
+      onDeltaBytes
+    );
+    await cacheFetchedAssetBuffer(file.path, buffer, contentType);
   } finally {
     endAssetDownload(resolvedUrl);
   }

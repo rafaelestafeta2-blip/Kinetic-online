@@ -3,8 +3,10 @@ import { DrillMode } from '../types/game';
 import { resolveAssetUrl, resolveLocalOrBackendAssetUrl } from '../utils/assetUrl';
 import {
   cacheFetchedAssetBuffer,
+  fetchChunkedAssetBuffer,
   readCachedAssetBuffer,
 } from '../utils/resourcePackManager';
+import { getChunkedAssetDescriptor } from '../utils/chunkedAssetRegistry';
 
 /** Map GLB URLs for bomb arenas — keep in sync with *LevelBuilder LOCAL_URL constants. */
 export const MAP_GLB_BY_MODE: Partial<Record<DrillMode, string>> = {
@@ -69,6 +71,24 @@ function loadArrayBuffer(url: string, onProgress?: (ratio0to1: number) => void):
         THREE.Cache.add(url, cachedBuf);
         onProgress?.(1);
         inflight.delete(url);
+        return;
+      }
+      if (getChunkedAssetDescriptor(url)) {
+        try {
+          const assembled = await fetchChunkedAssetBuffer(url, {
+            onProgress: (loaded, total) => {
+              if (total > 0) {
+                onProgress?.(Math.min(1, loaded / total));
+              }
+            },
+          });
+          if (assembled && assembled.byteLength > 0) {
+            THREE.Cache.add(url, assembled);
+            onProgress?.(1);
+          }
+        } finally {
+          inflight.delete(url);
+        }
         return;
       }
     }

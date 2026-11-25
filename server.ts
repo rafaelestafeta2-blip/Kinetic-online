@@ -81,9 +81,9 @@ async function startServer(): Promise<void> {
   });
 
   const OTA_MANIFEST = {
-    version: process.env.KINETIC_OTA_VERSION?.trim() || '2.6.0-YARD-HD',
+    version: process.env.KINETIC_OTA_VERSION?.trim() || '2.6.1-YARD-HD',
     assetRevision:
-      process.env.KINETIC_ASSET_REVISION?.trim() || '2026.11.25-yard-lod0',
+      process.env.KINETIC_ASSET_REVISION?.trim() || '2026.11.25-yard-lod0-v2',
     cdnBaseUrl: process.env.VITE_ASSET_CDN_URL?.trim() || '',
     publishedAt: '2026-11-20T18:30:00.000Z',
     patchTitle: 'ATUALIZAÇÃO 2.5 · LOJA PREMIUM, AEMONDIR & V18 SPECTRE',
@@ -1617,9 +1617,11 @@ async function startServer(): Promise<void> {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
+    const publicPath = path.join(process.cwd(), 'public');
     app.use(express.static(distPath));
+    app.use(express.static(publicPath));
     app.get('*all', (req, res) => {
-      if (/^\/(models|sound|assets)\//.test(req.path)) {
+      if (/^\/(models|sound|maps|sounds|audio|assets)\//.test(req.path)) {
         res.status(404).type('text/plain').send('Asset not found');
         return;
       }
