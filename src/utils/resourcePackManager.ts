@@ -11,7 +11,7 @@ import {
   endAssetDownload,
   updateAssetDownloadProgress,
 } from './assetDownloadTracker';
-import { resolveAssetUrl } from './assetUrl';
+import { resolveAssetUrl, resolveLocalOrBackendAssetUrl } from './assetUrl';
 
 export const RESOURCE_PACK_CACHE_NAME = 'kinetic-resource-packs-v2';
 
@@ -541,11 +541,24 @@ async function fetchAndStoreSingleFile(
   beginAssetDownload(resolvedUrl);
 
   try {
-    const response = await fetch(resolvedUrl, {
+    let response = await fetch(resolvedUrl, {
       mode: 'cors',
       credentials: 'omit',
       signal,
     });
+    if (!response.ok) {
+      const fallbackUrl = resolveLocalOrBackendAssetUrl(file.path);
+      if (fallbackUrl && fallbackUrl !== resolvedUrl) {
+        const retryRes = await fetch(fallbackUrl, {
+          mode: 'cors',
+          credentials: 'omit',
+          signal,
+        });
+        if (retryRes.ok) {
+          response = retryRes;
+        }
+      }
+    }
     if (!response.ok) {
       throw new Error(`HTTP ${response.status} ao baixar ${file.path}`);
     }

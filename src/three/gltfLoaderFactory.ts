@@ -20,6 +20,7 @@ import {
   cacheFetchedAssetBuffer,
   readCachedAssetBuffer,
 } from '../utils/resourcePackManager';
+import { resolveLocalOrBackendAssetUrl } from '../utils/assetUrl';
 
 const DRACO_DECODER_PATH = '/draco/';
 const KTX2_TRANSCODER_PATH = '/basis/';
@@ -138,7 +139,29 @@ export function createGameGltfLoader(loadingManager?: THREE.LoadingManager): GLT
       beginAssetDownload(url);
       manager?.itemStart(url);
       try {
-        const res = await fetch(url, { mode: 'cors', credentials: 'omit' });
+        let res = await fetch(url, { mode: 'cors', credentials: 'omit' });
+        if (!res.ok && url.includes('/models/')) {
+          const idx = url.indexOf('/models/');
+          const decodedIdx = decodeURIComponent(url).indexOf('/models/');
+          const localPath =
+            idx >= 0
+              ? url.slice(idx).split('?')[0]
+              : decodedIdx >= 0
+                ? decodeURIComponent(url).slice(decodedIdx).split('?')[0]
+                : '';
+          if (localPath) {
+            const fallbackUrl = resolveLocalOrBackendAssetUrl(localPath);
+            if (fallbackUrl && fallbackUrl !== url) {
+              const retryRes = await fetch(fallbackUrl, {
+                mode: 'cors',
+                credentials: 'omit',
+              });
+              if (retryRes.ok) {
+                res = retryRes;
+              }
+            }
+          }
+        }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
         const total = Number(res.headers.get('content-length') || '0');

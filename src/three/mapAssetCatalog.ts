@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { DrillMode } from '../types/game';
-import { resolveAssetUrl } from '../utils/assetUrl';
+import { resolveAssetUrl, resolveLocalOrBackendAssetUrl } from '../utils/assetUrl';
 import {
   cacheFetchedAssetBuffer,
   readCachedAssetBuffer,
@@ -104,6 +104,37 @@ function loadArrayBuffer(url: string, onProgress?: (ratio0to1: number) => void):
         },
         (err) => {
           if (settled) return;
+          if (url.includes('/models/') || url.includes('models%2F')) {
+            const decoded = decodeURIComponent(url);
+            const idx = decoded.indexOf('/models/');
+            const localPath = idx >= 0 ? decoded.slice(idx).split('?')[0] : '';
+            const fallbackUrl = localPath ? resolveLocalOrBackendAssetUrl(localPath) : '';
+            if (fallbackUrl && fallbackUrl !== url) {
+              loader.load(
+                fallbackUrl,
+                (data) => {
+                  if (settled) return;
+                  settled = true;
+                  window.clearTimeout(timer);
+                  inflight.delete(url);
+                  if (isHeavyMapAsset && data instanceof ArrayBuffer && data.byteLength > 0) {
+                    void cacheFetchedAssetBuffer(url, data);
+                  }
+                  onProgress?.(1);
+                  resolve();
+                },
+                undefined,
+                (err2) => {
+                  if (settled) return;
+                  settled = true;
+                  window.clearTimeout(timer);
+                  inflight.delete(url);
+                  reject(err2);
+                }
+              );
+              return;
+            }
+          }
           settled = true;
           window.clearTimeout(timer);
           inflight.delete(url);

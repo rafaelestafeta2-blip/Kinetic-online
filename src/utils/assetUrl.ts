@@ -72,6 +72,36 @@ function appendRevisionParam(url: string): string {
   return `${url}${sep}v=${encodeURIComponent(activeAssetRevision)}`;
 }
 
+export function resolveLocalOrBackendAssetUrl(localOrAbsolutePath: string): string {
+  if (!localOrAbsolutePath) return localOrAbsolutePath;
+  const normalized = localOrAbsolutePath.startsWith('/')
+    ? localOrAbsolutePath
+    : `/${localOrAbsolutePath}`;
+
+  // On Capacitor native Android (https://localhost), resolve backend HTTP URL from VITE_WS_SERVER_URL
+  const isLocalNativeOrigin =
+    typeof window !== 'undefined' &&
+    (window.location.hostname === 'localhost' ||
+      window.location.protocol === 'capacitor:');
+  const wsUrl =
+    typeof import.meta !== 'undefined'
+      ? (import.meta as unknown as { env?: Record<string, string | undefined> })
+          .env?.VITE_WS_SERVER_URL
+      : undefined;
+
+  if (isLocalNativeOrigin && wsUrl && /^wss?:\/\//i.test(wsUrl.trim())) {
+    try {
+      const parsed = new URL(
+        wsUrl.trim().replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:')
+      );
+      return appendRevisionParam(`${parsed.origin}${normalized}`);
+    } catch {
+      // fall back to relative path
+    }
+  }
+  return appendRevisionParam(localOrAbsolutePath);
+}
+
 export function resolveAssetUrl(localOrAbsolutePath: string): string {
   if (!localOrAbsolutePath) return localOrAbsolutePath;
   if (/^https?:\/\//i.test(localOrAbsolutePath)) return localOrAbsolutePath;
@@ -90,11 +120,6 @@ export function resolveAssetUrl(localOrAbsolutePath: string): string {
   }
 
   if (isHeavyAsset) {
-    // Yard 2.0 LOD0 zero-simplification package is bundled directly in the app origin
-    // so an older or un-uploaded external CDN object never serves the simplified 32MB version.
-    if (normalized.endsWith('/yard_v2_lod0.glb')) {
-      return appendRevisionParam(localOrAbsolutePath);
-    }
     if (firebaseStorageTarget) {
       const objectPath = firebaseStorageTarget.prefix
         ? `${firebaseStorageTarget.prefix}${normalized}`
@@ -108,3 +133,4 @@ export function resolveAssetUrl(localOrAbsolutePath: string): string {
   }
   return localOrAbsolutePath;
 }
+
