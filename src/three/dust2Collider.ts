@@ -205,7 +205,7 @@ export class Dust2TriangleCollider {
           }
         }
 
-        if (absNy < (isPlayerClipOnly ? 0.88 : 0.72)) {
+        if (absNy < 0.55) {
           if (!isPlayerClipOnly) {
             allWalls.push(entry);
           }
@@ -317,7 +317,7 @@ export class Dust2TriangleCollider {
 
         for (let i = 0; i < bucket.length; i++) {
           const t = bucket[i];
-          if (t.playerClipOnly) continue;
+          if (t.playerClipOnly && (t.normal.y < 0.55 || t.normal.y > 0.94)) continue;
           if (
             x < t.minX - 0.05 ||
             x > t.maxX + 0.05 ||
@@ -366,7 +366,7 @@ export class Dust2TriangleCollider {
 
         for (let i = 0; i < bucket.length; i++) {
           const t = bucket[i];
-          if (t.playerClipOnly) continue;
+          if (t.playerClipOnly && (t.normal.y < 0.55 || t.normal.y > 0.94)) continue;
           if (
             x < t.minX - 0.05 ||
             x > t.maxX + 0.05 ||
@@ -631,6 +631,7 @@ export class Dust2TriangleCollider {
     for (let i = 0; i < bucket.length; i++) {
       const t = bucket[i];
       if (t.normal.y > -0.45) continue;
+      if (t.playerClipOnly && t.normal.y > -0.92) continue;
       if (x < t.minX || x > t.maxX || z < t.minZ || z > t.maxZ) continue;
       const yOnTri = this.sampleTriangleY(t, x, z);
       if (yOnTri === null) continue;
@@ -651,6 +652,7 @@ export class Dust2TriangleCollider {
 
     for (let i = 0; i < bucket.length; i++) {
       const t = bucket[i];
+      if (t.playerClipOnly || t.normal.y > -0.45) continue;
       if (t.maxY < yBottom + 0.82 || t.minY > yBottom + 1.58) continue;
       if (x < t.minX || x > t.maxX || z < t.minZ || z > t.maxZ) continue;
       const yOnTri = this.sampleTriangleY(t, x, z);
@@ -684,7 +686,7 @@ export class Dust2TriangleCollider {
       return collided;
     }
 
-    const waistMinY = yBottom + 0.54;
+    const waistMinY = yBottom + 0.58;
     const headMaxY = yBottom + Math.min(playerHeight - 0.2, 1.5);
     const midY = (waistMinY + headMaxY) * 0.5;
     const sampleHeights =

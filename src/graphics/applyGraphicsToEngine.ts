@@ -168,23 +168,33 @@ export function applyGraphicsToEngine(
 
   let forceAllMaterialsNeedsUpdate = false;
 
+  const currentDrillMode = (engine.state as { drillMode?: string }).drillMode;
+  const isYardV2Mode = currentDrillMode === 'YARD_V2_BOMB_5V5';
+
   // 2. Tonalidade ACES Filmic vs Linear
   const targetToneMapping = settings.acesToneMapping
     ? THREE.ACESFilmicToneMapping
     : THREE.LinearToneMapping;
+  const targetExposure = isYardV2Mode
+    ? settings.acesToneMapping
+      ? 1.12
+      : 0.96
+    : settings.acesToneMapping
+      ? 0.92
+      : 0.78;
   if (
     cache.lastAcesToneMapping !== settings.acesToneMapping ||
     renderer.toneMapping !== targetToneMapping
   ) {
     cache.lastAcesToneMapping = settings.acesToneMapping;
     renderer.toneMapping = targetToneMapping;
-    // Calibrated so sunlit sandstone/concrete keeps rich midtones in ACES and never clips white in Linear
-    renderer.toneMappingExposure = settings.acesToneMapping ? 0.92 : 0.72;
     forceAllMaterialsNeedsUpdate = true;
+  }
+  if (Math.abs(renderer.toneMappingExposure - targetExposure) > 0.005) {
+    renderer.toneMappingExposure = targetExposure;
   }
 
   // 3. Sombras (PCFShadowMap, mapSize e reconstrução de shadow map ao alterar)
-  const currentDrillMode = (engine.state as { drillMode?: string }).drillMode;
   const shadowsActive =
     effectiveShadows !== 'OFF' && currentDrillMode !== 'FREE_RANGE';
   if (renderer.shadowMap.enabled !== shadowsActive) {
@@ -285,11 +295,12 @@ export function applyGraphicsToEngine(
     scene.fog = null;
   } else if (!scene.fog) {
     const mode = (engine.state as { drillMode?: string }).drillMode;
-    if (
+    if (mode === 'YARD_V2_BOMB_5V5') {
+      scene.fog = new THREE.FogExp2(0xd2cdc3, 0.00175);
+    } else if (
       mode === 'DUST2_BOMB_5V5' ||
       mode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
-      mode === 'DE_DST_BOMB_5V5' ||
-      mode === 'YARD_V2_BOMB_5V5'
+      mode === 'DE_DST_BOMB_5V5'
     ) {
       scene.fog = new THREE.FogExp2(0xdccbb1, 0.0032);
     } else if (

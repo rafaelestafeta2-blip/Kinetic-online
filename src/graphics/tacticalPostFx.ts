@@ -11,7 +11,7 @@
 
 import * as THREE from 'three';
 
-export type PostFxBiome = 'desert' | 'outdoor' | 'indoor';
+export type PostFxBiome = 'desert' | 'yard' | 'outdoor' | 'indoor';
 
 const VERT = /* glsl */ `
 varying vec2 vUv;
@@ -164,7 +164,14 @@ function resolveTargetType(renderer: THREE.WebGLRenderer): THREE.TextureDataType
 
 function applyBiomeUniforms(material: THREE.ShaderMaterial, biome: PostFxBiome): void {
   const u = material.uniforms;
-  if (biome === 'desert') {
+  if (biome === 'yard') {
+    // PC Yard reference: crisp airy daylight, slightly dusty/desaturated CryEngine look, light vignette
+    u.uBloomStrength.value = 0.14;
+    u.uContrast.value = 1.02;
+    u.uSaturation.value = 0.94;
+    u.uVignette.value = 0.08;
+    u.uTint.value.set(1.0, 1.0, 0.99);
+  } else if (biome === 'desert') {
     u.uBloomStrength.value = 0.18;
     u.uContrast.value = 1.05;
     u.uSaturation.value = 1.06;

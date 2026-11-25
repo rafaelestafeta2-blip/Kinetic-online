@@ -282,9 +282,15 @@ export async function loadV23MapGeometry(
             std.map.anisotropy = isSoftwareGl ? 1 : 4;
             std.map.needsUpdate = true;
           }
-          std.roughness = Math.max(0.68, std.roughness ?? 0.85);
-          std.metalness = Math.min(0.16, std.metalness ?? 0.05);
-          std.envMapIntensity = isSource2Yard ? 0.48 : 0.42;
+          if (isSource2Yard) {
+            std.roughness = Math.max(0.76, std.roughness ?? 0.88);
+            std.metalness = Math.min(0.06, std.metalness ?? 0.02);
+            std.envMapIntensity = 0.92;
+          } else {
+            std.roughness = Math.max(0.68, std.roughness ?? 0.85);
+            std.metalness = Math.min(0.16, std.metalness ?? 0.05);
+            std.envMapIntensity = 0.42;
+          }
 
           const matName = (std.name || '').toLowerCase();
           const isWaterPlaceholder = !std.map && meshNameLower.includes('water');
@@ -307,12 +313,12 @@ export async function loadV23MapGeometry(
             shouldCastShadow = false;
             shouldReceiveShadow = false;
           } else if (isYardDecorativeGlass) {
-            // Solid dark reflective tinted glass on unenterable decorative houses/trucks
+            // Solid reflective tinted glass on unenterable decorative houses/trucks
             // so players never look through hollow building shells into the void
-            std.color.setHex(0x1b2630);
-            std.roughness = 0.22;
-            std.metalness = 0.35;
-            std.envMapIntensity = 0.85;
+            std.color.setHex(0x28363e);
+            std.roughness = 0.24;
+            std.metalness = 0.28;
+            std.envMapIntensity = 1.05;
             std.transparent = false;
             std.opacity = 1.0;
             std.alphaTest = 0;
