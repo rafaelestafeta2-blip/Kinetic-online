@@ -14,7 +14,8 @@ export type V23BombMapMode =
   | 'DE_DST_BOMB_5V5'
   | 'MP_NUKED_BOMB_5V5'
   | 'DE_SUPPLY_BOMB_5V5'
-  | 'YARD_V2_BOMB_5V5';
+  | 'YARD_V2_BOMB_5V5'
+  | 'OBJECT_D17_BOMB_5V5';
 
 export interface V23MapConfig {
   mode: V23BombMapMode;
@@ -123,6 +124,25 @@ export const V23_MAP_CONFIGS: Record<V23BombMapMode, V23MapConfig> = {
       return 'PÁTIO CENTRAL (YARD 2.0 MID)';
     },
   },
+  OBJECT_D17_BOMB_5V5: {
+    mode: 'OBJECT_D17_BOMB_5V5',
+    label: 'OBJECT D17 HD',
+    glbUrl: resolveAssetUrl('/models/maps/object_d17_lod0.glb'),
+    floorYLift: 0,
+    attackerSpawn: new THREE.Vector3(25.48, 0.05, 2.90),
+    defenderSpawn: new THREE.Vector3(-46.14, 0.05, 7.69),
+    spawnYaw: Math.PI * 0.5,
+    bombSiteA: new THREE.Vector3(-21.04, 0.06, 35.86),
+    bombSiteB: new THREE.Vector3(-21.14, 0.09, -17.28),
+    getCallout: (x, y, z) => {
+      if (x > 16) return 'BASE VANGUARD (T SPAWN // D17)';
+      if (x < -36) return 'BASE BLACKTHORN (CT SPAWN // D17)';
+      if (z > 22 && x < -4) return 'BOMBA A (SETOR INDUSTRIAL NORTE)';
+      if (z < -6 && x < -4) return 'BOMBA B (PÁTIO DE TANQUES SUL)';
+      if (y > 2.2) return 'PASSARELA SUPERIOR (UPPER CATWALK)';
+      return 'GALPÃO CENTRAL (OBJECT D17 MID)';
+    },
+  },
 };
 
 export function isV23BombMapMode(mode: DrillMode | undefined | null): mode is V23BombMapMode {
@@ -131,7 +151,8 @@ export function isV23BombMapMode(mode: DrillMode | undefined | null): mode is V2
     mode === 'DE_DST_BOMB_5V5' ||
     mode === 'MP_NUKED_BOMB_5V5' ||
     mode === 'DE_SUPPLY_BOMB_5V5' ||
-    mode === 'YARD_V2_BOMB_5V5'
+    mode === 'YARD_V2_BOMB_5V5' ||
+    mode === 'OBJECT_D17_BOMB_5V5'
   );
 }
 
@@ -217,10 +238,18 @@ export async function loadV23MapGeometry(
       mapTransformGroup.add(modelRoot);
 
       const softDecalOrGlassRe =
-        /decal|graffiti|graf|wall_dirt|wall_leaks|wall_cracks|wall_old_paint|puddle|stain|overlay|poster|e_logo|plant_arrow|plant_two|notes|glass|window|water/i;
+        /decal|dcal|graffiti|graf|wall_dirt|wall_leaks|wall_cracks|wall_old_paint|puddle|stain|overlay|poster|e_logo|plant_arrow|plant_two|notes|glass|window|water|stripe_yellow|parkingstripe|asphalt_broken|garbage_a|industrial_set_.*_diff/i;
       const nonColliderDecalRe =
-        /decal|graffiti|graf|wall_dirt|wall_leaks|wall_cracks|wall_old_paint|puddle|stain|overlay|poster|e_logo|plant_arrow|plant_two|notes|grass_floor|carpet_fringe|ivy|leaves_narrow|round_leaved|barbed_wire|washing|house_wires|rags|distance_bushes|oak_tree|background_house/i;
+        /decal|dcal|graffiti|graf|wall_dirt|wall_leaks|wall_cracks|wall_old_paint|puddle|stain|overlay|poster|e_logo|plant_arrow|plant_two|notes|grass_floor|grass_lawn_translusent|carpet_fringe|ivy|leaves_narrow|round_leaved|barbed_wire|washing|house_wires|rags|distance_bushes|oak_tree|background_house|dogwood_branch|maple_tree_leaves|urban_tree_small_1_leaves|stripe_yellow|parkingstripe|asphalt_broken|garbage_a|garbage_c|industrial_set_.*_diff/i;
       const isSource2Yard = mode === 'YARD_V2_BOMB_5V5';
+      const isSource2ObjectD17 = mode === 'OBJECT_D17_BOMB_5V5';
+      const isSource2Workshop = isSource2Yard || isSource2ObjectD17;
+      const workshopOuterBounds = isSource2ObjectD17
+        ? { minX: -62, maxX: 42, minZ: -52, maxZ: 64 }
+        : { minX: -82, maxX: 96, minZ: -85, maxZ: 98 };
+      const workshopColliderBounds = isSource2ObjectD17
+        ? { minX: -58, maxX: 38, minZ: -48, maxZ: 60 }
+        : { minX: -76, maxX: 90, minZ: -80, maxZ: 94 };
       const _tmpBox = new THREE.Box3();
       mapTransformGroup.updateMatrixWorld(true);
 
@@ -259,17 +288,17 @@ export async function loadV23MapGeometry(
         let shouldReceiveShadow = !isSoftwareGl;
         let isNonColliderDecal = false;
 
-        if (isSource2Yard && child.geometry) {
+        if (isSource2Workshop && child.geometry) {
           if (!child.geometry.boundingBox) child.geometry.computeBoundingBox();
           if (child.geometry.boundingBox) {
             _tmpBox.copy(child.geometry.boundingBox).applyMatrix4(child.matrixWorld);
             // Only skip meshes whose ENTIRE world AABB is completely outside the playable arena
             // (never check center alone, because Source 2 merges playable ground + distant skybox into one mesh!)
             if (
-              _tmpBox.max.x < -82 ||
-              _tmpBox.min.x > 96 ||
-              _tmpBox.max.z < -85 ||
-              _tmpBox.min.z > 98
+              _tmpBox.max.x < workshopOuterBounds.minX ||
+              _tmpBox.min.x > workshopOuterBounds.maxX ||
+              _tmpBox.max.z < workshopOuterBounds.minZ ||
+              _tmpBox.min.z > workshopOuterBounds.maxZ
             ) {
               shouldCastShadow = false;
               isNonColliderDecal = true;
@@ -287,7 +316,7 @@ export async function loadV23MapGeometry(
             std.map.anisotropy = isSoftwareGl ? 1 : 4;
             std.map.needsUpdate = true;
           }
-          if (isSource2Yard) {
+          if (isSource2Workshop) {
             std.roughness = Math.max(0.76, std.roughness ?? 0.88);
             std.metalness = Math.min(0.06, std.metalness ?? 0.02);
             std.envMapIntensity = 0.92;
@@ -339,7 +368,10 @@ export async function loadV23MapGeometry(
             std.side = THREE.DoubleSide;
             child.renderOrder = 2;
             shouldCastShadow = false;
-          } else if (std.transparent && softDecalOrGlassRe.test(matName)) {
+          } else if (
+            (std.transparent && softDecalOrGlassRe.test(matName)) ||
+            (isSource2ObjectD17 && /puddle_on_concrete/i.test(matName))
+          ) {
             // Preserve smooth alpha blending on decals, graffiti, puddles, and real glass
             std.transparent = true;
             std.depthWrite = false;
@@ -352,12 +384,19 @@ export async function loadV23MapGeometry(
             shouldCastShadow = false;
           } else if (std.alphaTest > 0 || std.transparent) {
             // True alpha cutouts (foliage, fences, barbed wire, grates, hanging fabric)
-            std.alphaTest = Math.max(std.alphaTest || 0, 0.35);
+            const minCutoff = /big_fences_set|scaffoldinggrate|cargo_sign/i.test(matName)
+              ? 0.22
+              : 0.35;
+            std.alphaTest = Math.max(std.alphaTest || 0, minCutoff);
             std.transparent = false;
             std.depthWrite = true;
             std.side = THREE.DoubleSide;
-            // Canopies/fabric/trees cast shadows; tiny grass tufts/wires skip shadow pass for 60 FPS
-            if (/grass|flower|wire|barb|rope|chain|washing|fringe|rags|leaves|ivy|bushes/i.test(matName)) {
+            // Canopies/fabric/trees cast shadows; tiny grass tufts/wires/debris skip shadow pass for 60 FPS
+            if (
+              /grass|flower|wire|barb|rope|chain|washing|fringe|rags|leaves|ivy|bushes|dogwood|garbage/i.test(
+                matName
+              )
+            ) {
               shouldCastShadow = false;
             }
           } else {
@@ -366,12 +405,16 @@ export async function loadV23MapGeometry(
             std.transparent = false;
             std.depthWrite = true;
             std.side = THREE.DoubleSide;
-            // Ground/sand/dirt never needs to cast shadows onto itself (saves huge mobile shadow-pass cost)
-            if (/sand_a|groundrough|asphalt|road|dirt|stones_a|rubble|background_house/i.test(matName)) {
+            // Ground/sand/dirt/terrain never needs to cast shadows onto itself (saves huge mobile shadow-pass cost)
+            if (
+              /sand_a|groundrough|asphalt|road|dirt|stones_a|rubble|background_house|terrain|grass_lawn/i.test(
+                matName
+              )
+            ) {
               shouldCastShadow = false;
             }
             // Only lift very dark Source 2 linear tints mildly so sunlight vs shadow contrast stays rich
-            if (isSource2Yard && std.map && std.color.r + std.color.g + std.color.b < 1.55) {
+            if (isSource2Workshop && std.map && std.color.r + std.color.g + std.color.b < 1.55) {
               std.color.lerp(_yardDaylightLiftColor, 0.16);
             }
           }
@@ -392,10 +435,10 @@ export async function loadV23MapGeometry(
       bundle.collider.buildFromGroup(
         mapTransformGroup,
         [],
-        isSource2Yard ? { minX: -76, maxX: 90, minZ: -80, maxZ: 94 } : undefined
+        isSource2Workshop ? workshopColliderBounds : undefined
       );
 
-      if (isSource2Yard) {
+      if (isSource2Workshop) {
         // Run lossless spatial partitioning + matte MeshLambertMaterial upgrade AFTER collider build
         // so physics/stairs use the exact source geometry and rendering slashes mobile GPU load.
         const opt = optimizeStaticMapForRuntime(mapTransformGroup, {

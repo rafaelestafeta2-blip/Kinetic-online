@@ -36,6 +36,7 @@ const CASUAL_MAP_POOL: Array<{
   { id: 'MP_NUKED_BOMB_5V5', title: 'MP_NUKED TOWN', subtitle: 'Vila Nuclear • Bomb A / B' },
   { id: 'DE_SUPPLY_BOMB_5V5', title: 'DE_SUPPLY BASE', subtitle: 'Base de Suprimentos • Bomb A / B' },
   { id: 'YARD_V2_BOMB_5V5', title: 'YARD 2.0 HD', subtitle: 'Complexo Desértico • Bomb A / B' },
+  { id: 'OBJECT_D17_BOMB_5V5', title: 'OBJECT D17 HD', subtitle: 'Complexo Industrial • Bomb A / B' },
 ];
 
 export const WarfaceMatchmakingWidget: React.FC<WarfaceMatchmakingWidgetProps> = ({

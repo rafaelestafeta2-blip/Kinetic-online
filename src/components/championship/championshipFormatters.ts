@@ -182,6 +182,8 @@ export function formatArenaDisplayName(arenaMode: string): string {
       return 'DE_SUPPLY BASE · PLANTAR BOMBA 5V5';
     case 'YARD_V2_BOMB_5V5':
       return 'YARD 2.0 HD · PLANTAR BOMBA 5V5';
+    case 'OBJECT_D17_BOMB_5V5':
+      return 'OBJECT D17 HD · PLANTAR BOMBA 5V5';
     case 'YARD_BOMB_5V5':
       return 'YARD · PLANTAR BOMBA 5V5';
     case 'STORAGE_BOMB_5V5':

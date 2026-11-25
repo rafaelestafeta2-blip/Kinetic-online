@@ -216,6 +216,7 @@ export class TacticalSkySystem {
     const isMpNuked = mode === 'MP_NUKED_BOMB_5V5';
     const isDeSupply = mode === 'DE_SUPPLY_BOMB_5V5';
     const isYardV2 = mode === 'YARD_V2_BOMB_5V5';
+    const isObjectD17 = mode === 'OBJECT_D17_BOMB_5V5';
     const isStationArena = mode === 'STATION_CAPTURE_5V5' || mode === 'STATION_TDM_5V5';
     const isYard = mode === 'YARD_BOMB_5V5';
     this.isOutdoor =
@@ -230,6 +231,7 @@ export class TacticalSkySystem {
       isMpNuked ||
       isDeSupply ||
       isYardV2 ||
+      isObjectD17 ||
       isStationArena ||
       isYard;
 
@@ -237,40 +239,42 @@ export class TacticalSkySystem {
     const uniforms = this.sky.material.uniforms;
     const isMobile = isMobileGpuTarget();
 
-    if (isYardV2) {
-      // PC Yard reference daylight: bright hazy desert sky, 50° midday sun, strong sand-bounce GI
-      this.activeBiome = 'yard';
-      const phi = THREE.MathUtils.degToRad(90 - 50);
-      const theta = THREE.MathUtils.degToRad(58);
+    if (isYardV2 || isObjectD17) {
+      // Source 2 Workshop daylight (Yard 2.0 desert / Object D17 industrial plains): crisp 52° sun + balanced bounce GI
+      this.activeBiome = isObjectD17 ? 'outdoor' : 'yard';
+      const phi = THREE.MathUtils.degToRad(90 - (isObjectD17 ? 53 : 50));
+      const theta = THREE.MathUtils.degToRad(isObjectD17 ? 72 : 58);
       this.sunDirection.setFromSphericalCoords(1, phi, theta).normalize();
 
-      uniforms.turbidity.value = 4.6;
-      uniforms.rayleigh.value = 0.75;
-      uniforms.mieCoefficient.value = 0.0055;
-      uniforms.mieDirectionalG.value = 0.78;
+      uniforms.turbidity.value = isObjectD17 ? 2.8 : 4.6;
+      uniforms.rayleigh.value = isObjectD17 ? 1.65 : 0.75;
+      uniforms.mieCoefficient.value = isObjectD17 ? 0.0042 : 0.0055;
+      uniforms.mieDirectionalG.value = isObjectD17 ? 0.82 : 0.78;
       uniforms.sunPosition.value.copy(this.sunDirection);
-      uniforms.showSunDisc.value = 0.85;
+      uniforms.showSunDisc.value = 0.9;
 
       if (uniforms.cloudScale) uniforms.cloudScale.value = 0.00022;
       if (uniforms.cloudSpeed) uniforms.cloudSpeed.value = 0.000022;
-      if (uniforms.cloudCoverage) uniforms.cloudCoverage.value = 0.48;
+      if (uniforms.cloudCoverage) uniforms.cloudCoverage.value = isObjectD17 ? 0.44 : 0.48;
       if (uniforms.cloudDensity) uniforms.cloudDensity.value = 0.38;
       if (uniforms.cloudElevation) uniforms.cloudElevation.value = 0.52;
 
-      this.outdoorFallbackBg.setHex(0xc4cdd2);
+      this.outdoorFallbackBg.setHex(isObjectD17 ? 0xaec4d8 : 0xc4cdd2);
       this.scene.background = this.outdoorFallbackBg;
-      this.scene.fog = fogEnabled ? new THREE.FogExp2(0xd2cdc3, 0.00175) : null;
+      this.scene.fog = fogEnabled
+        ? new THREE.FogExp2(isObjectD17 ? 0xc8d2dc : 0xd2cdc3, isObjectD17 ? 0.00145 : 0.00175)
+        : null;
 
-      this.keyLightTarget.position.set(0, 4.0, 8);
+      this.keyLightTarget.position.set(isObjectD17 ? -8 : 0, 4.0, isObjectD17 ? 6 : 8);
       this.keyLight.position
         .copy(this.keyLightTarget.position)
         .addScaledVector(this.sunDirection, 88);
-      this.keyLight.color.setHex(0xfff7e8);
-      this.keyLight.intensity = 2.65;
+      this.keyLight.color.setHex(isObjectD17 ? 0xfff5e6 : 0xfff7e8);
+      this.keyLight.intensity = isObjectD17 ? 2.55 : 2.65;
       this.keyLight.castShadow = !!(this.renderer && this.renderer.shadowMap.enabled);
       this.updateShadowFrustum(68, 175);
-      this.applyFillRig('yard', isMobile, true, false);
-      this.applyBiomeEnvironment('yard');
+      this.applyFillRig(isObjectD17 ? 'outdoor' : 'yard', isMobile, true, false);
+      this.applyBiomeEnvironment(isObjectD17 ? 'outdoor' : 'yard');
       if ('environmentIntensity' in this.scene) {
         (this.scene as THREE.Scene & { environmentIntensity: number }).environmentIntensity = 0.92;
       }

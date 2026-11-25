@@ -97,6 +97,11 @@ const OFFICIAL_RANKED_MAP_POOL: Array<{
     subtitle: 'Complexo Desértico Steam Workshop · Plant the Bomb 5v5',
   },
   {
+    id: 'OBJECT_D17_BOMB_5V5',
+    title: 'OBJECT D17 HD',
+    subtitle: 'Complexo Industrial Steam Workshop · Plant the Bomb 5v5',
+  },
+  {
     id: 'STATION_TDM_5V5',
     title: 'STATION ARENA',
     subtitle: 'Estação Ferroviária · Mata-Mata em Equipe 5v5 (Alvo 40 Abates)',

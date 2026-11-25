@@ -142,6 +142,7 @@ export function updateTargetsAndCombatAI(engine: any, dt: number): void {
       engine.state.drillMode === 'MP_NUKED_BOMB_5V5' ||
       engine.state.drillMode === 'DE_SUPPLY_BOMB_5V5' ||
       engine.state.drillMode === 'YARD_V2_BOMB_5V5' ||
+      engine.state.drillMode === 'OBJECT_D17_BOMB_5V5' ||
       engine.state.drillMode === 'STATION_CAPTURE_5V5';
 
     if (engine.state.drillMode !== 'FREE_RANGE' && engine.targets.length > 0) {

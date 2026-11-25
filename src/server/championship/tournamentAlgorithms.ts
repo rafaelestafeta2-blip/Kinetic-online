@@ -12,6 +12,7 @@ export const CHAMPIONSHIP_MAP_POOL = [
   'MP_NUKED_BOMB_5V5',
   'DE_SUPPLY_BOMB_5V5',
   'YARD_V2_BOMB_5V5',
+  'OBJECT_D17_BOMB_5V5',
 ] as const;
 
 export interface RoundRobinClanSeed {

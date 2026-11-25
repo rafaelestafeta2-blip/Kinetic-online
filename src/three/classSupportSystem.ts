@@ -228,6 +228,7 @@ function isBombMode(mode: string): boolean {
     mode === 'MP_NUKED_BOMB_5V5' ||
     mode === 'DE_SUPPLY_BOMB_5V5' ||
     mode === 'YARD_V2_BOMB_5V5' ||
+    mode === 'OBJECT_D17_BOMB_5V5' ||
     mode === 'STATION_CAPTURE_5V5'
   );
 }

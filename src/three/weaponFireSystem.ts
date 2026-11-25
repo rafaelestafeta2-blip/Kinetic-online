@@ -186,6 +186,8 @@ export function executeSingleShot(engine: any): void {
                   ? engine.deSupplyLevelData.collider
                 : engine.state.drillMode === 'YARD_V2_BOMB_5V5'
                   ? engine.yardV2LevelData.collider
+                : engine.state.drillMode === 'OBJECT_D17_BOMB_5V5'
+                  ? engine.objectD17LevelData.collider
                 : engine.state.drillMode === 'STATION_CAPTURE_5V5' ||
                     engine.state.drillMode === 'STATION_TDM_5V5'
                   ? engine.stationArenaLevelData.collider
@@ -490,7 +492,9 @@ export function executeSingleShot(engine: any): void {
                               ? engine.deSupplyLevelData.collider
                               : engine.state.drillMode === 'YARD_V2_BOMB_5V5'
                                 ? engine.yardV2LevelData.collider
-                                : engine.state.drillMode === 'STATION_CAPTURE_5V5' ||
+                                : engine.state.drillMode === 'OBJECT_D17_BOMB_5V5'
+                                  ? engine.objectD17LevelData.collider
+                                  : engine.state.drillMode === 'STATION_CAPTURE_5V5' ||
                                     engine.state.drillMode === 'STATION_TDM_5V5'
                                   ? engine.stationArenaLevelData.collider
                                   : null;

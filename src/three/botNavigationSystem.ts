@@ -328,6 +328,7 @@ export function updateSmartBotNavigation(
     mode === 'MP_NUKED_BOMB_5V5' ||
     mode === 'DE_SUPPLY_BOMB_5V5' ||
     mode === 'YARD_V2_BOMB_5V5' ||
+    mode === 'OBJECT_D17_BOMB_5V5' ||
     mode === 'STATION_CAPTURE_5V5';
   const isC4Planted = isBombMode && mode !== 'STATION_CAPTURE_5V5' && yardBomb.info.bombStatus === 'PLANTED';
   const plantedSite: 'A' | 'B' = yardBomb.info.plantedSite === 'B' ? 'B' : 'A';

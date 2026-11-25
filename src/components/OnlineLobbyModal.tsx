@@ -34,6 +34,7 @@ const PRIVATE_ROOM_MAPS: DrillMode[] = [
   'MP_NUKED_BOMB_5V5',
   'DE_SUPPLY_BOMB_5V5',
   'YARD_V2_BOMB_5V5',
+  'OBJECT_D17_BOMB_5V5',
   'YARD_BOMB_5V5',
 ];
 
@@ -57,6 +58,7 @@ const MAP_LABELS: Record<string, { title: string; subtitle: string }> = {
   MP_NUKED_BOMB_5V5: { title: 'MP_NUKED TOWN', subtitle: 'Vila Nuclear • Bomb A / B' },
   DE_SUPPLY_BOMB_5V5: { title: 'DE_SUPPLY BASE', subtitle: 'Base de Suprimentos • Bomb A / B' },
   YARD_V2_BOMB_5V5: { title: 'YARD 2.0 HD', subtitle: 'Complexo Tático Desértico • Bomb A / B' },
+  OBJECT_D17_BOMB_5V5: { title: 'OBJECT D17 HD', subtitle: 'Complexo Industrial • Bomb A / B' },
   YARD_BOMB_5V5: { title: 'YARD TÁTICO', subtitle: 'Pátio de Contêineres • Bomb A / B' },
 };
 

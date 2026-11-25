@@ -27,6 +27,17 @@ export const CHUNKED_ASSET_REGISTRY: Record<string, ChunkedAssetDescriptor> = {
       { path: '/models/maps/yard_v2_lod0.p2.bin', sizeBytes: 13_504_112 },
     ],
   },
+  '/models/maps/object_d17_lod0.glb': {
+    virtualPath: '/models/maps/object_d17_lod0.glb',
+    contentType: 'model/gltf-binary',
+    totalBytes: 48_347_924,
+    parts: [
+      { path: '/models/maps/object_d17_lod0.p0.bin', sizeBytes: 12_086_981 },
+      { path: '/models/maps/object_d17_lod0.p1.bin', sizeBytes: 12_086_981 },
+      { path: '/models/maps/object_d17_lod0.p2.bin', sizeBytes: 12_086_981 },
+      { path: '/models/maps/object_d17_lod0.p3.bin', sizeBytes: 12_086_981 },
+    ],
+  },
 };
 
 export function normalizeAssetPathKey(urlOrPath: string): string {

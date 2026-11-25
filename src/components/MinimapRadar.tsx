@@ -53,6 +53,7 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const radarImgRef = useRef<HTMLImageElement | null>(null);
     const yardV2RadarImgRef = useRef<HTMLImageElement | null>(null);
+    const objectD17RadarImgRef = useRef<HTMLImageElement | null>(null);
 
     useEffect(() => {
       const img = new Image();
@@ -64,6 +65,11 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
       imgV2.src = '/assets/yard_v2_radar.webp';
       imgV2.onload = () => {
         yardV2RadarImgRef.current = imgV2;
+      };
+      const imgD17 = new Image();
+      imgD17.src = '/assets/object_d17_radar.webp';
+      imgD17.onload = () => {
+        objectD17RadarImgRef.current = imgD17;
       };
     }, []);
 
@@ -77,6 +83,7 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
       const center = size / 2;
       const isYard = drillMode === 'YARD_BOMB_5V5';
       const isYardV2 = drillMode === 'YARD_V2_BOMB_5V5';
+      const isObjectD17 = drillMode === 'OBJECT_D17_BOMB_5V5';
       const isDust2 = drillMode === 'DUST2_BOMB_5V5';
       const isAssault = drillMode === 'ASSAULT_BOMB_5V5';
       const isIndustria = drillMode === 'INDUSTRIA_BOMB_5V5';
@@ -126,6 +133,19 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
         const imgCenterZ = (9 - playerZ) * scale;
         ctx.drawImage(
           yardV2RadarImgRef.current,
+          imgCenterX - worldW / 2,
+          imgCenterZ - worldH / 2,
+          worldW,
+          worldH
+        );
+      } else if (isObjectD17 && objectD17RadarImgRef.current) {
+        // Exact CS2 overview calibration (pos_x=-1507, pos_y=1418, scale=3.383161, 1024px, rotated +90deg)
+        const worldW = 88.0 * scale;
+        const worldH = 88.0 * scale;
+        const imgCenterX = (-7.98 - playerX) * scale;
+        const imgCenterZ = (5.72 - playerZ) * scale;
+        ctx.drawImage(
+          objectD17RadarImgRef.current,
           imgCenterX - worldW / 2,
           imgCenterZ - worldH / 2,
           worldW,

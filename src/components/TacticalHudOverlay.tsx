@@ -95,6 +95,7 @@ export const TacticalHudOverlay: React.FC<TacticalHudOverlayProps> = ({
         hud.drillMode === 'MP_NUKED_BOMB_5V5' ||
         hud.drillMode === 'DE_SUPPLY_BOMB_5V5' ||
         hud.drillMode === 'YARD_V2_BOMB_5V5' ||
+        hud.drillMode === 'OBJECT_D17_BOMB_5V5' ||
         hud.drillMode === 'STATION_CAPTURE_5V5' ||
         hud.drillMode === 'STATION_TDM_5V5')
   );
@@ -466,6 +467,7 @@ export const TacticalHudOverlay: React.FC<TacticalHudOverlayProps> = ({
         hud.drillMode === 'MP_NUKED_BOMB_5V5' ||
         hud.drillMode === 'DE_SUPPLY_BOMB_5V5' ||
         hud.drillMode === 'YARD_V2_BOMB_5V5' ||
+        hud.drillMode === 'OBJECT_D17_BOMB_5V5' ||
         hud.drillMode === 'STATION_CAPTURE_5V5' ||
         hud.drillMode === 'STATION_TDM_5V5') &&
         hud.yardBomb && (

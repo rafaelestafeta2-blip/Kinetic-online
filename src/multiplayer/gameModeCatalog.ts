@@ -37,6 +37,7 @@ export const GAME_MODE_CATALOG: GameModeCategoryMeta[] = [
       { id: 'MP_NUKED_BOMB_5V5', label: 'MP_NUKED TOWN', shortTag: 'BOMB 5V5', rankedPool: true },
       { id: 'DE_SUPPLY_BOMB_5V5', label: 'DE_SUPPLY BASE', shortTag: 'BOMB 5V5', rankedPool: true },
       { id: 'YARD_V2_BOMB_5V5', label: 'YARD 2.0 HD', shortTag: 'BOMB 5V5', rankedPool: true },
+      { id: 'OBJECT_D17_BOMB_5V5', label: 'OBJECT D17 HD', shortTag: 'BOMB 5V5', rankedPool: true },
       { id: 'YARD_BOMB_5V5', label: 'YARD', shortTag: 'BOMB 5V5', rankedPool: false },
     ],
   },

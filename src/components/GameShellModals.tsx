@@ -43,6 +43,7 @@ const DRILL_PROTOCOLS: { mode: DrillMode; title: string; desc: string }[] = [
   { mode: 'MP_NUKED_BOMB_5V5', title: '00I. Mapa MP_Nuked Town (5v5)', desc: 'Plant the Bomb 5v5 em mp_nuked (.glb 2K + vila nuclear).' },
   { mode: 'DE_SUPPLY_BOMB_5V5', title: '00J. Mapa DE_Supply Base (5v5)', desc: 'Plant the Bomb 5v5 em de_supply (.glb 2K + base de suprimentos).' },
   { mode: 'YARD_V2_BOMB_5V5', title: '00K. Mapa Yard 2.0 HD (5v5)', desc: 'Plant the Bomb 5v5 em Yard 2.0 da Steam Workshop (.glb KTX2 UASTC + Meshopt).' },
+  { mode: 'OBJECT_D17_BOMB_5V5', title: '00L. Mapa Object D17 HD (5v5)', desc: 'Plant the Bomb 5v5 em Object D17 da Steam Workshop (.glb KTX2 UASTC + Meshopt).' },
   { mode: 'YARD_BOMB_5V5', title: '01. Mapa Yard (5v5)', desc: 'Plant the Bomb 5v5 no mapa clássico Yard do Warface.' },
   { mode: 'FREE_RANGE', title: '02. Estande Livre', desc: 'Raias de 15m a 55m, gongos AR500 e telemetria balística.' },
   { mode: 'KILLHOUSE_BLITZ', title: '03. Incursão CQB', desc: 'Percurso cronometrado no Killhouse com alvos blindados.' },

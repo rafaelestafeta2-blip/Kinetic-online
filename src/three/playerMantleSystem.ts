@@ -96,6 +96,7 @@ export function tryStartMantle(engine: any): boolean {
   const isMpNuked = engine.state.drillMode === 'MP_NUKED_BOMB_5V5';
   const isDeSupply = engine.state.drillMode === 'DE_SUPPLY_BOMB_5V5';
   const isYardV2 = engine.state.drillMode === 'YARD_V2_BOMB_5V5';
+  const isObjectD17 = engine.state.drillMode === 'OBJECT_D17_BOMB_5V5';
   const isStationArena =
     engine.state.drillMode === 'STATION_CAPTURE_5V5' ||
     engine.state.drillMode === 'STATION_TDM_5V5';
@@ -121,6 +122,8 @@ export function tryStartMantle(engine: any): boolean {
             ? engine.deSupplyLevelData.collider
           : isYardV2
             ? engine.yardV2LevelData.collider
+          : isObjectD17
+            ? engine.objectD17LevelData.collider
           : isStationArena
             ? engine.stationArenaLevelData.collider
           : null;

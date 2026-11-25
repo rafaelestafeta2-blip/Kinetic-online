@@ -224,6 +224,20 @@ export const RESOURCE_PACK_DEFINITIONS: ResourcePackDefinition[] = [
     ],
   },
   {
+    id: 'pack_map_object_d17',
+    title: 'Mapa Object D17 HD (LOD0 Original)',
+    subtitle: 'Complexo industrial competitivo da Steam Workshop Bomb 5v5',
+    category: 'MAPS',
+    recommended: true,
+    mapMode: 'OBJECT_D17_BOMB_5V5',
+    files: [
+      { path: '/models/maps/object_d17_lod0.p0.bin', sizeBytes: 12_086_981 },
+      { path: '/models/maps/object_d17_lod0.p1.bin', sizeBytes: 12_086_981 },
+      { path: '/models/maps/object_d17_lod0.p2.bin', sizeBytes: 12_086_981 },
+      { path: '/models/maps/object_d17_lod0.p3.bin', sizeBytes: 12_086_981 },
+    ],
+  },
+  {
     id: 'pack_accessories',
     title: 'Miras, Silenciadores, Granadas & Kits',
     subtitle: 'Ópticas 3D (Red Dot, Holo, LPVO), supressores, pingentes, C4 e kits de classe',
