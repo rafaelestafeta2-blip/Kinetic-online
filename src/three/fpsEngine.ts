@@ -4989,6 +4989,13 @@ export class TacticalFPSEngine {
       } else {
         this.updatePlayingSimulation(dt);
       }
+      if (this.state.drillMode === 'YARD_V2_BOMB_5V5') {
+        this.yardV2LevelData.updateVisibility?.(
+          this.yawObject.position.x,
+          this.yawObject.position.y,
+          this.yawObject.position.z
+        );
+      }
       if (this.keyLight?.castShadow && this.renderer.shadowMap.enabled) {
         followKeyLightShadowFrustum(this.keyLight, this.playerPos, {
           sunDirection: this.skySystem.getSunDirection(),

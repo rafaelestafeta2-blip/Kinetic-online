@@ -45,6 +45,8 @@ export interface Dust2LevelBundle extends TacticalLevelData {
   isLoaded: boolean;
   /** In-flight GLB load — prevents startGame from dispose()+reloading mid-prepare. */
   loadingPromise?: Promise<void> | null;
+  /** Optional zero-GC per-frame micro-detail distance culling updater for heavy static maps. */
+  updateVisibility?: ((camX: number, camY: number, camZ: number) => void) | null;
 }
 
 /** Serialize GLB loads so prepare + startGame never dispose each other. */

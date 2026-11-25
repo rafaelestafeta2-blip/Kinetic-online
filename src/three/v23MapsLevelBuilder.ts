@@ -6,6 +6,8 @@ import { Dust2LevelBundle, runExclusiveGlbLoad } from './dust2LevelBuilder';
 import { TacticalTargetEntity } from './levelBuilder';
 import { YardBotEntity } from './yardPropsBuilder';
 import { resolveAssetUrl } from '../utils/assetUrl';
+import { optimizeStaticMapForRuntime } from './mapPerformanceOptimizer';
+import { isMobileGpuTarget } from './gpuBudget';
 
 export type V23BombMapMode =
   | 'CSGO_ASSAULT_BOMB_5V5'
@@ -224,7 +226,10 @@ export async function loadV23MapGeometry(
 
       mapTransformGroup.traverse((child) => {
         if (!(child instanceof THREE.Mesh)) return;
-        child.frustumCulled = false;
+        if (child.geometry && !child.geometry.boundingSphere) {
+          child.geometry.computeBoundingSphere();
+        }
+        child.frustumCulled = true;
         child.userData.isEnvironment = true;
 
         const meshNameLower = (child.name || '').toLowerCase();
@@ -390,6 +395,24 @@ export async function loadV23MapGeometry(
         isSource2Yard ? { minX: -76, maxX: 90, minZ: -80, maxZ: 94 } : undefined
       );
 
+      if (isSource2Yard) {
+        // Run lossless spatial partitioning + matte MeshLambertMaterial upgrade AFTER collider build
+        // so physics/stairs use the exact source geometry and rendering slashes mobile GPU load.
+        const opt = optimizeStaticMapForRuntime(mapTransformGroup, {
+          isMobile: isMobileGpuTarget(),
+          convertMatteToLambert: true,
+        });
+        bundle.updateVisibility = opt.update;
+      } else {
+        bundle.updateVisibility = null;
+        mapTransformGroup.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            child.matrixAutoUpdate = false;
+            child.updateMatrix();
+          }
+        });
+      }
+
       for (let i = 0; i < bundle.targets.length; i++) {
         const bot = bundle.targets[i];
         const p = bundle.collider.findPlayableSpawn(
@@ -410,18 +433,35 @@ export async function loadV23MapGeometry(
 }
 
 export function disposeV23MapGeometry(bundle: Dust2LevelBundle): void {
+  bundle.updateVisibility = null;
   if (bundle.mapGeometryGroup) {
+    const disposedGeoms = new Set<THREE.BufferGeometry>();
+    const disposedMats = new Set<THREE.Material>();
+    const disposedTex = new Set<THREE.Texture>();
+
     bundle.mapGeometryGroup.traverse((child) => {
       if (child instanceof THREE.Mesh) {
-        if (child.geometry) child.geometry.dispose();
+        if (child.geometry && !disposedGeoms.has(child.geometry)) {
+          disposedGeoms.add(child.geometry);
+          child.geometry.dispose();
+        }
         const mats = Array.isArray(child.material)
           ? child.material
           : child.material
             ? [child.material]
             : [];
         mats.forEach((m) => {
+          if (!m || disposedMats.has(m)) return;
+          disposedMats.add(m);
           const basic = m as THREE.MeshBasicMaterial;
-          if (basic.map) basic.map.dispose();
+          if (basic.map && !disposedTex.has(basic.map)) {
+            disposedTex.add(basic.map);
+            basic.map.dispose();
+          }
+          if (basic.alphaMap && !disposedTex.has(basic.alphaMap)) {
+            disposedTex.add(basic.alphaMap);
+            basic.alphaMap.dispose();
+          }
           m.dispose();
         });
       }

@@ -432,9 +432,10 @@ export class TacticalSkySystem {
     if (this.hemiLight) {
       if (kind === 'yard') {
         // High sky/sand GI bounce matches PC Yard readability in both shaded alleys and sunlit streets
+        // (calibrated to compensate 1:1 for matte MeshLambertMaterial skipping diffuse PMREM IBL)
         this.hemiLight.color.setHex(0xedf4fa);
         this.hemiLight.groundColor.setHex(0xc4b092);
-        this.hemiLight.intensity = 1.65;
+        this.hemiLight.intensity = 2.05;
       } else if (kind === 'desert') {
         this.hemiLight.color.setHex(0x9bd6ff);
         this.hemiLight.groundColor.setHex(highContrastSun ? 0x5c442c : 0x7c5d3d);
