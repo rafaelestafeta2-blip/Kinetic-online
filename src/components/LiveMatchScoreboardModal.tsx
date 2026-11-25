@@ -69,6 +69,7 @@ const ARENA_LABELS: Partial<Record<DrillMode, string>> = {
   BRIDGES_V2_BOMB_5V5: 'BRIDGES 2.0 HD // BOMBA 5v5',
   STATION_CAPTURE_5V5: 'STATION // CAPTURAR BANDEIRA 5v5',
   STATION_TDM_5V5: 'STATION // MATA-MATA 5v5',
+  HANGAR_FS_TDM_5V5: 'HANGAR FS HD // MATA-MATA 5v5',
 };
 
 function sortRows(rows: ScoreboardRow[]): ScoreboardRow[] {

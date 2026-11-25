@@ -9,6 +9,7 @@ import {
   startMatchInActiveRoom,
   subscribeOnlineRoom,
   switchLocalPlayerTeam,
+  updateSquadRoomConfig,
 } from '../multiplayer/onlineRoomService';
 import { TeamVoiceCommsHud } from './TeamVoiceCommsHud';
 import { thumbForDrillMode } from './mapSelectThumbs';
@@ -22,7 +23,9 @@ interface OnlineLobbyModalProps {
 }
 
 const PRIVATE_ROOM_MAPS: DrillMode[] = [
+  'HANGAR_FS_TDM_5V5',
   'STATION_TDM_5V5',
+  'STATION_CAPTURE_5V5',
   'DUST2_BOMB_5V5',
   'ASSAULT_BOMB_5V5',
   'INDUSTRIA_BOMB_5V5',
@@ -40,6 +43,10 @@ const PRIVATE_ROOM_MAPS: DrillMode[] = [
 ];
 
 const MAP_LABELS: Record<string, { title: string; subtitle: string }> = {
+  HANGAR_FS_TDM_5V5: {
+    title: 'HANGAR FS HD',
+    subtitle: 'Hangar Workshop • Mata-Mata 5v5 (Alvo 40 Abates)',
+  },
   STATION_TDM_5V5: {
     title: 'STATION ARENA',
     subtitle: 'Estação Urbana • Mata-Mata 5v5 (Alvo 40 Abates)',
@@ -102,8 +109,10 @@ export const OnlineLobbyModal: React.FC<OnlineLobbyModalProps> = ({
     onSelectMapMode(mode);
     setShowMapPickerModal(false);
     if (activeRoom) {
-      activeRoom.arenaMode = mode;
-      setActiveRoom({ ...activeRoom });
+      updateSquadRoomConfig(mode, activeRoom.queueType, activeRoom.isPrivate, {
+        randomMap: false,
+        includeBots: activeRoom.includeBots,
+      });
     }
   };
 

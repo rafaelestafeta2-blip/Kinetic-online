@@ -49,6 +49,7 @@ export const GAME_MODE_CATALOG: GameModeCategoryMeta[] = [
     icon: '⚔',
     subtitle: 'Team Deathmatch · Primeiro time a 40 abates vence',
     maps: [
+      { id: 'HANGAR_FS_TDM_5V5', label: 'HANGAR FS HD', shortTag: 'TDM 5V5' },
       { id: 'STATION_TDM_5V5', label: 'STATION ARENA', shortTag: 'TDM 5V5' },
     ],
   },
@@ -65,7 +66,7 @@ export const GAME_MODE_CATALOG: GameModeCategoryMeta[] = [
 ];
 
 export function getGameModeCategoryForArena(mode: DrillMode): GameModeCategory {
-  if (mode === 'STATION_TDM_5V5') return 'TDM';
+  if (mode === 'STATION_TDM_5V5' || mode === 'HANGAR_FS_TDM_5V5') return 'TDM';
   if (mode === 'STATION_CAPTURE_5V5') return 'CAPTURE';
   return 'PLANT_BOMB';
 }

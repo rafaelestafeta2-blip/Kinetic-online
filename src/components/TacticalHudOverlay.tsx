@@ -98,7 +98,8 @@ export const TacticalHudOverlay: React.FC<TacticalHudOverlayProps> = ({
         hud.drillMode === 'OBJECT_D17_BOMB_5V5' ||
         hud.drillMode === 'BRIDGES_V2_BOMB_5V5' ||
         hud.drillMode === 'STATION_CAPTURE_5V5' ||
-        hud.drillMode === 'STATION_TDM_5V5')
+        hud.drillMode === 'STATION_TDM_5V5' ||
+        hud.drillMode === 'HANGAR_FS_TDM_5V5')
   );
   const [scoreboardOpen, setScoreboardOpen] = useState(false);
 
@@ -471,7 +472,8 @@ export const TacticalHudOverlay: React.FC<TacticalHudOverlayProps> = ({
         hud.drillMode === 'OBJECT_D17_BOMB_5V5' ||
         hud.drillMode === 'BRIDGES_V2_BOMB_5V5' ||
         hud.drillMode === 'STATION_CAPTURE_5V5' ||
-        hud.drillMode === 'STATION_TDM_5V5') &&
+        hud.drillMode === 'STATION_TDM_5V5' ||
+        hud.drillMode === 'HANGAR_FS_TDM_5V5') &&
         hud.yardBomb && (
           <YardBombHudBar
             yardBomb={hud.yardBomb}

@@ -72,6 +72,7 @@ const NEW_MAP_BADGE_IDS = new Set<DrillMode>([
   'YARD_V2_BOMB_5V5',
   'OBJECT_D17_BOMB_5V5',
   'BRIDGES_V2_BOMB_5V5',
+  'HANGAR_FS_TDM_5V5',
 ]);
 
 interface SquadReadyRoomModalProps {
@@ -139,6 +140,7 @@ export const SquadReadyRoomModal: React.FC<SquadReadyRoomModalProps> = ({
   const [joiningCode, setJoiningCode] = useState(false);
   const [searchElapsedSec, setSearchElapsedSec] = useState(0);
   const [showPrivateMapPicker, setShowPrivateMapPicker] = useState(false);
+  const [pickerFilterCategory, setPickerFilterCategory] = useState<'ALL' | GameModeCategory>('ALL');
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -313,7 +315,6 @@ export const SquadReadyRoomModal: React.FC<SquadReadyRoomModalProps> = ({
       randomMap: nextRandom,
       includeBots,
     });
-    setShowPrivateMapPicker(false);
   };
 
   const handleTogglePrivateBots = () => {
@@ -702,29 +703,55 @@ export const SquadReadyRoomModal: React.FC<SquadReadyRoomModalProps> = ({
                   })}
                 </div>
 
-                {/* Map Selector Row (Random or Specific Map of Selected Mode) */}
-                <div className="flex items-center justify-between gap-1">
-                  <div className="min-w-0 leading-tight">
-                    <div className="text-[7px] font-mono text-slate-400 uppercase">
-                      MAPA ({currentCategoryMeta.shortLabel})
+                {/* Map Selector Row (Full clickable bar with cover photo — opens picker on first click) */}
+                {isHost && !isSearching ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundEngine.playMenuSelect();
+                      setPickerFilterCategory('ALL');
+                      setShowPrivateMapPicker(true);
+                    }}
+                    className="w-full flex items-center justify-between gap-1.5 p-1 rounded-md bg-black/45 hover:bg-amber-500/15 border border-white/10 hover:border-amber-400/60 transition-all cursor-pointer text-left"
+                  >
+                    <img
+                      src={thumbForDrillMode(room.arenaMode)}
+                      alt={currentMapLabel}
+                      referrerPolicy="no-referrer"
+                      className="w-11 h-7 rounded object-cover border border-amber-400/40 shrink-0"
+                      draggable={false}
+                    />
+                    <div className="min-w-0 flex-1 leading-tight">
+                      <div className="text-[7px] font-mono text-slate-400 uppercase truncate">
+                        MAPA ({currentCategoryMeta.shortLabel})
+                      </div>
+                      <div className="font-display font-black text-[9px] sm:text-[10px] text-white uppercase truncate">
+                        {isRandomMap ? '🎲 ALEATÓRIO' : currentMapLabel}
+                      </div>
                     </div>
-                    <div className="font-display font-black text-[9px] sm:text-[10px] text-white uppercase truncate">
-                      {isRandomMap ? '🎲 ALEATÓRIO' : currentMapLabel}
+                    <span className="px-1.5 py-0.5 rounded bg-amber-500/25 border border-amber-400/60 text-[8px] font-display font-black text-amber-200 uppercase shrink-0">
+                      TROCAR ▾
+                    </span>
+                  </button>
+                ) : (
+                  <div className="flex items-center justify-between gap-1.5 p-1 rounded-md bg-black/35 border border-white/5">
+                    <img
+                      src={thumbForDrillMode(room.arenaMode)}
+                      alt={currentMapLabel}
+                      referrerPolicy="no-referrer"
+                      className="w-11 h-7 rounded object-cover border border-white/15 shrink-0"
+                      draggable={false}
+                    />
+                    <div className="min-w-0 flex-1 leading-tight">
+                      <div className="text-[7px] font-mono text-slate-400 uppercase truncate">
+                        MAPA ({currentCategoryMeta.shortLabel})
+                      </div>
+                      <div className="font-display font-black text-[9px] sm:text-[10px] text-white uppercase truncate">
+                        {isRandomMap ? '🎲 ALEATÓRIO' : currentMapLabel}
+                      </div>
                     </div>
                   </div>
-                  {isHost && !isSearching && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        soundEngine.playMenuSelect();
-                        setShowPrivateMapPicker(true);
-                      }}
-                      className="px-1.5 py-0.5 rounded bg-amber-500/25 hover:bg-amber-500/40 border border-amber-400/60 text-[8px] font-display font-black text-amber-200 uppercase cursor-pointer shrink-0"
-                    >
-                      TROCAR ▾
-                    </button>
-                  )}
-                </div>
+                )}
 
                 {/* Private Room Exclusive Controls: Switch Team + Toggle AI Bots */}
                 {room.isPrivate && (
@@ -1237,151 +1264,206 @@ export const SquadReadyRoomModal: React.FC<SquadReadyRoomModalProps> = ({
         </div>
       </div>
 
-      {/* FULL-OVERLAY MAP PICKER MODAL (Unclipped on mobile landscape & desktop; shows all 12+ maps cleanly) */}
-      {showPrivateMapPicker && isHost && !isSearching && !isRankedRoom && (
-        <div
-          onClick={() => setShowPrivateMapPicker(false)}
-          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-2.5 sm:p-4 pointer-events-auto"
-        >
+      {/* FULL-OVERLAY MAP PICKER MODAL (Shows all map cover photos + single-click selection) */}
+      {showPrivateMapPicker && isHost && !isSearching && !isRankedRoom && (() => {
+        const allCatalogMaps = GAME_MODE_CATALOG.flatMap((cat) =>
+          cat.maps.map((m) => ({
+            ...m,
+            categoryId: cat.id,
+            categoryIcon: cat.icon,
+            categoryShortLabel: cat.shortLabel,
+          }))
+        );
+        const activeFilterMeta =
+          pickerFilterCategory === 'ALL' ? null : getGameModeMeta(pickerFilterCategory);
+        const visibleMaps =
+          pickerFilterCategory === 'ALL'
+            ? allCatalogMaps
+            : allCatalogMaps.filter((m) => m.categoryId === pickerFilterCategory);
+        const randomTargetCategory =
+          pickerFilterCategory === 'ALL' ? currentCategory : pickerFilterCategory;
+        const randomTargetMaps = getMapsForCategory(randomTargetCategory);
+
+        return (
           <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-[740px] max-h-[90vh] rounded-2xl border border-amber-400/55 bg-[#0a0f18]/98 shadow-2xl flex flex-col overflow-hidden"
+            onClick={() => setShowPrivateMapPicker(false)}
+            className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-2.5 sm:p-4 pointer-events-auto"
           >
-            <div className="flex items-center justify-between gap-2 px-3.5 py-2.5 border-b border-white/10 bg-[#101724] shrink-0">
-              <div className="min-w-0">
-                <h3 className="font-display font-black text-xs sm:text-base uppercase tracking-wider text-amber-300 truncate">
-                  SELECIONAR MAPA · {currentCategoryMeta.label} ({categoryMaps.length})
-                </h3>
-                <p className="text-[10px] font-mono text-slate-400 truncate">
-                  {currentCategoryMeta.subtitle}
-                </p>
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-[840px] max-h-[90vh] rounded-2xl border border-amber-400/55 bg-[#0a0f18]/98 shadow-2xl flex flex-col overflow-hidden"
+            >
+              <div className="flex items-center justify-between gap-2 px-3.5 py-2.5 border-b border-white/10 bg-[#101724] shrink-0">
+                <div className="min-w-0">
+                  <h3 className="font-display font-black text-xs sm:text-base uppercase tracking-wider text-amber-300 truncate">
+                    {activeFilterMeta
+                      ? `SELECIONAR MAPA · ${activeFilterMeta.label} (${visibleMaps.length})`
+                      : `SELECIONAR MAPA · TODOS OS MAPAS (${visibleMaps.length})`}
+                  </h3>
+                  <p className="text-[10px] font-mono text-slate-400 truncate">
+                    {activeFilterMeta
+                      ? activeFilterMeta.subtitle
+                      : 'Clique na foto de capa de qualquer mapa para selecionar imediatamente'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playMenuSelect();
+                    setShowPrivateMapPicker(false);
+                  }}
+                  className="px-2.5 py-1 rounded bg-white/10 hover:bg-white/20 border border-white/15 text-[10px] font-mono font-bold text-slate-200 uppercase cursor-pointer shrink-0"
+                >
+                  FECHAR ✕
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  soundEngine.playMenuSelect();
-                  setShowPrivateMapPicker(false);
-                }}
-                className="px-2.5 py-1 rounded bg-white/10 hover:bg-white/20 border border-white/15 text-[10px] font-mono font-bold text-slate-200 uppercase cursor-pointer shrink-0"
-              >
-                FECHAR ✕
-              </button>
-            </div>
 
-            {/* Category tabs inside modal so host can switch Bomb / TDM / Capture directly */}
-            <div className="flex items-center gap-1.5 px-3.5 py-2 border-b border-white/10 bg-black/30 shrink-0">
-              {GAME_MODE_CATALOG.map((cat) => {
-                const active = currentCategory === cat.id;
-                return (
-                  <button
-                    key={cat.id}
-                    type="button"
-                    onClick={() => handleSelectGameModeCategory(cat.id)}
-                    className={`px-2.5 py-1 rounded text-[10px] font-display font-black uppercase tracking-wider cursor-pointer transition-all ${
-                      active
-                        ? 'bg-amber-500 text-slate-950 shadow'
-                        : 'bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white border border-white/10'
-                    }`}
-                  >
-                    {cat.icon} {cat.label} ({cat.maps.length})
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Scrollable Map Grid */}
-            <div className="p-3 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  soundEngine.playMenuSelect();
-                  updateSquadRoomConfig(
-                    getDefaultArenaForCategory(currentCategory),
-                    queueType,
-                    room.isPrivate,
-                    { randomMap: true, includeBots }
+              {/* Filter tabs inside modal (does NOT close modal and lets user view all covers or filter by mode) */}
+              <div className="flex items-center gap-1.5 px-3.5 py-2 border-b border-white/10 bg-black/30 overflow-x-auto shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playMenuSelect();
+                    setPickerFilterCategory('ALL');
+                  }}
+                  className={`px-2.5 py-1 rounded text-[10px] font-display font-black uppercase tracking-wider cursor-pointer transition-all shrink-0 ${
+                    pickerFilterCategory === 'ALL'
+                      ? 'bg-amber-500 text-slate-950 shadow'
+                      : 'bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white border border-white/10'
+                  }`}
+                >
+                  🗺️ TODOS ({allCatalogMaps.length})
+                </button>
+                {GAME_MODE_CATALOG.map((cat) => {
+                  const active = pickerFilterCategory === cat.id;
+                  return (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playMenuSelect();
+                        setPickerFilterCategory(cat.id);
+                      }}
+                      className={`px-2.5 py-1 rounded text-[10px] font-display font-black uppercase tracking-wider cursor-pointer transition-all shrink-0 ${
+                        active
+                          ? 'bg-amber-500 text-slate-950 shadow'
+                          : 'bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white border border-white/10'
+                      }`}
+                    >
+                      {cat.icon} {cat.label} ({cat.maps.length})
+                    </button>
                   );
-                  setShowPrivateMapPicker(false);
-                }}
-                className={`rounded-xl border text-left transition-all cursor-pointer overflow-hidden flex flex-col justify-between p-2.5 min-h-[104px] ${
-                  isRandomMap
-                    ? 'bg-amber-500/20 border-2 border-amber-400 text-white shadow-[0_0_16px_rgba(245,158,11,0.3)]'
-                    : 'bg-[#121926] border-white/15 text-slate-200 hover:border-amber-400/60'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-lg leading-none">🎲</span>
-                  {isRandomMap && (
-                    <span className="px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 font-mono font-black text-[8px] uppercase">
-                      ATIVO ✓
-                    </span>
-                  )}
-                </div>
-                <div>
-                  <div className="font-display font-black text-xs uppercase tracking-wider text-amber-200">
-                    ALEATÓRIO
-                  </div>
-                  <div className="text-[9px] font-mono text-slate-400 mt-0.5">
-                    Sorteia entre os {categoryMaps.length} mapas
-                  </div>
-                </div>
-              </button>
+                })}
+              </div>
 
-              {categoryMaps.map((m) => {
-                const isSelected = !isRandomMap && room.arenaMode === m.id;
-                const isNewMap = NEW_MAP_BADGE_IDS.has(m.id);
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => {
-                      soundEngine.playMenuSelect();
-                      updateSquadRoomConfig(m.id, queueType, room.isPrivate, {
-                        randomMap: false,
-                        includeBots,
-                      });
-                      setShowPrivateMapPicker(false);
-                    }}
-                    className={`group rounded-xl border text-left transition-all cursor-pointer overflow-hidden flex flex-col ${
-                      isSelected
-                        ? 'bg-amber-500/20 border-2 border-amber-400 text-white shadow-[0_0_16px_rgba(245,158,11,0.3)]'
-                        : 'bg-[#111722] border-white/15 text-slate-200 hover:border-amber-400/60'
-                    }`}
-                  >
-                    <div className="relative h-16 sm:h-20 w-full overflow-hidden bg-slate-900">
-                      <img
-                        src={thumbForDrillMode(m.id)}
-                        alt={m.label}
-                        className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
-                        draggable={false}
-                      />
-                      <div className="absolute inset-x-0 bottom-0 h-7 bg-gradient-to-t from-black/80 to-transparent" />
-                      {isNewMap && (
-                        <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-emerald-500 text-slate-950 font-mono font-black text-[8px] uppercase tracking-wider shadow">
-                          NOVO
-                        </span>
-                      )}
-                      {isSelected && (
-                        <span className="absolute top-1 right-1 px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 font-mono font-black text-[8px] uppercase shadow">
-                          ATIVO ✓
-                        </span>
-                      )}
+              {/* Scrollable Map Grid with Cover Photos */}
+              <div className="p-3 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    soundEngine.playMenuSelect();
+                    updateSquadRoomConfig(
+                      getDefaultArenaForCategory(randomTargetCategory),
+                      queueType,
+                      room.isPrivate,
+                      { randomMap: true, includeBots }
+                    );
+                    setShowPrivateMapPicker(false);
+                  }}
+                  className={`rounded-xl border text-left transition-all cursor-pointer overflow-hidden flex flex-col justify-between p-2.5 min-h-[124px] ${
+                    isRandomMap && (pickerFilterCategory === 'ALL' || pickerFilterCategory === currentCategory)
+                      ? 'bg-amber-500/20 border-2 border-amber-400 text-white shadow-[0_0_16px_rgba(245,158,11,0.3)]'
+                      : 'bg-[#121926] border-white/15 text-slate-200 hover:border-amber-400/60'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xl leading-none">🎲</span>
+                    {isRandomMap && (pickerFilterCategory === 'ALL' || pickerFilterCategory === currentCategory) && (
+                      <span className="px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 font-mono font-black text-[8px] uppercase">
+                        ATIVO ✓
+                      </span>
+                    )}
+                  </div>
+                  <div>
+                    <div className="font-display font-black text-xs uppercase tracking-wider text-amber-200">
+                      ALEATÓRIO
                     </div>
-                    <div className="px-2 py-1.5">
-                      <div className="font-display font-black text-[11px] uppercase tracking-wider text-white truncate">
-                        {m.label}
-                      </div>
-                      <div className="text-[8px] font-mono text-slate-400 uppercase truncate">
-                        {m.shortTag}
-                      </div>
+                    <div className="text-[9px] font-mono text-slate-400 mt-0.5">
+                      Sorteia entre {randomTargetMaps.length} mapas ({getGameModeMeta(randomTargetCategory).shortLabel})
                     </div>
-                  </button>
-                );
-              })}
+                  </div>
+                </button>
+
+                {visibleMaps.map((m) => {
+                  const isSelected = !isRandomMap && room.arenaMode === m.id;
+                  const isNewMap = NEW_MAP_BADGE_IDS.has(m.id);
+                  const modeBadgeClass =
+                    m.categoryId === 'TDM'
+                      ? 'bg-cyan-500/90 text-slate-950'
+                      : m.categoryId === 'CAPTURE'
+                        ? 'bg-sky-400/90 text-slate-950'
+                        : 'bg-black/75 text-amber-300 border border-amber-400/40';
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        soundEngine.playMenuSelect();
+                        updateSquadRoomConfig(m.id, queueType, room.isPrivate, {
+                          randomMap: false,
+                          includeBots,
+                        });
+                        setShowPrivateMapPicker(false);
+                      }}
+                      className={`group rounded-xl border text-left transition-all cursor-pointer overflow-hidden flex flex-col ${
+                        isSelected
+                          ? 'bg-amber-500/20 border-2 border-amber-400 text-white shadow-[0_0_16px_rgba(245,158,11,0.3)]'
+                          : 'bg-[#111722] border-white/15 text-slate-200 hover:border-amber-400/60'
+                      }`}
+                    >
+                      <div className="relative h-24 sm:h-28 w-full overflow-hidden bg-slate-900">
+                        <img
+                          src={thumbForDrillMode(m.id)}
+                          alt={m.label}
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
+                          draggable={false}
+                        />
+                        <div className="absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-black/85 to-transparent" />
+                        {isNewMap && (
+                          <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-emerald-500 text-slate-950 font-mono font-black text-[8px] uppercase tracking-wider shadow">
+                            NOVO
+                          </span>
+                        )}
+                        {isSelected && (
+                          <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 font-mono font-black text-[8px] uppercase shadow">
+                            ATIVO ✓
+                          </span>
+                        )}
+                        <span
+                          className={`absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded font-mono font-black text-[8px] uppercase tracking-wider shadow ${modeBadgeClass}`}
+                        >
+                          {m.shortTag}
+                        </span>
+                      </div>
+                      <div className="px-2 py-1.5">
+                        <div className="font-display font-black text-[11px] uppercase tracking-wider text-white truncate">
+                          {m.label}
+                        </div>
+                        <div className="text-[8px] font-mono text-slate-400 uppercase truncate">
+                          {m.categoryIcon} {m.categoryShortLabel}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 };

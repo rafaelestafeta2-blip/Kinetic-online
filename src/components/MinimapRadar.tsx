@@ -55,6 +55,7 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
     const yardV2RadarImgRef = useRef<HTMLImageElement | null>(null);
     const objectD17RadarImgRef = useRef<HTMLImageElement | null>(null);
     const bridgesV2RadarImgRef = useRef<HTMLImageElement | null>(null);
+    const hangarFsRadarImgRef = useRef<HTMLImageElement | null>(null);
 
     useEffect(() => {
       const img = new Image();
@@ -77,6 +78,11 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
       imgB2.onload = () => {
         bridgesV2RadarImgRef.current = imgB2;
       };
+      const imgHfs = new Image();
+      imgHfs.src = '/assets/hangar_fs_radar.webp';
+      imgHfs.onload = () => {
+        hangarFsRadarImgRef.current = imgHfs;
+      };
     }, []);
 
     useEffect(() => {
@@ -91,6 +97,7 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
       const isYardV2 = drillMode === 'YARD_V2_BOMB_5V5';
       const isObjectD17 = drillMode === 'OBJECT_D17_BOMB_5V5';
       const isBridgesV2 = drillMode === 'BRIDGES_V2_BOMB_5V5';
+      const isHangarFs = drillMode === 'HANGAR_FS_TDM_5V5';
       const isDust2 = drillMode === 'DUST2_BOMB_5V5';
       const isAssault = drillMode === 'ASSAULT_BOMB_5V5';
       const isIndustria = drillMode === 'INDUSTRIA_BOMB_5V5';
@@ -100,8 +107,16 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
       const isV23Map = isV23BombMapMode(drillMode);
       const isStationCapture = drillMode === 'STATION_CAPTURE_5V5';
       const isStationTdm = drillMode === 'STATION_TDM_5V5';
-      const isBombMode = isYard || isDust2 || isAssault || isIndustria || isHangar || isEasternCity || isMirageAnubis || isV23Map;
-      const scale = isStationCapture || isStationTdm ? 1.35 : isDust2 || isAssault || isIndustria || isHangar || isEasternCity || isMirageAnubis || isV23Map ? 0.88 : isYard ? 1.38 : 2.0;
+      const isBombMode =
+        isYard ||
+        isDust2 ||
+        isAssault ||
+        isIndustria ||
+        isHangar ||
+        isEasternCity ||
+        isMirageAnubis ||
+        (isV23Map && !isHangarFs);
+      const scale = isStationCapture || isStationTdm ? 1.35 : isHangarFs ? 0.96 : isDust2 || isAssault || isIndustria || isHangar || isEasternCity || isMirageAnubis || isV23Map ? 0.88 : isYard ? 1.38 : 2.0;
       const maxRange = center - 7;
 
       ctx.clearRect(0, 0, size, size);
@@ -166,6 +181,19 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
         const imgCenterZ = (24.81 - playerZ) * scale;
         ctx.drawImage(
           bridgesV2RadarImgRef.current,
+          imgCenterX - worldW / 2,
+          imgCenterZ - worldH / 2,
+          worldW,
+          worldH
+        );
+      } else if (isHangarFs && hangarFsRadarImgRef.current) {
+        // Exact CS2 overview calibration (pos_x=-4167, pos_y=4353, scale=3.671712, 1024px, rotated +90deg)
+        const worldW = 95.5 * scale;
+        const worldH = 95.5 * scale;
+        const imgCenterX = (62.82 - playerX) * scale;
+        const imgCenterZ = (-58.09 - playerZ) * scale;
+        ctx.drawImage(
+          hangarFsRadarImgRef.current,
           imgCenterX - worldW / 2,
           imgCenterZ - worldH / 2,
           worldW,

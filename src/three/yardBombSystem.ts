@@ -343,7 +343,7 @@ export class YardBombSystem {
   public resetRound(mode: DrillMode = 'YARD_BOMB_5V5', keepMatchScore = false): void {
     this.activeMode = mode;
     const isCapture = mode === 'STATION_CAPTURE_5V5';
-    const isTdm = mode === 'STATION_TDM_5V5';
+    const isTdm = mode === 'STATION_TDM_5V5' || mode === 'HANGAR_FS_TDM_5V5';
     this.isPlantingHeld = false;
     this.lastKeypadDigitIdx = -1;
     this.beepAccum = 0;
@@ -378,8 +378,10 @@ export class YardBombSystem {
       bombStatus: 'CARRIED', plantedSite: null, nearSite: null, plantProgress: 0,
       roundTimerSec: isTdm ? 300 : 125, c4TimerSec: 40, alliesAlive: 5, enemiesAlive: 5,
       calloutLabel:
-        isV23BombMapMode(mode)
-          ? `BASE VANGUARD (${V23_MAP_CONFIGS[mode].label})`
+        mode === 'HANGAR_FS_TDM_5V5'
+          ? 'BASE VANGUARD (HANGAR FS · MATA-MATA)'
+          : isV23BombMapMode(mode)
+            ? `BASE VANGUARD (${V23_MAP_CONFIGS[mode].label})`
           : mode === 'DUST2_BOMB_5V5'
           ? 'BASE VANGUARD (TR SPAWN · SUL)'
           : mode === 'ASSAULT_BOMB_5V5'
@@ -447,7 +449,10 @@ export class YardBombSystem {
     isHeadshot: boolean,
     playerPrimaryWeapon?: WeaponId
   ): void {
-    if (this.activeMode === 'STATION_TDM_5V5' && this.info.roundState === 'PLAYING') {
+    if (
+      (this.activeMode === 'STATION_TDM_5V5' || this.activeMode === 'HANGAR_FS_TDM_5V5') &&
+      this.info.roundState === 'PLAYING'
+    ) {
       if (killerTeam === 'VANGUARD') this.info.vanguardScore += 1;
       else this.info.blackthornScore += 1;
     }
@@ -624,7 +629,7 @@ export class YardBombSystem {
   ): void {
     if (this.info.roundState !== 'PLAYING') return;
 
-    const isTdm = this.activeMode === 'STATION_TDM_5V5';
+    const isTdm = this.activeMode === 'STATION_TDM_5V5' || this.activeMode === 'HANGAR_FS_TDM_5V5';
     if (!isTdm) {
       if (winner === 'VANGUARD') this.info.vanguardScore += 1;
       else this.info.blackthornScore += 1;
@@ -749,7 +754,8 @@ export class YardBombSystem {
     const isEasternCity = this.activeMode === 'EASTERN_CITY_BOMB_5V5';
     const isMirageAnubis = this.activeMode === 'MIRAGE_ANUBIS_BOMB_5V5';
     const isStationCapture = this.activeMode === 'STATION_CAPTURE_5V5';
-    const isStationTdm = this.activeMode === 'STATION_TDM_5V5';
+    const isStationTdm =
+      this.activeMode === 'STATION_TDM_5V5' || this.activeMode === 'HANGAR_FS_TDM_5V5';
     const { siteA, siteB } = this.getActiveBombSites();
 
     this.info.calloutLabel = isV23BombMapMode(this.activeMode)

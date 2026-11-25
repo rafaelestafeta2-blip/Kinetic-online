@@ -1210,7 +1210,8 @@ export function updateSmartBotNavigation(
               victimNav.tacticalState = 'INVESTIGATE';
             }
             if (visibleEnemyBot.health <= 0) {
-              const isTdm = mode === 'STATION_TDM_5V5';
+              const isTdm =
+                mode === 'STATION_TDM_5V5' || mode === 'HANGAR_FS_TDM_5V5';
               visibleEnemyBot.isDown = true;
               visibleEnemyBot.lastDeathWasHeadshot = isHeadshot;
               if (isHeadshot) visibleEnemyBot.hitTiltVelocity = -18.0;

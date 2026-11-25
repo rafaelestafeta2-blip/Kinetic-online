@@ -93,7 +93,7 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
             <span className="text-emerald-300 drop-shadow-[0_0_12px_rgba(52,211,153,0.8)]">
               PARTIDA ENCONTRADA!
             </span>
-          ) : selectedMap === 'STATION_TDM_5V5' ? (
+          ) : selectedMap === 'STATION_TDM_5V5' || selectedMap === 'HANGAR_FS_TDM_5V5' ? (
             'MATA-MATA EM EQUIPE 5v5'
           ) : selectedMap === 'STATION_CAPTURE_5V5' ? (
             'CAPTURA DE BANDEIRA 5v5'
@@ -110,6 +110,11 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
           <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
             {(
               [
+                {
+                  id: 'HANGAR_FS_TDM_5V5' as DrillMode,
+                  title: 'HANGAR FS HD',
+                  sub: 'Mata-Mata 5v5 · Workshop KTX2',
+                },
                 {
                   id: 'STATION_TDM_5V5' as DrillMode,
                   title: 'STATION ARENA',
@@ -221,8 +226,10 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
           <div className="flex items-center justify-between text-slate-300">
             <span>Mapa Selecionado:</span>
             <span className="font-bold text-amber-300">
-              {selectedMap === 'STATION_TDM_5V5'
-                ? 'STATION ARENA (MATA-MATA 5V5)'
+              {selectedMap === 'HANGAR_FS_TDM_5V5'
+                ? 'HANGAR FS HD (MATA-MATA 5V5)'
+                : selectedMap === 'STATION_TDM_5V5'
+                  ? 'STATION ARENA (MATA-MATA 5V5)'
                 : selectedMap === 'STATION_CAPTURE_5V5'
                   ? 'STATION ARENA (CAPTURE 5V5)'
                 : selectedMap === 'ASSAULT_BOMB_5V5'

@@ -218,6 +218,7 @@ export class TacticalSkySystem {
     const isYardV2 = mode === 'YARD_V2_BOMB_5V5';
     const isObjectD17 = mode === 'OBJECT_D17_BOMB_5V5';
     const isBridgesV2 = mode === 'BRIDGES_V2_BOMB_5V5';
+    const isHangarFs = mode === 'HANGAR_FS_TDM_5V5';
     const isStationArena = mode === 'STATION_CAPTURE_5V5' || mode === 'STATION_TDM_5V5';
     const isYard = mode === 'YARD_BOMB_5V5';
     this.isOutdoor =
@@ -234,6 +235,7 @@ export class TacticalSkySystem {
       isYardV2 ||
       isObjectD17 ||
       isBridgesV2 ||
+      isHangarFs ||
       isStationArena ||
       isYard;
 
@@ -241,8 +243,8 @@ export class TacticalSkySystem {
     const uniforms = this.sky.material.uniforms;
     const isMobile = isMobileGpuTarget();
 
-    if (isYardV2 || isObjectD17 || isBridgesV2) {
-      // Source 2 Workshop daylight (Yard 2.0 / Bridges 2.0 / Object D17): crisp 52°-56° sun + balanced bounce GI
+    if (isYardV2 || isObjectD17 || isBridgesV2 || isHangarFs) {
+      // Source 2 Workshop daylight (Yard 2.0 / Bridges 2.0 / Object D17 / Hangar FS): crisp 52°-56° sun + balanced bounce GI
       this.activeBiome = isObjectD17 ? 'outdoor' : 'yard';
       const phi = THREE.MathUtils.degToRad(90 - (isBridgesV2 ? 56 : isObjectD17 ? 53 : 50));
       const theta = THREE.MathUtils.degToRad(isBridgesV2 ? 46 : isObjectD17 ? 72 : 58);

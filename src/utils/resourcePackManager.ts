@@ -254,6 +254,21 @@ export const RESOURCE_PACK_DEFINITIONS: ResourcePackDefinition[] = [
     ],
   },
   {
+    id: 'pack_map_hangar_fs',
+    title: 'Mapa Hangar FS HD (LOD0 Original)',
+    subtitle: 'Hangar tático da Steam Workshop para Mata-Mata em Equipe 5v5',
+    category: 'MAPS',
+    recommended: true,
+    mapMode: 'HANGAR_FS_TDM_5V5',
+    files: [
+      { path: '/models/maps/hangar_fs_lod0.p0.bin', sizeBytes: 11_003_536 },
+      { path: '/models/maps/hangar_fs_lod0.p1.bin', sizeBytes: 11_003_536 },
+      { path: '/models/maps/hangar_fs_lod0.p2.bin', sizeBytes: 11_003_536 },
+      { path: '/models/maps/hangar_fs_lod0.p3.bin', sizeBytes: 11_003_536 },
+      { path: '/models/maps/hangar_fs_lod0.p4.bin', sizeBytes: 11_003_536 },
+    ],
+  },
+  {
     id: 'pack_accessories',
     title: 'Miras, Silenciadores, Granadas & Kits',
     subtitle: 'Ópticas 3D (Red Dot, Holo, LPVO), supressores, pingentes, C4 e kits de classe',

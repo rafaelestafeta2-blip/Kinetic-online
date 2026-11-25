@@ -56,7 +56,7 @@ type LoadingRow = {
 };
 
 const ModeHeaderEmblem: React.FC<{ mode: DrillMode }> = ({ mode }) => {
-  const isTdm = mode === 'STATION_TDM_5V5';
+  const isTdm = mode === 'STATION_TDM_5V5' || mode === 'HANGAR_FS_TDM_5V5';
   const isCapture = mode === 'STATION_CAPTURE_5V5';
   return (
     <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-md bg-gradient-to-b from-slate-700/80 via-slate-900/95 to-black border border-slate-400/50 flex items-center justify-center shrink-0 shadow-[0_0_16px_rgba(255,255,255,0.12)]">
@@ -283,6 +283,8 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
             ? 'OBJECT D17 HD'
           : mode === 'BRIDGES_V2_BOMB_5V5'
             ? 'BRIDGES 2.0 HD'
+          : mode === 'HANGAR_FS_TDM_5V5'
+            ? 'HANGAR FS HD'
           : mode === 'STATION_CAPTURE_5V5' || mode === 'STATION_TDM_5V5'
             ? 'STATION ARENA'
           : mode === 'ASSAULT_BOMB_5V5'
@@ -389,6 +391,7 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
       mode === 'YARD_V2_BOMB_5V5' ||
       mode === 'OBJECT_D17_BOMB_5V5' ||
       mode === 'BRIDGES_V2_BOMB_5V5' ||
+      mode === 'HANGAR_FS_TDM_5V5' ||
       mode === 'STATION_CAPTURE_5V5' ||
       mode === 'STATION_TDM_5V5' ||
       mode === 'FREE_RANGE' ||
@@ -581,7 +584,7 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
   const localCallsign = profile.callsign || getPlayerCallsign();
 
   const modeHeaderTitle =
-    mode === 'STATION_TDM_5V5'
+    mode === 'STATION_TDM_5V5' || mode === 'HANGAR_FS_TDM_5V5'
       ? 'MATA-MATA EM EQUIPE'
       : mode === 'STATION_CAPTURE_5V5'
         ? 'CAPTURA DE BANDEIRA'
@@ -594,7 +597,7 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
               : 'PLANTAR A BOMBA';
 
   const modeObjectiveSubtitle =
-    mode === 'STATION_TDM_5V5'
+    mode === 'STATION_TDM_5V5' || mode === 'HANGAR_FS_TDM_5V5'
       ? 'Elimine inimigos. Alcance a pontuação limite.'
       : mode === 'STATION_CAPTURE_5V5'
         ? 'Capture a bandeira inimiga e leve até a sua base.'

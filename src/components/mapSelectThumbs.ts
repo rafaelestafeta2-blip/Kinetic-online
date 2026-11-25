@@ -14,7 +14,8 @@ export const MAP_SELECT_THUMBS = {
   hangar: '/assets/maps/thumbs/hangar.jpg',
   easternCity: '/assets/maps/thumbs/eastern_city.jpg',
   mirageAnubis: '/assets/maps/thumbs/mirage_anubis.jpg',
-  stationArena: resolveAssetUrl('/maps/station_arena/Preview1.png'),
+  stationArena: '/assets/maps/thumbs/station_arena.jpg',
+  hangarFs: '/assets/maps/thumbs/hangar_fs.jpg',
   yard: '/assets/maps/thumbs/yard.jpg',
   objectD17: '/assets/maps/thumbs/object_d17.jpg',
   bridgesV2: '/assets/maps/thumbs/bridges_v2.jpg',
@@ -47,6 +48,8 @@ export function thumbForDrillMode(mode: DrillMode | string): string {
     case 'STATION_CAPTURE_5V5':
     case 'STATION_TDM_5V5':
       return MAP_SELECT_THUMBS.stationArena;
+    case 'HANGAR_FS_TDM_5V5':
+      return MAP_SELECT_THUMBS.hangarFs;
     case 'YARD_V2_BOMB_5V5':
     case 'YARD_BOMB_5V5':
       return MAP_SELECT_THUMBS.yard;

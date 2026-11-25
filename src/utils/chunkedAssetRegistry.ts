@@ -51,6 +51,18 @@ export const CHUNKED_ASSET_REGISTRY: Record<string, ChunkedAssetDescriptor> = {
       { path: '/models/maps/bridges_v2_lod0.p5.bin', sizeBytes: 12_451_778 },
     ],
   },
+  '/models/maps/hangar_fs_lod0.glb': {
+    virtualPath: '/models/maps/hangar_fs_lod0.glb',
+    contentType: 'model/gltf-binary',
+    totalBytes: 55_017_680,
+    parts: [
+      { path: '/models/maps/hangar_fs_lod0.p0.bin', sizeBytes: 11_003_536 },
+      { path: '/models/maps/hangar_fs_lod0.p1.bin', sizeBytes: 11_003_536 },
+      { path: '/models/maps/hangar_fs_lod0.p2.bin', sizeBytes: 11_003_536 },
+      { path: '/models/maps/hangar_fs_lod0.p3.bin', sizeBytes: 11_003_536 },
+      { path: '/models/maps/hangar_fs_lod0.p4.bin', sizeBytes: 11_003_536 },
+    ],
+  },
 };
 
 export function normalizeAssetPathKey(urlOrPath: string): string {

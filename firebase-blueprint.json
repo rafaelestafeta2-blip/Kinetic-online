@@ -289,7 +289,10 @@
             "MP_NUKED_BOMB_5V5",
             "DE_SUPPLY_BOMB_5V5",
             "YARD_V2_BOMB_5V5",
+            "OBJECT_D17_BOMB_5V5",
+            "BRIDGES_V2_BOMB_5V5",
             "STATION_TDM_5V5",
+            "HANGAR_FS_TDM_5V5",
             "STATION_CAPTURE_5V5"
           ],
           "description": "Selected 5v5 map mode."

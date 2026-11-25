@@ -79,6 +79,8 @@ export function updatePlayerMovementAndCollision(engine: any, dt: number): void 
                   ? engine.objectD17LevelData.collider
                 : engine.state.drillMode === 'BRIDGES_V2_BOMB_5V5'
                   ? engine.bridgesV2LevelData.collider
+                : engine.state.drillMode === 'HANGAR_FS_TDM_5V5'
+                  ? engine.hangarFsLevelData.collider
                 : engine.state.drillMode === 'STATION_CAPTURE_5V5' ||
                     engine.state.drillMode === 'STATION_TDM_5V5'
                   ? engine.stationArenaLevelData.collider
@@ -191,6 +193,12 @@ export function updatePlayerMovementAndCollision(engine: any, dt: number): void 
       );
     } else if (engine.state.drillMode === 'BRIDGES_V2_BOMB_5V5') {
       lowCeilingAbove = engine.bridgesV2LevelData.collider.hasLowCeiling(
+        engine.playerPos.x,
+        engine.playerPos.y,
+        engine.playerPos.z
+      );
+    } else if (engine.state.drillMode === 'HANGAR_FS_TDM_5V5') {
+      lowCeilingAbove = engine.hangarFsLevelData.collider.hasLowCeiling(
         engine.playerPos.x,
         engine.playerPos.y,
         engine.playerPos.z
@@ -475,6 +483,7 @@ export function updatePlayerMovementAndCollision(engine: any, dt: number): void 
     const isYardV2 = engine.state.drillMode === 'YARD_V2_BOMB_5V5';
     const isObjectD17 = engine.state.drillMode === 'OBJECT_D17_BOMB_5V5';
     const isBridgesV2 = engine.state.drillMode === 'BRIDGES_V2_BOMB_5V5';
+    const isHangarFs = engine.state.drillMode === 'HANGAR_FS_TDM_5V5';
     const isStationArena =
       engine.state.drillMode === 'STATION_CAPTURE_5V5' ||
       engine.state.drillMode === 'STATION_TDM_5V5';
@@ -504,6 +513,8 @@ export function updatePlayerMovementAndCollision(engine: any, dt: number): void 
               ? engine.objectD17LevelData.collider
             : isBridgesV2
               ? engine.bridgesV2LevelData.collider
+            : isHangarFs
+              ? engine.hangarFsLevelData.collider
             : isStationArena
               ? engine.stationArenaLevelData.collider
             : null;

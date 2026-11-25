@@ -1,0 +1,30 @@
+---------------
+File: /tmp/hfs_raw/3804899791_dir.vpk
+Exception: ValveResourceFormat.Utils.UnexpectedMagicException: Unexpected header (expected 12) for variable 'HeaderVersion': 0 (0x0)
+   at ValveResourceFormat.Resource.Read(Stream input, Boolean verifyFileSize) in /_/ValveResourceFormat/Resource/Resource.cs:line 176
+   at CLI.Decompiler.ProcessFile(String path, Stream stream, String originalPath) in /_/CLI/Decompiler.cs:line 592
+
+---------------
+File: /tmp/hfs_raw/3804899791_dir.vpk
+Exception: ValveResourceFormat.Utils.UnexpectedMagicException: Unexpected header (expected 12) for variable 'HeaderVersion': 0 (0x0)
+   at ValveResourceFormat.Resource.Read(Stream input, Boolean verifyFileSize) in /_/ValveResourceFormat/Resource/Resource.cs:line 176
+   at CLI.Decompiler.ProcessFile(String path, Stream stream, String originalPath) in /_/CLI/Decompiler.cs:line 592
+
+---------------
+Parent file: /tmp/hfs_game/maps/hangar_fs.vpk
+File: maps/hangar_fs/world.vwrld_c
+Exception: System.ArgumentException: Incorrect vertex buffer encoding version, got 1.
+   at ValveResourceFormat.Compression.MeshOptimizerVertexDecoder.DecodeVertexBuffer(Int32 vertexCount, Int32 vertexSize, Span`1 buffer, Boolean useSimd) in /_/ValveResourceFormat/Compression/MeshOptimizerVertexDecoder.cs:line 240
+   at ValveResourceFormat.Blocks.VBIB.DecompressData(OnDiskBufferData buffer, Span`1 span, Int32 decompressedSize, Boolean isVertex, Boolean isZstdCompressed) in /_/ValveResourceFormat/Resource/Blocks/VBIB.cs:line 210
+   at ValveResourceFormat.Blocks.VBIB.BufferDataFromDATA(KVObject data, Boolean isVertex) in /_/ValveResourceFormat/Resource/Blocks/VBIB.cs:line 272
+   at ValveResourceFormat.Blocks.VBIB..ctor(Resource resource, KVObject data) in /_/ValveResourceFormat/Resource/Blocks/VBIB.cs:line 61
+   at ValveResourceFormat.ResourceTypes.Model.ParseEmbeddedMesh2(KVObject embeddedMesh) in /_/ValveResourceFormat/Resource/ResourceTypes/Model.cs:line 188
+   at ValveResourceFormat.ResourceTypes.Model.GetEmbeddedMeshes() in /_/ValveResourceFormat/Resource/ResourceTypes/Model.cs:line 156
+   at ValveResourceFormat.ResourceTypes.Model.GetEmbeddedMeshesAndLoD() in /_/ValveResourceFormat/Resource/ResourceTypes/Model.cs:line 138
+   at ValveResourceFormat.IO.GltfModelExporter.LoadModelMeshes(Model model, String name)+MoveNext() in /_/ValveResourceFormat/IO/GltfModelExporter.cs:line 633
+   at ValveResourceFormat.IO.GltfModelExporter.LoadModel(ModelRoot exportedModel, Scene scene, Model model, String name, Matrix4x4 transform, Vector4 tintColor, String skinName, Entity entity) in /_/ValveResourceFormat/IO/GltfModelExporter.cs:line 599
+   at ValveResourceFormat.IO.GltfModelExporter.LoadWorldNodeModels(ModelRoot exportedModel, Scene scene, WorldNode worldNode) in /_/ValveResourceFormat/IO/GltfModelExporter.cs:line 442
+   at ValveResourceFormat.IO.GltfModelExporter.ExportToFile(String resourceName, String fileName, World world) in /_/ValveResourceFormat/IO/GltfModelExporter.cs:line 188
+   at ValveResourceFormat.IO.GltfModelExporter.Export(Resource resource, String targetPath, CancellationToken cancellationToken) in /_/ValveResourceFormat/IO/GltfModelExporter.cs:line 133
+   at CLI.Decompiler.ProcessVPKEntries(String parentPath, Package package, IFileLoader fileLoader, String type, Dictionary`2 manifestData) in /_/CLI/Decompiler.cs:line 1245
+

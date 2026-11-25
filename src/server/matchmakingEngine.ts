@@ -54,6 +54,11 @@ export const OFFICIAL_5V5_BOMB_MAPS: readonly string[] = [
  * para que esquadrões em Ranqueada ou Clássica sempre se encontrem na mesma fila,
  * enquanto o servidor sorteia UM único mapa oficial compartilhado na hora de fechar a partida.
  */
+const OFFICIAL_5V5_TDM_MAPS: readonly string[] = [
+  'HANGAR_FS_TDM_5V5',
+  'STATION_TDM_5V5',
+];
+
 export function getMatchmakingPoolKey(
   arenaMode: string,
   queueType: ServerQueueType = 'CASUAL',
@@ -63,7 +68,10 @@ export function getMatchmakingPoolKey(
   if (queueType === 'RANKED') {
     return 'BOMB_5V5';
   }
-  if (normalized === 'STATION_TDM_5V5') return 'STATION_TDM_5V5';
+  if (normalized === 'STATION_TDM_5V5' || normalized === 'HANGAR_FS_TDM_5V5') {
+    if (preferExactMap) return `EXACT::${normalized}`;
+    return 'TDM_5V5';
+  }
   if (normalized === 'STATION_CAPTURE_5V5') return 'STATION_CAPTURE_5V5';
   if (preferExactMap && normalized) {
     return `EXACT::${normalized}`;
@@ -74,6 +82,10 @@ export function getMatchmakingPoolKey(
 export function drawOfficialArenaForPool(poolKey: string): string {
   if (poolKey.startsWith('EXACT::')) {
     return poolKey.slice('EXACT::'.length) || 'DUST2_BOMB_5V5';
+  }
+  if (poolKey === 'TDM_5V5') {
+    const idx = Math.floor(Math.random() * OFFICIAL_5V5_TDM_MAPS.length);
+    return OFFICIAL_5V5_TDM_MAPS[idx] || 'HANGAR_FS_TDM_5V5';
   }
   if (poolKey === 'STATION_TDM_5V5') return 'STATION_TDM_5V5';
   if (poolKey === 'STATION_CAPTURE_5V5') return 'STATION_CAPTURE_5V5';

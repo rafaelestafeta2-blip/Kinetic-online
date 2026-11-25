@@ -16,7 +16,8 @@ export type V23BombMapMode =
   | 'DE_SUPPLY_BOMB_5V5'
   | 'YARD_V2_BOMB_5V5'
   | 'OBJECT_D17_BOMB_5V5'
-  | 'BRIDGES_V2_BOMB_5V5';
+  | 'BRIDGES_V2_BOMB_5V5'
+  | 'HANGAR_FS_TDM_5V5';
 
 export interface V23MapConfig {
   mode: V23BombMapMode;
@@ -163,6 +164,23 @@ export const V23_MAP_CONFIGS: Record<V23BombMapMode, V23MapConfig> = {
       return 'PONTES CENTRAIS (BRIDGES 2.0 MID)';
     },
   },
+  HANGAR_FS_TDM_5V5: {
+    mode: 'HANGAR_FS_TDM_5V5',
+    label: 'HANGAR FS HD',
+    glbUrl: resolveAssetUrl('/models/maps/hangar_fs_lod0.glb'),
+    floorYLift: -35.93,
+    attackerSpawn: new THREE.Vector3(27.40, 0.05, -65.50),
+    defenderSpawn: new THREE.Vector3(98.90, 0.10, -51.10),
+    spawnYaw: -Math.PI * 0.5,
+    bombSiteA: new THREE.Vector3(60.0, 0.05, -52.0),
+    bombSiteB: new THREE.Vector3(66.0, 0.05, -64.0),
+    getCallout: (x, y, _z) => {
+      if (x < 42) return 'BASE VANGUARD (ALA OESTE · HANGAR FS)';
+      if (x > 84) return 'BASE BLACKTHORN (ALA LESTE · HANGAR FS)';
+      if (y > 4.2) return 'PASSARELA SUPERIOR (CATWALK)';
+      return 'HANGAR CENTRAL (COMBAT ZONE)';
+    },
+  },
 };
 
 export function isV23BombMapMode(mode: DrillMode | undefined | null): mode is V23BombMapMode {
@@ -173,8 +191,13 @@ export function isV23BombMapMode(mode: DrillMode | undefined | null): mode is V2
     mode === 'DE_SUPPLY_BOMB_5V5' ||
     mode === 'YARD_V2_BOMB_5V5' ||
     mode === 'OBJECT_D17_BOMB_5V5' ||
-    mode === 'BRIDGES_V2_BOMB_5V5'
+    mode === 'BRIDGES_V2_BOMB_5V5' ||
+    mode === 'HANGAR_FS_TDM_5V5'
   );
+}
+
+export function isV23PlantBombMode(mode: DrillMode | undefined | null): mode is V23BombMapMode {
+  return isV23BombMapMode(mode) && mode !== 'HANGAR_FS_TDM_5V5';
 }
 
 export function buildV23MapLevel(
@@ -189,8 +212,10 @@ export function buildV23MapLevel(
   const targets: TacticalTargetEntity[] = [];
   const collider = new Dust2TriangleCollider();
 
-  addBombSiteBeacon(levelGroup, cfg.bombSiteA, 'A', 0xdc2626);
-  addBombSiteBeacon(levelGroup, cfg.bombSiteB, 'B', 0x0284c7);
+  if (mode !== 'HANGAR_FS_TDM_5V5') {
+    addBombSiteBeacon(levelGroup, cfg.bombSiteA, 'A', 0xdc2626);
+    addBombSiteBeacon(levelGroup, cfg.bombSiteB, 'B', 0x0284c7);
+  }
   spawnV23Squads(cfg, levelGroup, targets, shootableMeshes, isSoftwareGl);
 
   return {
@@ -265,17 +290,23 @@ export async function loadV23MapGeometry(
       const isSource2Yard = mode === 'YARD_V2_BOMB_5V5';
       const isSource2ObjectD17 = mode === 'OBJECT_D17_BOMB_5V5';
       const isSource2BridgesV2 = mode === 'BRIDGES_V2_BOMB_5V5';
-      const isSource2Workshop = isSource2Yard || isSource2ObjectD17 || isSource2BridgesV2;
-      const workshopOuterBounds = isSource2ObjectD17
-        ? { minX: -62, maxX: 42, minZ: -52, maxZ: 64 }
-        : isSource2BridgesV2
-          ? { minX: -152, maxX: 124, minZ: -92, maxZ: 188 }
-          : { minX: -82, maxX: 96, minZ: -85, maxZ: 98 };
-      const workshopColliderBounds = isSource2ObjectD17
-        ? { minX: -58, maxX: 38, minZ: -48, maxZ: 60 }
-        : isSource2BridgesV2
-          ? { minX: -148, maxX: 120, minZ: -88, maxZ: 184 }
-          : { minX: -76, maxX: 90, minZ: -80, maxZ: 94 };
+      const isSource2HangarFs = mode === 'HANGAR_FS_TDM_5V5';
+      const isSource2Workshop =
+        isSource2Yard || isSource2ObjectD17 || isSource2BridgesV2 || isSource2HangarFs;
+      const workshopOuterBounds = isSource2HangarFs
+        ? { minX: 10, maxX: 118, minZ: -86, maxZ: -32 }
+        : isSource2ObjectD17
+          ? { minX: -62, maxX: 42, minZ: -52, maxZ: 64 }
+          : isSource2BridgesV2
+            ? { minX: -152, maxX: 124, minZ: -92, maxZ: 188 }
+            : { minX: -82, maxX: 96, minZ: -85, maxZ: 98 };
+      const workshopColliderBounds = isSource2HangarFs
+        ? { minX: 12, maxX: 116, minZ: -84, maxZ: -34 }
+        : isSource2ObjectD17
+          ? { minX: -58, maxX: 38, minZ: -48, maxZ: 60 }
+          : isSource2BridgesV2
+            ? { minX: -148, maxX: 120, minZ: -88, maxZ: 184 }
+            : { minX: -76, maxX: 90, minZ: -80, maxZ: 94 };
       const _tmpBox = new THREE.Box3();
       mapTransformGroup.updateMatrixWorld(true);
 

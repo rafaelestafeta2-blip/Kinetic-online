@@ -33,6 +33,7 @@ import {
   STATION_ARENA_ATTACKER_SPAWN,
   STATION_ARENA_DEFENDER_SPAWN,
 } from './stationArenaLevelBuilder';
+import { V23_MAP_CONFIGS } from './v23MapsLevelBuilder';
 
 
 const _privateAiBotsScratch: YardBotEntity[] = [];
@@ -79,17 +80,28 @@ export function updateTargetsAndCombatAI(engine: any, dt: number): void {
             soundEngine.playMechanicalSwitch(0.85);
           }
         } else if (
-          engine.state.drillMode === 'STATION_TDM_5V5' &&
+          (engine.state.drillMode === 'STATION_TDM_5V5' ||
+            engine.state.drillMode === 'HANGAR_FS_TDM_5V5') &&
           (!isOnlineMatchActive() ||
             (isPrivateRoomWithBotsActive() && !t.root.userData?.remotePlayerUid))
         ) {
           t.downTimer -= dt;
           if (t.downTimer <= 0) {
             const isAlly = Boolean((t as YardBotEntity).isAlly);
-            const anchor = isAlly ? STATION_ARENA_ATTACKER_SPAWN : STATION_ARENA_DEFENDER_SPAWN;
+            const isHangarFs = engine.state.drillMode === 'HANGAR_FS_TDM_5V5';
+            const hangarCfg = V23_MAP_CONFIGS.HANGAR_FS_TDM_5V5;
+            const anchor = isHangarFs
+              ? isAlly
+                ? hangarCfg.attackerSpawn
+                : hangarCfg.defenderSpawn
+              : isAlly
+                ? STATION_ARENA_ATTACKER_SPAWN
+                : STATION_ARENA_DEFENDER_SPAWN;
             const rx = anchor.x + (Math.random() - 0.5) * 7.5;
             const rz = anchor.z + (Math.random() - 0.5) * 4.5;
-            const col = engine.stationArenaLevelData?.collider;
+            const col = isHangarFs
+              ? engine.hangarFsLevelData?.collider
+              : engine.stationArenaLevelData?.collider;
             const p = col?.ready
               ? col.findPlayableSpawn(rx, rz, anchor.y)
               : { x: rx, y: anchor.y, z: rz };
@@ -128,7 +140,9 @@ export function updateTargetsAndCombatAI(engine: any, dt: number): void {
     }
 
     // 3. Sistema Tático de Navegação, Ronda e Perseguição Implacável (5v5 Bomb, Tactical Wave e Killhouse)
-    const isTdmMode = engine.state.drillMode === 'STATION_TDM_5V5';
+    const isTdmMode =
+      engine.state.drillMode === 'STATION_TDM_5V5' ||
+      engine.state.drillMode === 'HANGAR_FS_TDM_5V5';
     const isBombMode =
       engine.state.drillMode === 'YARD_BOMB_5V5' ||
       engine.state.drillMode === 'DUST2_BOMB_5V5' ||

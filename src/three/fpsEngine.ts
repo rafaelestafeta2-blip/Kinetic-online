@@ -109,6 +109,7 @@ import {
   V23BombMapMode,
   buildV23MapLevel,
   isV23BombMapMode,
+  isV23PlantBombMode,
   loadV23MapGeometry,
 } from './v23MapsLevelBuilder';
 import {
@@ -316,6 +317,7 @@ export class TacticalFPSEngine {
   private yardV2LevelData: Dust2LevelBundle;
   private objectD17LevelData: Dust2LevelBundle;
   private bridgesV2LevelData: Dust2LevelBundle;
+  private hangarFsLevelData: Dust2LevelBundle;
   private stationArenaLevelData: Dust2LevelBundle;
   private yardBombSystem: YardBombSystem;
   private colliders: ColliderBox[] = [];
@@ -862,6 +864,10 @@ export class TacticalFPSEngine {
     this.bridgesV2LevelData.levelGroup.visible = false;
     this.scene.add(this.bridgesV2LevelData.levelGroup);
 
+    this.hangarFsLevelData = buildV23MapLevel('HANGAR_FS_TDM_5V5', this.isSoftwareGl);
+    this.hangarFsLevelData.levelGroup.visible = false;
+    this.scene.add(this.hangarFsLevelData.levelGroup);
+
     this.stationArenaLevelData = buildStationArenaLevel(this.isSoftwareGl);
     this.stationArenaLevelData.levelGroup.visible = false;
     this.scene.add(this.stationArenaLevelData.levelGroup);
@@ -994,6 +1000,7 @@ export class TacticalFPSEngine {
       yardV2LevelData: this.yardV2LevelData,
       objectD17LevelData: this.objectD17LevelData,
       bridgesV2LevelData: this.bridgesV2LevelData,
+      hangarFsLevelData: this.hangarFsLevelData,
       stationArenaLevelData: this.stationArenaLevelData,
       skySystem: this.skySystem,
       grenadeSystem: this.grenadeSystem,
@@ -1028,6 +1035,7 @@ export class TacticalFPSEngine {
       this.yardV2LevelData,
       this.objectD17LevelData,
       this.bridgesV2LevelData,
+      this.hangarFsLevelData,
       this.stationArenaLevelData,
       this.grenadeSystem
     );
@@ -1103,7 +1111,10 @@ export class TacticalFPSEngine {
             hit.attackerTeam,
             hit.weaponId,
             () => {
-              if (this.state.drillMode === 'STATION_TDM_5V5') {
+              if (
+                this.state.drillMode === 'STATION_TDM_5V5' ||
+                this.state.drillMode === 'HANGAR_FS_TDM_5V5'
+              ) {
                 if (this.yardBombSystem?.info.roundState === 'PLAYING') {
                   this.respawnLocalPlayerTdm();
                 }
@@ -1118,7 +1129,7 @@ export class TacticalFPSEngine {
                 this.state.drillMode === 'HANGAR_BOMB_5V5' ||
                 this.state.drillMode === 'EASTERN_CITY_BOMB_5V5' ||
                 this.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
-                isV23BombMapMode(this.state.drillMode) ||
+                isV23PlantBombMode(this.state.drillMode) ||
                 this.state.drillMode === 'STATION_CAPTURE_5V5';
               if (bomb) {
                 const specBot = this.playerDeathTp.startSpectating(
@@ -1643,6 +1654,7 @@ export class TacticalFPSEngine {
     if (mode === 'YARD_V2_BOMB_5V5') return this.yardV2LevelData.collider;
     if (mode === 'OBJECT_D17_BOMB_5V5') return this.objectD17LevelData.collider;
     if (mode === 'BRIDGES_V2_BOMB_5V5') return this.bridgesV2LevelData.collider;
+    if (mode === 'HANGAR_FS_TDM_5V5') return this.hangarFsLevelData.collider;
     if (mode === 'STATION_CAPTURE_5V5' || mode === 'STATION_TDM_5V5') {
       return this.stationArenaLevelData.collider;
     }
@@ -1804,6 +1816,9 @@ export class TacticalFPSEngine {
     if (mode === 'BRIDGES_V2_BOMB_5V5') {
       return this.bridgesV2LevelData.collider.getGroundHeight(x, y, z);
     }
+    if (mode === 'HANGAR_FS_TDM_5V5') {
+      return this.hangarFsLevelData.collider.getGroundHeight(x, y, z);
+    }
     if (mode === 'STATION_CAPTURE_5V5' || mode === 'STATION_TDM_5V5') {
       return this.stationArenaLevelData.collider.getGroundHeight(x, y, z);
     }
@@ -1850,7 +1865,7 @@ export class TacticalFPSEngine {
         this.state.drillMode !== 'HANGAR_BOMB_5V5' &&
         this.state.drillMode !== 'EASTERN_CITY_BOMB_5V5' &&
         this.state.drillMode !== 'MIRAGE_ANUBIS_BOMB_5V5' &&
-        !isV23BombMapMode(this.state.drillMode))
+        !isV23PlantBombMode(this.state.drillMode))
     ) {
       return;
     }
@@ -1877,7 +1892,8 @@ export class TacticalFPSEngine {
   }
 
   public respawnLocalPlayerTdm(): void {
-    if (this.state.drillMode !== 'STATION_TDM_5V5') return;
+    const isHangarFs = this.state.drillMode === 'HANGAR_FS_TDM_5V5';
+    if (this.state.drillMode !== 'STATION_TDM_5V5' && !isHangarFs) return;
     if (this.yardBombSystem?.info.roundState === 'MATCH_OVER') return;
 
     this.isPlayerDying = false;
@@ -1912,9 +1928,11 @@ export class TacticalFPSEngine {
       this.state.reloadPhase = 'IDLE';
     }
 
+    const col = isHangarFs
+      ? this.hangarFsLevelData.collider
+      : this.stationArenaLevelData.collider;
     if (isOnlineMatchActive()) {
       resetLocalOnlinePlayerForNextRound(this.state.drillMode);
-      const col = this.stationArenaLevelData.collider;
       const onlineSpawn = applyOnlineTeamSpawnToLocalPlayer(
         this.state.drillMode,
         this.playerPos,
@@ -1927,16 +1945,17 @@ export class TacticalFPSEngine {
       }
       this.snapLocalPlayerToPlayableFloor(this.playerPos.x, this.playerPos.z, this.playerPos.y);
     } else {
-      const col = this.stationArenaLevelData.collider;
+      const hangarCfg = V23_MAP_CONFIGS.HANGAR_FS_TDM_5V5;
+      const anchor = isHangarFs ? hangarCfg.attackerSpawn : STATION_ARENA_ATTACKER_SPAWN;
       const offsetX = (Math.random() - 0.5) * 3.0;
       const offsetZ = (Math.random() - 0.5) * 2.2;
       const hint = new THREE.Vector3(
-        STATION_ARENA_ATTACKER_SPAWN.x + offsetX,
-        STATION_ARENA_ATTACKER_SPAWN.y,
-        STATION_ARENA_ATTACKER_SPAWN.z + offsetZ
+        anchor.x + offsetX,
+        anchor.y,
+        anchor.z + offsetZ
       );
       this.placePlayerOnPlayableSpawn(col, hint, true);
-      this.yaw = STATION_ARENA_SPAWN_YAW;
+      this.yaw = isHangarFs ? hangarCfg.spawnYaw : STATION_ARENA_SPAWN_YAW;
       this.pitch = 0;
     }
 
@@ -2159,7 +2178,7 @@ export class TacticalFPSEngine {
       this.state.drillMode === 'HANGAR_BOMB_5V5' ||
       this.state.drillMode === 'EASTERN_CITY_BOMB_5V5' ||
       this.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
-      isV23BombMapMode(this.state.drillMode) ||
+      isV23PlantBombMode(this.state.drillMode) ||
       this.state.drillMode === 'STATION_CAPTURE_5V5';
     if (isBombMode) {
       markLocalPlayerDownForRevive(this as any);
@@ -2803,7 +2822,10 @@ export class TacticalFPSEngine {
         'GRENADE',
         () => {
           this.state.grenadeKillCamActive = false;
-          if (this.state.drillMode === 'STATION_TDM_5V5') {
+          if (
+            this.state.drillMode === 'STATION_TDM_5V5' ||
+            this.state.drillMode === 'HANGAR_FS_TDM_5V5'
+          ) {
             if (this.yardBombSystem?.info.roundState === 'PLAYING') {
               this.respawnLocalPlayerTdm();
             }
@@ -2818,7 +2840,7 @@ export class TacticalFPSEngine {
             this.state.drillMode === 'HANGAR_BOMB_5V5' ||
             this.state.drillMode === 'EASTERN_CITY_BOMB_5V5' ||
             this.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
-            isV23BombMapMode(this.state.drillMode) ||
+            isV23PlantBombMode(this.state.drillMode) ||
             this.state.drillMode === 'STATION_CAPTURE_5V5';
           if (isBomb) {
             const specBot = this.playerDeathTp.startSpectating(
@@ -3073,7 +3095,8 @@ export class TacticalFPSEngine {
         t.downTimer =
           this.state.drillMode === 'FREE_RANGE'
             ? 2.6
-            : this.state.drillMode === 'STATION_TDM_5V5'
+            : this.state.drillMode === 'STATION_TDM_5V5' ||
+                this.state.drillMode === 'HANGAR_FS_TDM_5V5'
               ? 3.2
               : 9999;
         t.isTelegraphing = false;
@@ -3222,7 +3245,8 @@ export class TacticalFPSEngine {
         t.downTimer =
           this.state.drillMode === 'FREE_RANGE'
             ? 2.6
-            : this.state.drillMode === 'STATION_TDM_5V5'
+            : this.state.drillMode === 'STATION_TDM_5V5' ||
+                this.state.drillMode === 'HANGAR_FS_TDM_5V5'
               ? 3.2
               : 9999;
         t.isTelegraphing = false;
@@ -3738,7 +3762,16 @@ export class TacticalFPSEngine {
     const isYardV2 = assetMode === 'YARD_V2_BOMB_5V5';
     const isObjectD17 = assetMode === 'OBJECT_D17_BOMB_5V5';
     const isBridgesV2 = assetMode === 'BRIDGES_V2_BOMB_5V5';
-    const isV23Map = isCsgoAssault || isDeDst || isMpNuked || isDeSupply || isYardV2 || isObjectD17 || isBridgesV2;
+    const isHangarFs = assetMode === 'HANGAR_FS_TDM_5V5';
+    const isV23Map =
+      isCsgoAssault ||
+      isDeDst ||
+      isMpNuked ||
+      isDeSupply ||
+      isYardV2 ||
+      isObjectD17 ||
+      isBridgesV2 ||
+      isHangarFs;
     const isStationArena =
       assetMode === 'STATION_CAPTURE_5V5' || assetMode === 'STATION_TDM_5V5';
     const isFreeRange = assetMode === 'FREE_RANGE';
@@ -3784,6 +3817,7 @@ export class TacticalFPSEngine {
     this.yardV2LevelData.levelGroup.visible = isYardV2;
     this.objectD17LevelData.levelGroup.visible = isObjectD17;
     this.bridgesV2LevelData.levelGroup.visible = isBridgesV2;
+    this.hangarFsLevelData.levelGroup.visible = isHangarFs;
     this.stationArenaLevelData.levelGroup.visible = isStationArena;
 
     const activeLevel = isDust2
@@ -3812,6 +3846,8 @@ export class TacticalFPSEngine {
               ? this.objectD17LevelData
             : isBridgesV2
               ? this.bridgesV2LevelData
+            : isHangarFs
+              ? this.hangarFsLevelData
             : isStationArena
               ? this.stationArenaLevelData
             : isYard
@@ -3995,7 +4031,9 @@ export class TacticalFPSEngine {
                   ? this.yardV2LevelData
                   : v23Mode === 'OBJECT_D17_BOMB_5V5'
                     ? this.objectD17LevelData
-                    : this.bridgesV2LevelData;
+                    : v23Mode === 'BRIDGES_V2_BOMB_5V5'
+                      ? this.bridgesV2LevelData
+                      : this.hangarFsLevelData;
       this.ensureGlbMapThenPlace(
         v23Bundle,
         () =>
@@ -4312,7 +4350,7 @@ export class TacticalFPSEngine {
             this.state.drillMode === 'HANGAR_BOMB_5V5' ||
             this.state.drillMode === 'EASTERN_CITY_BOMB_5V5' ||
             this.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
-            isV23BombMapMode(this.state.drillMode)) &&
+            isV23PlantBombMode(this.state.drillMode)) &&
           this.yardBombSystem.info.nearSite &&
           (this.yardBombSystem.info.bombStatus === 'CARRIED' ||
             this.yardBombSystem.info.bombStatus === 'PLANTED')
@@ -4329,7 +4367,7 @@ export class TacticalFPSEngine {
             this.state.drillMode === 'HANGAR_BOMB_5V5' ||
             this.state.drillMode === 'EASTERN_CITY_BOMB_5V5' ||
             this.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
-            isV23BombMapMode(this.state.drillMode)) &&
+            isV23PlantBombMode(this.state.drillMode)) &&
           this.yardBombSystem.info.nearSite &&
           (this.yardBombSystem.info.bombStatus === 'CARRIED' ||
             this.yardBombSystem.info.bombStatus === 'PLANTED')
@@ -5041,6 +5079,12 @@ export class TacticalFPSEngine {
           this.yawObject.position.y,
           this.yawObject.position.z
         );
+      } else if (this.state.drillMode === 'HANGAR_FS_TDM_5V5') {
+        this.hangarFsLevelData.updateVisibility?.(
+          this.yawObject.position.x,
+          this.yawObject.position.y,
+          this.yawObject.position.z
+        );
       }
       if (this.keyLight?.castShadow && this.renderer.shadowMap.enabled) {
         followKeyLightShadowFrustum(this.keyLight, this.playerPos, {
@@ -5562,7 +5606,7 @@ export class TacticalFPSEngine {
         this.state.drillMode === 'HANGAR_BOMB_5V5' ||
       this.state.drillMode === 'EASTERN_CITY_BOMB_5V5' ||
       this.state.drillMode === 'MIRAGE_ANUBIS_BOMB_5V5' ||
-      isV23BombMapMode(this.state.drillMode)) &&
+      isV23PlantBombMode(this.state.drillMode)) &&
       this.yardBombSystem?.info.bombStatus === 'PLANTING';
     this.c4PlantView?.setPlanting(Boolean(planting));
     this.c4PlantView?.update(dt);

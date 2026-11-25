@@ -404,7 +404,10 @@ async function startServer(): Promise<void> {
     'MP_NUKED_BOMB_5V5',
     'DE_SUPPLY_BOMB_5V5',
     'YARD_V2_BOMB_5V5',
+    'OBJECT_D17_BOMB_5V5',
+    'BRIDGES_V2_BOMB_5V5',
     'STATION_TDM_5V5',
+    'HANGAR_FS_TDM_5V5',
     'STATION_CAPTURE_5V5',
   ]);
 
@@ -505,19 +508,12 @@ async function startServer(): Promise<void> {
             removeClientFromRoom(clientMeta, { immediate: true });
           }
           const queueType = normalizeQueueType(msg.queueType);
-          const arenaMode = String(msg.arenaMode || 'DUST2_BOMB_5V5');
+          const rawArenaMode = String(msg.arenaMode || 'DUST2_BOMB_5V5');
+          const arenaMode = ALLOWED_SQUAD_ARENAS.has(rawArenaMode)
+            ? rawArenaMode
+            : 'DUST2_BOMB_5V5';
           const isPrivate = Boolean(msg.isPrivate);
-
-          const verifiedMmr = await fetchPlayerMmrFromFirebase(
-            uid,
-            typeof msg.idToken === 'string' ? msg.idToken : null,
-            Number(msg.mmr ?? msg.player?.mmr) || 1000
-          );
-
-          const enrichedPlayer: Record<string, unknown> = msg.player
-            ? { ...msg.player, uid, mmr: verifiedMmr, connectionState: 'CONNECTED', disconnectedAtMs: undefined }
-            : { uid, mmr: verifiedMmr, connectionState: 'CONNECTED', disconnectedAtMs: undefined };
-
+          const fallbackMmr = Number(msg.mmr ?? msg.player?.mmr) || 1000;
           const randomMap =
             typeof msg.randomMap === 'boolean'
               ? msg.randomMap
@@ -527,7 +523,7 @@ async function startServer(): Promise<void> {
           const includeBots = isPrivate ? Boolean(msg.includeBots) : false;
 
           let meta = roomMetaMap.get(roomId);
-          let wasReconnectingInMatch = false;
+          const metaExistedBefore = Boolean(meta);
           if (!meta) {
             meta = {
               roomId,
@@ -538,7 +534,7 @@ async function startServer(): Promise<void> {
               randomMap,
               includeBots,
               createdAtMs: Date.now(),
-              averageMmr: verifiedMmr,
+              averageMmr: fallbackMmr,
               serverConfirmedStart: false,
               status: 'WAITING',
               isSearchingMatch: false,
@@ -550,12 +546,50 @@ async function startServer(): Promise<void> {
               plantedSite: 'NONE',
               readyByUid: new Map([[uid, false]]),
               chatHistory: [],
-              memberMmrs: new Map([[uid, verifiedMmr]]),
-              memberPlayers: new Map([[uid, { ...enrichedPlayer, isReady: false }]]),
+              memberMmrs: new Map([[uid, fallbackMmr]]),
+              memberPlayers: new Map([[uid, { ...(msg.player || {}), uid, mmr: fallbackMmr, isReady: false }]]),
               disconnectGraceTimers: new Map(),
             };
             roomMetaMap.set(roomId, meta);
-          } else {
+          }
+
+          // Register socket & room membership immediately BEFORE async Firebase fetch
+          // so rapid SQUAD_CONFIG_UPDATE clicks from the host are never dropped or overwritten.
+          clientMeta.roomId = roomId;
+          clientMeta.uid = uid;
+          clientMeta.callsign = String(msg.player?.callsign || 'OPERADOR').slice(0, 32);
+          clientMeta.queueType = meta.queueType;
+          clientMeta.arenaMode = meta.arenaMode;
+          clientMeta.mmr = fallbackMmr;
+
+          let set = roomsMap.get(roomId);
+          if (!set) {
+            set = new Set();
+            roomsMap.set(roomId, set);
+          }
+          set.forEach((other) => {
+            if (other !== clientMeta && other.uid === uid) {
+              set!.delete(other);
+            }
+          });
+          set.add(clientMeta);
+
+          const verifiedMmr = await fetchPlayerMmrFromFirebase(
+            uid,
+            typeof msg.idToken === 'string' ? msg.idToken : null,
+            fallbackMmr
+          );
+
+          const enrichedPlayer: Record<string, unknown> = msg.player
+            ? { ...msg.player, uid, mmr: verifiedMmr, connectionState: 'CONNECTED', disconnectedAtMs: undefined }
+            : { uid, mmr: verifiedMmr, connectionState: 'CONNECTED', disconnectedAtMs: undefined };
+
+          const liveMeta = roomMetaMap.get(roomId);
+          if (!liveMeta) return;
+          meta = liveMeta;
+
+          let wasReconnectingInMatch = false;
+          if (metaExistedBefore) {
             wasReconnectingInMatch = cancelPlayerDisconnectGraceTimer(meta, uid);
             if (
               meta.queueType === 'RANKED' &&
@@ -569,6 +603,8 @@ async function startServer(): Promise<void> {
                 meta.createdAtMs
               );
               if (!isCompatible) {
+                set.delete(clientMeta);
+                clientMeta.roomId = null;
                 ws.send(
                   JSON.stringify({
                     type: 'RANKED_MMR_MISMATCH',
@@ -582,51 +618,35 @@ async function startServer(): Promise<void> {
                 return;
               }
             }
-            const existingReady = meta.readyByUid.get(uid) ?? false;
-            const prevMember = meta.memberPlayers.get(uid);
-            meta.readyByUid.set(uid, existingReady);
-            meta.memberMmrs.set(uid, verifiedMmr);
-            // If reconnecting during an active match, preserve authoritative team, kills, deaths, headshots & load status
-            const restoredPlayer =
-              meta.status === 'PLAYING' && prevMember
-                ? {
-                    ...enrichedPlayer,
-                    ...prevMember,
-                    callsign: enrichedPlayer.callsign || prevMember.callsign,
-                    team: prevMember.team || enrichedPlayer.team,
-                    kills: Number(prevMember.kills ?? enrichedPlayer.kills ?? 0),
-                    deaths: Number(prevMember.deaths ?? enrichedPlayer.deaths ?? 0),
-                    assists: Number(prevMember.assists ?? enrichedPlayer.assists ?? 0),
-                    headshots: Number(prevMember.headshots ?? enrichedPlayer.headshots ?? 0),
-                    isReady: existingReady,
-                    connectionState: 'CONNECTED',
-                    disconnectedAtMs: undefined,
-                  }
-                : { ...enrichedPlayer, isReady: existingReady, connectionState: 'CONNECTED', disconnectedAtMs: undefined };
-            meta.memberPlayers.set(uid, restoredPlayer);
-            if (!meta.hostUid) meta.hostUid = uid;
-            recalculateRoomAverageMmr(meta);
           }
 
-          clientMeta.roomId = roomId;
-          clientMeta.uid = uid;
-          clientMeta.callsign = String(msg.player?.callsign || 'OPERADOR').slice(0, 32);
+          const existingReady = meta.readyByUid.get(uid) ?? false;
+          const prevMember = meta.memberPlayers.get(uid);
+          meta.readyByUid.set(uid, existingReady);
+          meta.memberMmrs.set(uid, verifiedMmr);
+          const restoredPlayer =
+            meta.status === 'PLAYING' && prevMember
+              ? {
+                  ...enrichedPlayer,
+                  ...prevMember,
+                  callsign: enrichedPlayer.callsign || prevMember.callsign,
+                  team: prevMember.team || enrichedPlayer.team,
+                  kills: Number(prevMember.kills ?? enrichedPlayer.kills ?? 0),
+                  deaths: Number(prevMember.deaths ?? enrichedPlayer.deaths ?? 0),
+                  assists: Number(prevMember.assists ?? enrichedPlayer.assists ?? 0),
+                  headshots: Number(prevMember.headshots ?? enrichedPlayer.headshots ?? 0),
+                  isReady: existingReady,
+                  connectionState: 'CONNECTED',
+                  disconnectedAtMs: undefined,
+                }
+              : { ...enrichedPlayer, isReady: existingReady, connectionState: 'CONNECTED', disconnectedAtMs: undefined };
+          meta.memberPlayers.set(uid, restoredPlayer);
+          if (!meta.hostUid) meta.hostUid = uid;
+          recalculateRoomAverageMmr(meta);
+
           clientMeta.queueType = meta.queueType;
           clientMeta.arenaMode = meta.arenaMode;
           clientMeta.mmr = verifiedMmr;
-
-          let set = roomsMap.get(roomId);
-          if (!set) {
-            set = new Set();
-            roomsMap.set(roomId, set);
-          }
-          // Deduplicate any stale socket with same UID in this room
-          set.forEach((other) => {
-            if (other !== clientMeta && other.uid === uid) {
-              set!.delete(other);
-            }
-          });
-          set.add(clientMeta);
 
           const memberPlayerForBroadcast = meta.memberPlayers.get(uid) || enrichedPlayer;
           if (wasReconnectingInMatch) {
@@ -789,7 +809,11 @@ async function startServer(): Promise<void> {
 
           // Ranked is always Plant Bomb with automatic random map and zero bots
           if (nextQueue === 'RANKED' && !nextPrivate) {
-            if (nextArena === 'STATION_TDM_5V5' || nextArena === 'STATION_CAPTURE_5V5') {
+            if (
+              nextArena === 'STATION_TDM_5V5' ||
+              nextArena === 'HANGAR_FS_TDM_5V5' ||
+              nextArena === 'STATION_CAPTURE_5V5'
+            ) {
               nextArena = 'DUST2_BOMB_5V5';
             }
             nextRandomMap = true;
