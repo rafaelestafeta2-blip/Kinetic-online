@@ -74,7 +74,7 @@ export function raycastCombatShot(
 
     const origin = raycaster.ray.origin;
     const dir = raycaster.ray.direction;
-    const maxDist = raycaster.far;
+    const maxDist = Math.min(raycaster.far, bestDist + 0.05);
     const detailed = collider.raycastDetailed(
       origin,
       dir,

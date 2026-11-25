@@ -22,9 +22,13 @@ import {
   ensureMeshoptDecoder,
 } from './gltfLoaderFactory';
 import { applyAnimPackOverlayToBotClips } from './mixamoAnimPackLoader';
-import { applyOperatorRimLight } from './operatorPbrEnhancer';
+import {
+  applyOperatorRimLight,
+  applyOperatorSkinSss,
+} from './operatorPbrEnhancer';
 
 const FEMALE_TEX_BASE = '/models/characters/female_ops/tex';
+const FEMALE_TEX_VERSION = '3';
 const MAX_CACHED_SILHOUETTES = 4;
 const MAX_CACHED_CAMOS = 6;
 
@@ -71,7 +75,9 @@ function loadSingleWebpTexture(
   relativePath: string,
   isLinear = false
 ): Promise<THREE.Texture | null> {
-  const url = resolveAssetUrl(relativePath);
+  const resolved = resolveAssetUrl(relativePath);
+  const sep = resolved.includes('?') ? '&' : '?';
+  const url = `${resolved}${sep}texv=${FEMALE_TEX_VERSION}`;
   return new Promise((resolve) => {
     texLoader.load(
       url,
@@ -357,16 +363,16 @@ function buildFemaleMaterialForSlot(
       ...baseParams,
       map: sharedBaseTexCache.get('head_b.webp') || null,
       normalMap: sharedBaseTexCache.get('head_n.webp') || null,
-      normalScale: new THREE.Vector2(0.85, 0.85),
+      normalScale: new THREE.Vector2(0.92, 0.92),
       roughnessMap: orm,
       aoMap: orm,
-      aoMapIntensity: 0.55,
+      aoMapIntensity: 0.58,
       metalnessMap: orm,
-      roughness: orm ? 0.92 : 0.60,
+      roughness: orm ? 0.94 : 0.60,
       metalness: orm ? 1.0 : 0.01,
-      envMapIntensity: 0.46,
+      envMapIntensity: 0.68,
     });
-    applyOperatorRimLight(mat, { colorHex: 0xffe4d4, intensity: 0.10, power: 3.4 });
+    applyOperatorSkinSss(mat, { sssStrength: 0.16, rimIntensity: 0.11 });
     return mat;
   }
 
@@ -376,16 +382,16 @@ function buildFemaleMaterialForSlot(
       ...baseParams,
       map: sharedBaseTexCache.get('arms_b.webp') || null,
       normalMap: sharedBaseTexCache.get('arms_n.webp') || null,
-      normalScale: new THREE.Vector2(0.85, 0.85),
+      normalScale: new THREE.Vector2(0.90, 0.90),
       roughnessMap: orm,
       aoMap: orm,
-      aoMapIntensity: 0.55,
+      aoMapIntensity: 0.58,
       metalnessMap: orm,
-      roughness: orm ? 0.92 : 0.60,
+      roughness: orm ? 0.94 : 0.60,
       metalness: orm ? 1.0 : 0.01,
-      envMapIntensity: 0.46,
+      envMapIntensity: 0.68,
     });
-    applyOperatorRimLight(mat, { colorHex: 0xffe4d4, intensity: 0.10, power: 3.4 });
+    applyOperatorSkinSss(mat, { sssStrength: 0.15, rimIntensity: 0.10 });
     return mat;
   }
 
@@ -398,9 +404,9 @@ function buildFemaleMaterialForSlot(
       normalScale: new THREE.Vector2(0.45, 0.45),
       aoMap: orm,
       aoMapIntensity: 0.40,
-      roughness: 0.08,
+      roughness: 0.06,
       metalness: 0.04,
-      envMapIntensity: 1.30,
+      envMapIntensity: 1.55,
     });
   }
 
@@ -408,13 +414,14 @@ function buildFemaleMaterialForSlot(
     const mat = new THREE.MeshStandardMaterial({
       ...baseParams,
       map: sharedBaseTexCache.get('eyelashes_rgba.webp') || null,
-      color: 0x3b2c26,
-      alphaTest: 0.35,
+      color: 0x362822,
+      alphaTest: 0.26,
+      alphaToCoverage: true,
       transparent: false,
       side: THREE.DoubleSide,
-      roughness: 0.72,
+      roughness: 0.66,
       metalness: 0.02,
-      envMapIntensity: 0.32,
+      envMapIntensity: 0.40,
     });
     mat.userData.preserveFemaleMat = true;
     return mat;
@@ -425,27 +432,28 @@ function buildFemaleMaterialForSlot(
     const texKey = isMainHair ? 'hair_rgba.webp' : 'hairscalp_rgba.webp';
     const normKey = isMainHair ? 'hair_n.webp' : 'hairscalp_n.webp';
     const aoKey = isMainHair ? 'hair_ao.webp' : 'hairscalp_ao.webp';
-    // Hair albedo is already dark strands; lift tint toward white so strands remain rich and detailed
+    // Natural hair tint preserving rich dark/blonde contrast on 2K strand maps
     const tint = new THREE.Color(cfg.hairColorHex ?? 0x4a3525).lerp(
       new THREE.Color(0xffffff),
-      0.58
+      0.42
     );
     const mat = new THREE.MeshStandardMaterial({
       ...baseParams,
       map: sharedBaseTexCache.get(texKey) || null,
       normalMap: sharedBaseTexCache.get(normKey) || null,
-      normalScale: new THREE.Vector2(0.75, 0.75),
+      normalScale: new THREE.Vector2(0.82, 0.82),
       aoMap: sharedBaseTexCache.get(aoKey) || null,
-      aoMapIntensity: 0.42,
+      aoMapIntensity: 0.45,
       color: tint,
-      alphaTest: 0.34,
+      alphaTest: 0.28,
+      alphaToCoverage: true,
       transparent: false,
       side: THREE.DoubleSide,
-      roughness: 0.48,
+      roughness: 0.44,
       metalness: 0.04,
-      envMapIntensity: 0.56,
+      envMapIntensity: 0.72,
     });
-    applyOperatorRimLight(mat, { colorHex: 0xfff0dd, intensity: 0.14, power: 2.9 });
+    applyOperatorRimLight(mat, { colorHex: 0xfff0dd, intensity: 0.15, power: 2.8 });
     mat.userData.preserveFemaleMat = true;
     return mat;
   }
@@ -472,14 +480,14 @@ function buildFemaleMaterialForSlot(
       ...baseParams,
       map: camoPack.textures.shirt,
       normalMap: sharedBaseTexCache.get('shirt_n.webp') || null,
-      normalScale: new THREE.Vector2(1.05, 1.05),
+      normalScale: new THREE.Vector2(1.06, 1.06),
       roughnessMap: orm,
       aoMap: orm,
       aoMapIntensity: 0.72,
       metalnessMap: orm,
       roughness: orm ? 0.92 : 0.84,
       metalness: orm ? 1.0 : 0.03,
-      envMapIntensity: 0.52,
+      envMapIntensity: 0.72,
     });
     applyOperatorRimLight(mat, { colorHex: 0xd8ebff, intensity: 0.14, power: 3.2 });
     return mat;
@@ -491,14 +499,14 @@ function buildFemaleMaterialForSlot(
       ...baseParams,
       map: camoPack.textures.pants,
       normalMap: sharedBaseTexCache.get('pants_n.webp') || null,
-      normalScale: new THREE.Vector2(1.05, 1.05),
+      normalScale: new THREE.Vector2(1.06, 1.06),
       roughnessMap: orm,
       aoMap: orm,
       aoMapIntensity: 0.72,
       metalnessMap: orm,
       roughness: orm ? 0.92 : 0.84,
       metalness: orm ? 1.0 : 0.03,
-      envMapIntensity: 0.52,
+      envMapIntensity: 0.72,
     });
     applyOperatorRimLight(mat, { colorHex: 0xd8ebff, intensity: 0.14, power: 3.2 });
     return mat;
@@ -510,14 +518,14 @@ function buildFemaleMaterialForSlot(
       ...baseParams,
       map: camoPack.textures.leggings,
       normalMap: sharedBaseTexCache.get('leggings_n.webp') || null,
-      normalScale: new THREE.Vector2(1.10, 1.10),
+      normalScale: new THREE.Vector2(1.08, 1.08),
       roughnessMap: orm,
       aoMap: orm,
       aoMapIntensity: 0.75,
       metalnessMap: orm,
       roughness: orm ? 0.90 : 0.66,
       metalness: orm ? 1.0 : 0.09,
-      envMapIntensity: 0.66,
+      envMapIntensity: 0.82,
     });
     applyOperatorRimLight(mat, { colorHex: 0xd8ebff, intensity: 0.16, power: 3.0 });
     return mat;
@@ -529,14 +537,14 @@ function buildFemaleMaterialForSlot(
       ...baseParams,
       map: camoPack.textures.unloading,
       normalMap: sharedBaseTexCache.get('unloading_n.webp') || null,
-      normalScale: new THREE.Vector2(1.15, 1.15),
+      normalScale: new THREE.Vector2(1.12, 1.12),
       roughnessMap: orm,
       aoMap: orm,
       aoMapIntensity: 0.78,
       metalnessMap: orm,
       roughness: orm ? 0.90 : 0.62,
       metalness: orm ? 1.0 : 0.12,
-      envMapIntensity: 0.72,
+      envMapIntensity: 0.86,
     });
     applyOperatorRimLight(mat, { colorHex: 0xd8ebff, intensity: 0.18, power: 3.0 });
     return mat;
@@ -559,7 +567,7 @@ function buildFemaleMaterialForSlot(
       emissiveIntensity: emissiveTex ? 0.85 : 0.0,
       roughness: orm ? 0.90 : 0.58,
       metalness: orm ? 1.0 : 0.16,
-      envMapIntensity: 0.78,
+      envMapIntensity: 0.90,
     });
     applyOperatorRimLight(mat, { colorHex: 0xd8ebff, intensity: 0.19, power: 2.9 });
     return mat;
@@ -571,14 +579,14 @@ function buildFemaleMaterialForSlot(
       ...baseParams,
       map: camoPack.textures.pouches,
       normalMap: sharedBaseTexCache.get('pouches_n.webp') || null,
-      normalScale: new THREE.Vector2(1.10, 1.10),
+      normalScale: new THREE.Vector2(1.08, 1.08),
       roughnessMap: orm,
       aoMap: orm,
       aoMapIntensity: 0.75,
       metalnessMap: orm,
       roughness: orm ? 0.90 : 0.68,
       metalness: orm ? 1.0 : 0.08,
-      envMapIntensity: 0.62,
+      envMapIntensity: 0.78,
     });
     applyOperatorRimLight(mat, { colorHex: 0xd8ebff, intensity: 0.16, power: 3.1 });
     return mat;
@@ -591,14 +599,14 @@ function buildFemaleMaterialForSlot(
       ...baseParams,
       map: sharedBaseTexCache.get(gloveKey) || null,
       normalMap: sharedBaseTexCache.get('glove_n.webp') || null,
-      normalScale: new THREE.Vector2(1.08, 1.08),
+      normalScale: new THREE.Vector2(1.06, 1.06),
       roughnessMap: orm,
       aoMap: orm,
       aoMapIntensity: 0.72,
       metalnessMap: orm,
       roughness: orm ? 0.90 : 0.62,
       metalness: orm ? 1.0 : 0.08,
-      envMapIntensity: 0.65,
+      envMapIntensity: 0.80,
     });
     applyOperatorRimLight(mat, { colorHex: 0xd8ebff, intensity: 0.15, power: 3.1 });
     return mat;
@@ -610,14 +618,14 @@ function buildFemaleMaterialForSlot(
       ...baseParams,
       map: sharedBaseTexCache.get('patches_b.webp') || null,
       normalMap: sharedBaseTexCache.get('patches_n.webp') || null,
-      normalScale: new THREE.Vector2(1.05, 1.05),
+      normalScale: new THREE.Vector2(1.04, 1.04),
       roughnessMap: orm,
       aoMap: orm,
       aoMapIntensity: 0.70,
       metalnessMap: orm,
       roughness: orm ? 0.92 : 0.70,
       metalness: orm ? 1.0 : 0.06,
-      envMapIntensity: 0.56,
+      envMapIntensity: 0.72,
     });
     return mat;
   }

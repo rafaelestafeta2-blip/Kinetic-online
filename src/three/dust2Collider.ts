@@ -29,6 +29,7 @@ const _pt = new THREE.Vector3();
 const _closest = new THREE.Vector3();
 const _ray = new THREE.Ray();
 const _hitPt = new THREE.Vector3();
+const _sampleHeights = new Float64Array(3);
 
 /**
  * High-performance 2D Spatial Hash Triangle Collider for CS de_dust2 & cs_assault (.glb).
@@ -36,8 +37,8 @@ const _hitPt = new THREE.Vector3();
  */
 export class Dust2TriangleCollider {
   private readonly cellSize = 3.0;
-  private floorGrid = new Map<string, Dust2TriEntry[]>();
-  private wallGrid = new Map<string, Dust2TriEntry[]>();
+  private floorGrid = new Map<number, Dust2TriEntry[]>();
+  private wallGrid = new Map<number, Dust2TriEntry[]>();
   public boundingBoxes: THREE.Box3[] = [];
   public worldBounds = new THREE.Box3();
   public ladders: LadderZone[] = [];
@@ -45,8 +46,8 @@ export class Dust2TriangleCollider {
   public ready = false;
   public radarDataUrl = '';
 
-  private cellKey(cx: number, cz: number): string {
-    return `${cx},${cz}`;
+  private cellKey(cx: number, cz: number): number {
+    return ((cx + 32768) << 16) | ((cz + 32768) & 0xffff);
   }
 
   public clear(): void {
@@ -688,18 +689,22 @@ export class Dust2TriangleCollider {
 
     const waistMinY = yBottom + 0.58;
     const headMaxY = yBottom + Math.min(playerHeight - 0.2, 1.5);
-    const midY = (waistMinY + headMaxY) * 0.5;
-    const sampleHeights =
-      headMaxY > waistMinY + 0.15
-        ? [waistMinY + 0.04, midY, headMaxY - 0.04]
-        : [waistMinY + 0.04];
+    let sampleCount = 1;
+    _sampleHeights[0] = waistMinY + 0.04;
+    if (headMaxY > waistMinY + 0.15) {
+      _sampleHeights[1] = (waistMinY + headMaxY) * 0.5;
+      _sampleHeights[2] = headMaxY - 0.04;
+      sampleCount = 3;
+    }
 
     const minCx = Math.floor((rx - radius - 0.2) / this.cellSize);
     const maxCx = Math.floor((rx + radius + 0.2) / this.cellSize);
     const minCz = Math.floor((rz - radius - 0.2) / this.cellSize);
     const maxCz = Math.floor((rz + radius + 0.2) / this.cellSize);
+    const radiusSq = radius * radius;
 
     for (let iter = 0; iter < 2; iter++) {
+      let hitThisIter = false;
       for (let cx = minCx; cx <= maxCx; cx++) {
         for (let cz = minCz; cz <= maxCz; cz++) {
           const bucket = this.wallGrid.get(this.cellKey(cx, cz));
@@ -719,8 +724,8 @@ export class Dust2TriangleCollider {
 
             _tri.set(w.a, w.b, w.c);
 
-            for (let s = 0; s < sampleHeights.length; s++) {
-              const sy = sampleHeights[s];
+            for (let s = 0; s < sampleCount; s++) {
+              const sy = _sampleHeights[s];
               if (sy < w.minY - 0.05 || sy > w.maxY + 0.05) continue;
 
               _pt.set(rx, sy, rz);
@@ -731,22 +736,164 @@ export class Dust2TriangleCollider {
               const dx = rx - _closest.x;
               const dz = rz - _closest.z;
               const distSq = dx * dx + dz * dz;
-              if (distSq < radius * radius && distSq > 1e-8) {
+              if (distSq < radiusSq && distSq > 1e-8) {
                 const dist = Math.sqrt(distSq);
                 const push = radius - dist + 0.002;
                 rx += (dx / dist) * push;
                 rz += (dz / dist) * push;
                 collided = true;
+                hitThisIter = true;
               }
             }
           }
         }
       }
+      if (!hitThisIter) break;
     }
 
     outPos.x = rx;
     outPos.z = rz;
     return collided;
+  }
+
+  /** Fast inline 3D ray-vs-AABB slab test against a triangle entry (rejects ~96% of non-hitting tris). */
+  private rayHitsTriAabb(
+    ox: number,
+    oy: number,
+    oz: number,
+    invDx: number,
+    invDy: number,
+    invDz: number,
+    tMaxLimit: number,
+    tri: Dust2TriEntry
+  ): boolean {
+    let t1 = (tri.minX - ox) * invDx;
+    let t2 = (tri.maxX - ox) * invDx;
+    let tmin = t1 < t2 ? t1 : t2;
+    let tmax = t1 > t2 ? t1 : t2;
+
+    t1 = (tri.minY - oy) * invDy;
+    t2 = (tri.maxY - oy) * invDy;
+    const tymin = t1 < t2 ? t1 : t2;
+    const tymax = t1 > t2 ? t1 : t2;
+    if (tmin > tymax || tymin > tmax) return false;
+    if (tymin > tmin) tmin = tymin;
+    if (tymax < tmax) tmax = tymax;
+
+    t1 = (tri.minZ - oz) * invDz;
+    t2 = (tri.maxZ - oz) * invDz;
+    const tzmin = t1 < t2 ? t1 : t2;
+    const tzmax = t1 > t2 ? t1 : t2;
+    if (tmin > tzmax || tzmin > tmax) return false;
+    if (tzmin > tmin) tmin = tzmin;
+    if (tzmax < tmax) tmax = tzmax;
+
+    return tmax >= 0 && tmin <= tMaxLimit;
+  }
+
+  /**
+   * Ultra-fast early-exit Line-of-Sight occlusion check using 2D Grid DDA + 3D AABB slab reject.
+   * Returns `true` immediately on the first solid triangle hit within [0, maxDist].
+   */
+  public raycastBlocked(
+    origin: THREE.Vector3,
+    dir: THREE.Vector3,
+    maxDist: number
+  ): boolean {
+    if (!this.ready || maxDist <= 0) return false;
+    const ox = origin.x;
+    const oy = origin.y;
+    const oz = origin.z;
+    const dx = dir.x;
+    const dy = dir.y;
+    const dz = dir.z;
+    const invDx = Math.abs(dx) > 1e-8 ? 1 / dx : 1e12;
+    const invDy = Math.abs(dy) > 1e-8 ? 1 / dy : 1e12;
+    const invDz = Math.abs(dz) > 1e-8 ? 1 / dz : 1e12;
+
+    _ray.set(origin, dir);
+    const cs = this.cellSize;
+    let cx = Math.floor(ox / cs);
+    let cz = Math.floor(oz / cs);
+
+    const stepX = dx > 1e-8 ? 1 : dx < -1e-8 ? -1 : 0;
+    const stepZ = dz > 1e-8 ? 1 : dz < -1e-8 ? -1 : 0;
+    const tDeltaX = stepX !== 0 ? Math.abs(cs * invDx) : 1e12;
+    const tDeltaZ = stepZ !== 0 ? Math.abs(cs * invDz) : 1e12;
+
+    let tMaxX =
+      stepX > 0
+        ? ((cx + 1) * cs - ox) * invDx
+        : stepX < 0
+          ? (cx * cs - ox) * invDx
+          : 1e12;
+    let tMaxZ =
+      stepZ > 0
+        ? ((cz + 1) * cs - oz) * invDz
+        : stepZ < 0
+          ? (cz * cs - oz) * invDz
+          : 1e12;
+
+    const maxCells = Math.ceil((maxDist / cs) * 2.2) + 4;
+    let tCurrent = 0;
+
+    for (let iter = 0; iter < maxCells && tCurrent <= maxDist; iter++) {
+      const key = this.cellKey(cx, cz);
+      const tNext = tMaxX < tMaxZ ? tMaxX : tMaxZ;
+      const tExit = tNext < maxDist ? tNext : maxDist;
+      const yA = oy + dy * tCurrent;
+      const yB = oy + dy * tExit;
+      const segMinY = (yA < yB ? yA : yB) - 0.15;
+      const segMaxY = (yA > yB ? yA : yB) + 0.15;
+
+      const walls = this.wallGrid.get(key);
+      if (walls) {
+        for (let i = 0; i < walls.length; i++) {
+          const w = walls[i];
+          if (w.playerClipOnly) continue;
+          if (w.maxY < segMinY || w.minY > segMaxY) continue;
+          if (!this.rayHitsTriAabb(ox, oy, oz, invDx, invDy, invDz, maxDist, w)) continue;
+          if (_ray.intersectTriangle(w.a, w.b, w.c, false, _hitPt)) {
+            const hx = _hitPt.x - ox;
+            const hy = _hitPt.y - oy;
+            const hz = _hitPt.z - oz;
+            if (hx * hx + hy * hy + hz * hz <= maxDist * maxDist) {
+              return true;
+            }
+          }
+        }
+      }
+
+      const floors = this.floorGrid.get(key);
+      if (floors) {
+        for (let i = 0; i < floors.length; i++) {
+          const f = floors[i];
+          if (f.playerClipOnly) continue;
+          if (f.maxY < segMinY || f.minY > segMaxY) continue;
+          if (!this.rayHitsTriAabb(ox, oy, oz, invDx, invDy, invDz, maxDist, f)) continue;
+          if (_ray.intersectTriangle(f.a, f.b, f.c, false, _hitPt)) {
+            const hx = _hitPt.x - ox;
+            const hy = _hitPt.y - oy;
+            const hz = _hitPt.z - oz;
+            if (hx * hx + hy * hy + hz * hz <= maxDist * maxDist) {
+              return true;
+            }
+          }
+        }
+      }
+
+      if (tMaxX < tMaxZ) {
+        tCurrent = tMaxX;
+        tMaxX += tDeltaX;
+        cx += stepX;
+      } else {
+        tCurrent = tMaxZ;
+        tMaxZ += tDeltaZ;
+        cz += stepZ;
+      }
+    }
+
+    return false;
   }
 
   public raycastDistance(
@@ -759,7 +906,7 @@ export class Dust2TriangleCollider {
   }
 
   /**
-   * Spatial-hash triangle raycast with hit point + face normal.
+   * Spatial-hash triangle raycast with hit point + face normal using 2D Grid DDA + 3D AABB slab reject.
    * Used for bullet world impacts without Three.js mesh traversal of the whole GLB.
    */
   public raycastDetailed(
@@ -769,55 +916,107 @@ export class Dust2TriangleCollider {
     outPoint?: THREE.Vector3,
     outNormal?: THREE.Vector3
   ): { distance: number } | null {
-    if (!this.ready) return null;
+    if (!this.ready || maxDist <= 0) return null;
+    const ox = origin.x;
+    const oy = origin.y;
+    const oz = origin.z;
+    const dx = dir.x;
+    const dy = dir.y;
+    const dz = dir.z;
+    const invDx = Math.abs(dx) > 1e-8 ? 1 / dx : 1e12;
+    const invDy = Math.abs(dy) > 1e-8 ? 1 / dy : 1e12;
+    const invDz = Math.abs(dz) > 1e-8 ? 1 / dz : 1e12;
+
     _ray.set(origin, dir);
     let closestDist = maxDist + 1;
     let hitTri: Dust2TriEntry | null = null;
-    const step = 1.45;
-    const steps = Math.max(1, Math.ceil(maxDist / step));
-    let lastKey = '';
 
-    for (let s = 0; s <= steps; s++) {
-      const d = Math.min(maxDist, s * step);
-      if (d > closestDist + step) break;
-      const px = origin.x + dir.x * d;
-      const py = origin.y + dir.y * d;
-      const pz = origin.z + dir.z * d;
-      const key = this.cellKey(Math.floor(px / this.cellSize), Math.floor(pz / this.cellSize));
-      if (key === lastKey) continue;
-      lastKey = key;
+    const cs = this.cellSize;
+    let cx = Math.floor(ox / cs);
+    let cz = Math.floor(oz / cs);
+
+    const stepX = dx > 1e-8 ? 1 : dx < -1e-8 ? -1 : 0;
+    const stepZ = dz > 1e-8 ? 1 : dz < -1e-8 ? -1 : 0;
+    const tDeltaX = stepX !== 0 ? Math.abs(cs * invDx) : 1e12;
+    const tDeltaZ = stepZ !== 0 ? Math.abs(cs * invDz) : 1e12;
+
+    let tMaxX =
+      stepX > 0
+        ? ((cx + 1) * cs - ox) * invDx
+        : stepX < 0
+          ? (cx * cs - ox) * invDx
+          : 1e12;
+    let tMaxZ =
+      stepZ > 0
+        ? ((cz + 1) * cs - oz) * invDz
+        : stepZ < 0
+          ? (cz * cs - oz) * invDz
+          : 1e12;
+
+    const maxCells = Math.ceil((maxDist / cs) * 2.2) + 4;
+    let tCurrent = 0;
+
+    for (let iter = 0; iter < maxCells && tCurrent <= maxDist; iter++) {
+      if (tCurrent > closestDist) break;
+      const key = this.cellKey(cx, cz);
+      const tNext = tMaxX < tMaxZ ? tMaxX : tMaxZ;
+      const tLimit = closestDist < maxDist ? closestDist : maxDist;
+      const tExit = tNext < tLimit ? tNext : tLimit;
+      const yA = oy + dy * tCurrent;
+      const yB = oy + dy * tExit;
+      const segMinY = (yA < yB ? yA : yB) - 0.15;
+      const segMaxY = (yA > yB ? yA : yB) + 0.15;
 
       const walls = this.wallGrid.get(key);
       if (walls) {
         for (let i = 0; i < walls.length; i++) {
           const w = walls[i];
           if (w.playerClipOnly) continue;
-          if (py + step < w.minY || py - step > w.maxY) continue;
+          if (w.maxY < segMinY || w.minY > segMaxY) continue;
+          const curLim = closestDist < maxDist ? closestDist : maxDist;
+          if (!this.rayHitsTriAabb(ox, oy, oz, invDx, invDy, invDz, curLim, w)) continue;
           if (_ray.intersectTriangle(w.a, w.b, w.c, false, _hitPt)) {
-            const dist = origin.distanceTo(_hitPt);
+            const hx = _hitPt.x - ox;
+            const hy = _hitPt.y - oy;
+            const hz = _hitPt.z - oz;
+            const dist = Math.sqrt(hx * hx + hy * hy + hz * hz);
             if (dist <= maxDist && dist < closestDist) {
               closestDist = dist;
               hitTri = w;
-              if (outPoint) outPoint.copy(_hitPt);
             }
           }
         }
       }
+
       const floors = this.floorGrid.get(key);
       if (floors) {
         for (let i = 0; i < floors.length; i++) {
           const f = floors[i];
           if (f.playerClipOnly) continue;
-          if (py + step < f.minY || py - step > f.maxY) continue;
+          if (f.maxY < segMinY || f.minY > segMaxY) continue;
+          const curLim = closestDist < maxDist ? closestDist : maxDist;
+          if (!this.rayHitsTriAabb(ox, oy, oz, invDx, invDy, invDz, curLim, f)) continue;
           if (_ray.intersectTriangle(f.a, f.b, f.c, false, _hitPt)) {
-            const dist = origin.distanceTo(_hitPt);
+            const hx = _hitPt.x - ox;
+            const hy = _hitPt.y - oy;
+            const hz = _hitPt.z - oz;
+            const dist = Math.sqrt(hx * hx + hy * hy + hz * hz);
             if (dist <= maxDist && dist < closestDist) {
               closestDist = dist;
               hitTri = f;
-              if (outPoint) outPoint.copy(_hitPt);
             }
           }
         }
+      }
+
+      if (tMaxX < tMaxZ) {
+        tCurrent = tMaxX;
+        tMaxX += tDeltaX;
+        cx += stepX;
+      } else {
+        tCurrent = tMaxZ;
+        tMaxZ += tDeltaZ;
+        cz += stepZ;
       }
     }
 

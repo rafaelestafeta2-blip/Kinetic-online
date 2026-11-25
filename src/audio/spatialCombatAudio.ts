@@ -18,6 +18,10 @@ const _toListener = new THREE.Vector3();
 const _closestPt = new THREE.Vector3();
 
 let heartbeatTimer = 0;
+let lastBotGunshotAudioMs = 0;
+let lastBotShellAudioMs = 0;
+let lastBotEchoAudioMs = 0;
+let lastBulletWhizzAudioMs = 0;
 
 /**
  * Calcula o Pan Estéreo (-0.95 Esquerda a +0.95 Direita) relativo ao Yaw da câmera do jogador.
@@ -78,6 +82,11 @@ export function playSpatialBotGunshot(
   const finalGain = baseGain * occlusionMult;
   if (finalGain < 0.012) return;
 
+  const nowPerfMs = performance.now();
+  const minGapMs = dist > 22 ? 62 : 30;
+  if (nowPerfMs - lastBotGunshotAudioMs < minGapMs) return;
+  lastBotGunshotAudioMs = nowPerfMs;
+
   const panValue = computeStereoPan(shooterPos, listenerPos, listenerYaw);
 
   // Filtro passa-baixa que simula absorção do ar + abafamento atrás de paredes + concussão Shellshock
@@ -90,7 +99,10 @@ export function playSpatialBotGunshot(
     now
   );
   filter.Q.setValueAtTime(0.7, now);
-  playShellCasingDrop3D(shooterPos, listenerPos, listenerYaw, weaponId, false);
+  if (dist < 14 && nowPerfMs - lastBotShellAudioMs >= 95) {
+    lastBotShellAudioMs = nowPerfMs;
+    playShellCasingDrop3D(shooterPos, listenerPos, listenerYaw, weaponId, false);
+  }
 
   const gainNode = ctx.createGain();
   gainNode.gain.setValueAtTime(finalGain, now);
@@ -137,8 +149,9 @@ export function playSpatialBotGunshot(
     src.connect(filter);
     src.start(now);
 
-    // Cauda de eco exterior (Reverb / Slapback de mapa aberto quando distante > 12m)
-    if (dist > 12 && !isOccludedByWall) {
+    // Cauda de eco exterior (Reverb / Slapback de mapa aberto quando distante > 12m, com throttle de tiroteio)
+    if (dist > 12 && !isOccludedByWall && nowPerfMs - lastBotEchoAudioMs >= 150) {
+      lastBotEchoAudioMs = nowPerfMs;
       const echoDelay = THREE.MathUtils.clamp(0.09 + dist * 0.0022, 0.1, 0.24);
       const echoSrc = ctx.createBufferSource();
       echoSrc.buffer = sampleBuffer;
@@ -196,6 +209,10 @@ export function playBulletSnapAndWhizz(
 
   const missDist = _closestPt.distanceTo(listenerPos);
   if (missDist > 3.8) return;
+
+  const nowPerfMs = performance.now();
+  if (nowPerfMs - lastBulletWhizzAudioMs < 90) return;
+  lastBulletWhizzAudioMs = nowPerfMs;
 
   const ctx = state.ctx;
   const now = ctx.currentTime;

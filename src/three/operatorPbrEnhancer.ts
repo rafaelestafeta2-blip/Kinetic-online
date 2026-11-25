@@ -276,6 +276,43 @@ export function applyOperatorRimLight(
 }
 
 /**
+ * Injects a lightweight Unreal/Marmoset-style warm dermal wrap-SSS + soft rim
+ * into MeshStandardMaterial / MeshPhysicalMaterial for realistic skin shading
+ * at virtually zero GPU cost (4 ALU ops, zero extra lights).
+ */
+export function applyOperatorSkinSss(
+  mat: THREE.MeshStandardMaterial,
+  opts: { sssStrength?: number; rimIntensity?: number } = {}
+): void {
+  if (!mat || !mat.isMeshStandardMaterial) return;
+  const sss = Math.max(0, Math.min(0.45, opts.sssStrength ?? 0.16));
+  const rim = Math.max(0, Math.min(0.35, opts.rimIntensity ?? 0.12));
+  const key = `kinetic_skin_sss_v1_${Math.round(sss * 100)}_${Math.round(rim * 100)}`;
+
+  mat.userData = mat.userData || {};
+  if (mat.userData.__kineticRimKey === key) return;
+  mat.userData.__kineticRimKey = key;
+
+  mat.customProgramCacheKey = () => key;
+  mat.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <opaque_fragment>',
+      `{
+        float kNdotV = saturate( dot( geometryNormal, geometryViewDir ) );
+        float kSkinRim = pow( 1.0 - kNdotV, 3.2 ) * smoothstep( -0.35, 0.72, geometryNormal.y );
+        // Soft dermal wrap-scatter warms mid-shadow transitions (nose, cheeks, jawline, arms)
+        float kLum = dot( outgoingLight, vec3( 0.299, 0.587, 0.114 ) );
+        float kMidBand = smoothstep( 0.02, 0.28, kLum ) * ( 1.0 - smoothstep( 0.35, 0.82, kLum ) );
+        vec3 kScatter = diffuseColor.rgb * vec3( 1.0, 0.42, 0.26 ) * ( kMidBand * ${sss.toFixed(3)} + kSkinRim * ${(sss * 0.45).toFixed(3)} );
+        outgoingLight += kScatter + vec3( 1.0, 0.89, 0.82 ) * ( kSkinRim * ${rim.toFixed(3)} );
+      }
+      #include <opaque_fragment>`
+    );
+  };
+  mat.needsUpdate = true;
+}
+
+/**
  * Copies standard PBR properties into a fresh MeshPhysicalMaterial so we can
  * unlock cloth sheen, eye/visor clearcoat, and showcase Fresnel without mutating
  * shared in-match template materials.
@@ -365,43 +402,48 @@ export function upgradeOperatorForShowcase(
 
       if (opts.isCustomFemale) {
         if (matName === 'MFS_EYE') {
-          phys.roughness = 0.08;
+          phys.roughness = 0.05;
           phys.metalness = 0.02;
           phys.clearcoat = 1.0;
-          phys.clearcoatRoughness = 0.03;
+          phys.clearcoatRoughness = 0.02;
           phys.ior = 1.48;
-          phys.envMapIntensity = 1.55;
+          phys.envMapIntensity = 1.85;
           if (phys.normalMap) phys.normalScale.set(0.45, 0.45);
         } else if (matName === 'MFS_GLASS') {
-          phys.roughness = 0.06;
-          phys.metalness = 0.78;
+          phys.roughness = 0.05;
+          phys.metalness = 0.80;
           phys.clearcoat = 1.0;
-          phys.clearcoatRoughness = 0.04;
+          phys.clearcoatRoughness = 0.03;
           phys.ior = 1.54;
-          phys.envMapIntensity = 1.85;
-          phys.opacity = 0.48;
+          phys.envMapIntensity = 1.95;
+          phys.opacity = 0.46;
         } else if (matName === 'MFS_HEAD' || matName === 'MFS_ARMS') {
-          phys.roughness = phys.roughnessMap ? 0.90 : 0.56;
+          phys.roughness = phys.roughnessMap ? 0.94 : 0.56;
           phys.metalness = phys.metalnessMap ? 1.0 : 0.01;
-          phys.sheen = 0.24;
-          phys.sheenRoughness = 0.74;
-          phys.sheenColor = new THREE.Color(0xffd7c4);
-          phys.envMapIntensity = 0.54;
-          if (phys.normalMap) phys.normalScale.set(0.88, 0.88);
-          applyOperatorRimLight(phys, { colorHex: 0xffe4d4, intensity: 0.14, power: 3.4 });
-        } else if (matName === 'MFS_HAIR' || matName === 'MFS_HAIRSCALP') {
-          phys.roughness = 0.46;
-          phys.metalness = 0.04;
-          phys.sheen = 0.48;
-          phys.sheenRoughness = 0.52;
-          phys.sheenColor = new THREE.Color(0xfff1e0);
+          phys.aoMapIntensity = 0.58;
+          phys.sheen = 0.26;
+          phys.sheenRoughness = 0.72;
+          phys.sheenColor = new THREE.Color(0xffd6c2);
           phys.envMapIntensity = 0.68;
-          if (phys.normalMap) phys.normalScale.set(0.80, 0.80);
-          applyOperatorRimLight(phys, { colorHex: rimColor, intensity: 0.16, power: 2.8 });
+          if (phys.normalMap) phys.normalScale.set(0.92, 0.92);
+          applyOperatorSkinSss(phys, { sssStrength: 0.17, rimIntensity: 0.13 });
+        } else if (matName === 'MFS_HAIR' || matName === 'MFS_HAIRSCALP') {
+          phys.roughness = 0.44;
+          phys.metalness = 0.04;
+          phys.alphaTest = 0.28;
+          phys.alphaToCoverage = !opts.isSoftwareGl;
+          phys.sheen = 0.55;
+          phys.sheenRoughness = 0.44;
+          phys.sheenColor = new THREE.Color(0xfff1e0);
+          phys.envMapIntensity = 0.78;
+          if (phys.normalMap) phys.normalScale.set(0.84, 0.84);
+          applyOperatorRimLight(phys, { colorHex: rimColor, intensity: 0.17, power: 2.7 });
         } else if (matName === 'MFS_EYELASHES') {
-          phys.roughness = 0.65;
+          phys.roughness = 0.62;
           phys.metalness = 0.02;
-          phys.envMapIntensity = 0.35;
+          phys.alphaTest = 0.26;
+          phys.alphaToCoverage = !opts.isSoftwareGl;
+          phys.envMapIntensity = 0.38;
         } else if (
           matName === 'MFS_SHIRT' ||
           matName === 'MFS_PANTS' ||
@@ -410,28 +452,28 @@ export function upgradeOperatorForShowcase(
         ) {
           phys.roughness = phys.roughnessMap ? 0.92 : 0.82;
           phys.metalness = phys.metalnessMap ? 1.0 : 0.03;
-          phys.sheen = 0.44;
-          phys.sheenRoughness = 0.78;
+          phys.sheen = 0.46;
+          phys.sheenRoughness = 0.76;
           phys.sheenColor = new THREE.Color(0xdbe7f5);
-          phys.envMapIntensity = 0.62;
-          if (phys.normalMap) phys.normalScale.set(1.12, 1.12);
-          applyOperatorRimLight(phys, { colorHex: rimColor, intensity: 0.22, power: 3.1 });
+          phys.envMapIntensity = 0.74;
+          if (phys.normalMap) phys.normalScale.set(1.10, 1.10);
+          applyOperatorRimLight(phys, { colorHex: rimColor, intensity: 0.20, power: 3.1 });
         } else {
           // MFS_UNLOADING, MFS_HEADGEAR, MFS_LEGGINGS, MFS_GLOVE -> tactical rig/helmet/leather
-          phys.roughness = phys.roughnessMap ? 0.90 : 0.60;
+          phys.roughness = phys.roughnessMap ? 0.90 : 0.58;
           phys.metalness = phys.metalnessMap
             ? 1.0
             : matName === 'MFS_HEADGEAR'
             ? 0.16
             : 0.11;
-          phys.clearcoat = 0.14;
-          phys.clearcoatRoughness = 0.44;
-          phys.sheen = 0.20;
-          phys.sheenRoughness = 0.72;
+          phys.clearcoat = 0.16;
+          phys.clearcoatRoughness = 0.40;
+          phys.sheen = 0.22;
+          phys.sheenRoughness = 0.70;
           phys.sheenColor = new THREE.Color(0xcbd5e1);
-          phys.envMapIntensity = 0.88;
-          if (phys.normalMap) phys.normalScale.set(1.18, 1.18);
-          applyOperatorRimLight(phys, { colorHex: rimColor, intensity: 0.26, power: 2.9 });
+          phys.envMapIntensity = 0.96;
+          if (phys.normalMap) phys.normalScale.set(1.14, 1.14);
+          applyOperatorRimLight(phys, { colorHex: rimColor, intensity: 0.24, power: 2.9 });
         }
       } else {
         // Male tactical operators (Sniper, Vanguard Rifleman/Engineer/Medic, Default)

@@ -143,8 +143,8 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
     });
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    // Showcase only — keep midtones readable so 2K albedos don't look muddy.
-    renderer.toneMappingExposure = isBlackthorn ? 1.12 : 1.08;
+    // Showcase only — keep midtones readable so 2K/1K albedos and skin SSS shine cleanly.
+    renderer.toneMappingExposure = isBlackthorn ? 1.15 : 1.12;
     renderer.setPixelRatio(
       isSoftwareGl ? 1 : Math.min(window.devicePixelRatio || 1, 2)
     );
@@ -170,7 +170,7 @@ export const RankedOperator3DCanvas: React.FC<RankedOperator3DCanvasProps> = ({
 
     const envTex = buildTacticalStudioEnvTexture(renderer, isBlackthorn);
     scene.environment = envTex;
-    scene.environmentIntensity = 1.25;
+    scene.environmentIntensity = 1.32;
 
     // Premium tactical studio: warm-white key + cool hemisphere fill + crisp team rim separation.
     const hemiLight = new THREE.HemisphereLight(

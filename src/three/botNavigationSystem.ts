@@ -83,6 +83,8 @@ function ensureNavExtras(nav: BotNavData): void {
   if (nav.coverSearchAt == null) nav.coverSearchAt = 0;
 }
 
+let _coverSearchesThisFrame = 0;
+
 function tryEnterRealCover(
   bot: YardBotEntity,
   nav: BotNavData,
@@ -95,10 +97,14 @@ function tryEnterRealCover(
   minSec: number,
   maxSec: number
 ): boolean {
+  if (_coverSearchesThisFrame >= 1) {
+    return false;
+  }
   if (nowSec < (nav.coverSearchAt || 0)) {
     return false;
   }
-  nav.coverSearchAt = nowSec + 1.35;
+  _coverSearchesThisFrame += 1;
+  nav.coverSearchAt = nowSec + 1.55;
   const role = nav.squadRole || 'HOLD';
   const res = findRealTacticalCoverSpot(
     bot,
@@ -342,6 +348,8 @@ export function updateSmartBotNavigation(
   assignSquadFlankRoles(bots, false, 'PLAYER', nowSec);
   assignSquadFlankRoles(bots, true, 'ENEMY', nowSec);
 
+  _coverSearchesThisFrame = 0;
+
   for (let i = 0; i < bots.length; i++) {
     const bot = bots[i];
     if (
@@ -382,38 +390,77 @@ export function updateSmartBotNavigation(
         ? 200
         : nav.fieldOfView;
 
-    if (!bot.isAlly && playerAlive) {
-      const distToPlayer = bPos.distanceTo(playerPos);
-      if (distToPlayer <= nearestDist && isTargetInFieldOfView(bPos, bot.root.rotation.y, playerPos, activeFov)) {
-        _targetEye.set(playerPos.x, playerPos.y + 1.35, playerPos.z);
-        if (checkBotLineOfSight(_botHead, _targetEye, grenadeSystem, colliders, activeGlbCollider)) {
-          nearestDist = distToPlayer;
-          visibleEnemyPos = playerPos;
-          isVisibleTargetPlayer = true;
-          nav.lockedTargetId = 'PLAYER';
-          nav.chaseTimer = 18.0;
-          nav.heardAlertTimer = 0;
-          setLastKnownPos(nav, playerPos);
-        }
-      }
+    // Stagger full multi-target LOS scans to ~9 Hz per bot (spread across frames by index)
+    // so 9 bots don't execute 45 full-map triangle raycasts on the exact same frame during gunfights.
+    if (nav.visionScanTimer == null) {
+      nav.visionScanTimer = (i % 7) * 0.016;
+    } else {
+      nav.visionScanTimer -= dt;
     }
 
-    for (let j = 0; j < bots.length; j++) {
-      const other = bots[j];
-      if (other.isDown || Boolean(other.isAlly) === Boolean(bot.isAlly)) continue;
-      const oPos = other.root.position;
-      const d = bPos.distanceTo(oPos);
-      if (d < nearestDist && isTargetInFieldOfView(bPos, bot.root.rotation.y, oPos, activeFov)) {
-        _targetEye.set(oPos.x, oPos.y + 1.4, oPos.z);
-        if (checkBotLineOfSight(_botHead, _targetEye, grenadeSystem, colliders, activeGlbCollider)) {
-          nearestDist = d;
-          visibleEnemyPos = oPos;
-          visibleEnemyBot = other;
-          isVisibleTargetPlayer = false;
-          nav.lockedTargetId = other.id;
-          nav.chaseTimer = 22.0;
-          nav.heardAlertTimer = 0;
-          setLastKnownPos(nav, oPos);
+    if (nav.visionScanTimer <= 0) {
+      nav.visionScanTimer = 0.11 + (i % 3) * 0.012;
+      nav.cachedVisibleTargetId = null;
+
+      if (!bot.isAlly && playerAlive) {
+        const distToPlayer = bPos.distanceTo(playerPos);
+        if (distToPlayer <= nearestDist && isTargetInFieldOfView(bPos, bot.root.rotation.y, playerPos, activeFov)) {
+          _targetEye.set(playerPos.x, playerPos.y + 1.35, playerPos.z);
+          if (checkBotLineOfSight(_botHead, _targetEye, grenadeSystem, colliders, activeGlbCollider)) {
+            nearestDist = distToPlayer;
+            visibleEnemyPos = playerPos;
+            isVisibleTargetPlayer = true;
+            nav.cachedVisibleTargetId = 'PLAYER';
+            nav.lockedTargetId = 'PLAYER';
+            nav.chaseTimer = 18.0;
+            nav.heardAlertTimer = 0;
+            setLastKnownPos(nav, playerPos);
+          }
+        }
+      }
+
+      for (let j = 0; j < bots.length; j++) {
+        const other = bots[j];
+        if (other.isDown || Boolean(other.isAlly) === Boolean(bot.isAlly)) continue;
+        const oPos = other.root.position;
+        const d = bPos.distanceTo(oPos);
+        if (d < nearestDist && isTargetInFieldOfView(bPos, bot.root.rotation.y, oPos, activeFov)) {
+          _targetEye.set(oPos.x, oPos.y + 1.4, oPos.z);
+          if (checkBotLineOfSight(_botHead, _targetEye, grenadeSystem, colliders, activeGlbCollider)) {
+            nearestDist = d;
+            visibleEnemyPos = oPos;
+            visibleEnemyBot = other;
+            isVisibleTargetPlayer = false;
+            nav.cachedVisibleTargetId = other.id;
+            nav.lockedTargetId = other.id;
+            nav.chaseTimer = 22.0;
+            nav.heardAlertTimer = 0;
+            setLastKnownPos(nav, oPos);
+          }
+        }
+      }
+    } else if (nav.cachedVisibleTargetId) {
+      if (nav.cachedVisibleTargetId === 'PLAYER') {
+        if (!bot.isAlly && playerAlive && bPos.distanceTo(playerPos) <= nav.visionRange + 2.0) {
+          visibleEnemyPos = playerPos;
+          isVisibleTargetPlayer = true;
+          setLastKnownPos(nav, playerPos);
+        } else {
+          nav.cachedVisibleTargetId = null;
+        }
+      } else {
+        for (let j = 0; j < bots.length; j++) {
+          const other = bots[j];
+          if (other.id === nav.cachedVisibleTargetId) {
+            if (!other.isDown && bPos.distanceTo(other.root.position) <= nav.visionRange + 2.0) {
+              visibleEnemyPos = other.root.position;
+              visibleEnemyBot = other;
+              setLastKnownPos(nav, other.root.position);
+            } else {
+              nav.cachedVisibleTargetId = null;
+            }
+            break;
+          }
         }
       }
     }

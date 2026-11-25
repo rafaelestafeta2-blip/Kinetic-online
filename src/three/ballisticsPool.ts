@@ -2,10 +2,11 @@ import * as THREE from 'three';
 import { soundEngine } from '../audio/soundEngine';
 
 interface BrassShellInstance {
-  mesh: THREE.Mesh;
   active: boolean;
   age: number;
   bounced: boolean;
+  pos: THREE.Vector3;
+  rot: THREE.Euler;
   vel: THREE.Vector3;
   angVel: THREE.Vector3;
 }
@@ -40,6 +41,7 @@ interface TracerBeamInstance {
   travelDist: number;
 }
 
+const SHELL_COUNT = 32;
 const SPARK_COUNT = 64;
 const DECAL_COUNT = 45;
 
@@ -58,8 +60,10 @@ export class BallisticsFXPool {
 
   private shells: BrassShellInstance[] = [];
   private shellCursor = 0;
+  private shellMesh: THREE.InstancedMesh;
   private shellGeo: THREE.BufferGeometry;
   private shellMat: THREE.MeshStandardMaterial;
+  private shellsDirty = false;
 
   private droppedMags: DroppedMagInstance[] = [];
   private magCursor = 0;
@@ -85,26 +89,34 @@ export class BallisticsFXPool {
     this.scene = scene;
     scene.add(this.group);
 
-    // 1. Pool of 32 Brass 5.56mm Casings
+    // 1. Instanced Pool of 32 Brass 5.56mm Casings (1 draw call total instead of 32 during full-auto)
     this.shellGeo = new THREE.CylinderGeometry(0.0048, 0.005, 0.044, 8);
     this.shellMat = new THREE.MeshStandardMaterial({
       color: 0xeab308,
       metalness: 0.94,
       roughness: 0.2,
     });
-    for (let i = 0; i < 32; i++) {
-      const mesh = new THREE.Mesh(this.shellGeo, this.shellMat);
-      mesh.visible = false;
-      this.group.add(mesh);
+    this.shellMesh = new THREE.InstancedMesh(
+      this.shellGeo,
+      this.shellMat,
+      SHELL_COUNT
+    );
+    this.shellMesh.frustumCulled = false;
+    this.shellMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    for (let i = 0; i < SHELL_COUNT; i++) {
+      this.shellMesh.setMatrixAt(i, _zeroMatrix);
       this.shells.push({
-        mesh,
         active: false,
         age: 0,
         bounced: false,
+        pos: new THREE.Vector3(),
+        rot: new THREE.Euler(),
         vel: new THREE.Vector3(),
         angVel: new THREE.Vector3(),
       });
     }
+    this.shellMesh.instanceMatrix.needsUpdate = true;
+    this.group.add(this.shellMesh);
 
     // 2. Pool of 8 Dropped Polymer Magazines (for Emergency Speed Reloads)
     this.magGeo = new THREE.BoxGeometry(0.028, 0.165, 0.068);
@@ -232,21 +244,14 @@ export class BallisticsFXPool {
     const warmY = _jitterVec.y + _sparkTarget.y * 4.0;
     const warmZ = _jitterVec.z + _sparkTarget.z * 4.0;
 
-    const shell0 = this.shells[0];
     const mag0 = this.droppedMags[0];
     const tracer0 = this.tracers[0];
 
-    const prevShellVis = shell0?.mesh.visible ?? false;
-    const prevShellPos = shell0 ? shell0.mesh.position.clone() : null;
     const prevMagVis = mag0?.mesh.visible ?? false;
     const prevMagPos = mag0 ? mag0.mesh.position.clone() : null;
     const prevTracerVis = tracer0?.line.visible ?? false;
     const prevTracerPos = tracer0 ? tracer0.line.position.clone() : null;
 
-    if (shell0) {
-      shell0.mesh.position.set(warmX, warmY, warmZ);
-      shell0.mesh.visible = true;
-    }
     if (mag0) {
       mag0.mesh.position.set(warmX, warmY, warmZ);
       mag0.mesh.visible = true;
@@ -256,11 +261,13 @@ export class BallisticsFXPool {
       tracer0.line.visible = true;
     }
 
-    // Temporarily reveal 1 spark instance + 1 bullet decal instance so InstancedMesh shaders compile
+    // Temporarily reveal 1 shell + 1 spark + 1 bullet decal instance so InstancedMesh shaders compile
     _dummy.position.set(warmX, warmY, warmZ);
     _dummy.rotation.set(0, 0, 0);
     _dummy.scale.set(1, 1, 1);
     _dummy.updateMatrix();
+    this.shellMesh.setMatrixAt(0, _dummy.matrix);
+    this.shellMesh.instanceMatrix.needsUpdate = true;
     this.sparkMesh.setMatrixAt(0, _dummy.matrix);
     this.sparkMesh.instanceMatrix.needsUpdate = true;
     this.decalMesh.setMatrixAt(0, _dummy.matrix);
@@ -273,10 +280,6 @@ export class BallisticsFXPool {
       // non-fatal
     }
 
-    if (shell0 && prevShellPos) {
-      shell0.mesh.position.copy(prevShellPos);
-      shell0.mesh.visible = prevShellVis;
-    }
     if (mag0 && prevMagPos) {
       mag0.mesh.position.copy(prevMagPos);
       mag0.mesh.visible = prevMagVis;
@@ -284,6 +287,10 @@ export class BallisticsFXPool {
     if (tracer0 && prevTracerPos) {
       tracer0.line.position.copy(prevTracerPos);
       tracer0.line.visible = prevTracerVis;
+    }
+    if (!this.shells[0]?.active) {
+      this.shellMesh.setMatrixAt(0, _zeroMatrix);
+      this.shellMesh.instanceMatrix.needsUpdate = true;
     }
     if (!this.sparks[0]?.active) {
       this.sparkMesh.setMatrixAt(0, _zeroMatrix);
@@ -298,15 +305,15 @@ export class BallisticsFXPool {
     cameraRight: THREE.Vector3,
     cameraUp: THREE.Vector3
   ): void {
-    const item = this.shells[this.shellCursor];
-    this.shellCursor = (this.shellCursor + 1) % this.shells.length;
+    const idx = this.shellCursor;
+    const item = this.shells[idx];
+    this.shellCursor = (this.shellCursor + 1) % SHELL_COUNT;
 
     item.active = true;
     item.age = 0;
     item.bounced = false;
-    item.mesh.visible = true;
-    item.mesh.position.copy(worldPos);
-    item.mesh.rotation.set(
+    item.pos.copy(worldPos);
+    item.rot.set(
       Math.random() * Math.PI,
       Math.random() * Math.PI,
       Math.random() * Math.PI
@@ -322,6 +329,14 @@ export class BallisticsFXPool {
       (Math.random() - 0.5) * 28,
       (Math.random() - 0.5) * 28
     );
+
+    _dummy.position.copy(item.pos);
+    _dummy.rotation.copy(item.rot);
+    _dummy.scale.setScalar(1);
+    _dummy.updateMatrix();
+    this.shellMesh.setMatrixAt(idx, _dummy.matrix);
+    this.shellMesh.instanceMatrix.needsUpdate = true;
+    this.shellsDirty = true;
   }
 
   public spawnDroppedMagazine(
@@ -452,39 +467,55 @@ export class BallisticsFXPool {
   }
 
   public update(dt: number): void {
-    // Update Brass Shells
-    for (let i = 0; i < this.shells.length; i++) {
-      const s = this.shells[i];
-      if (!s.active) continue;
-      s.age += dt;
-      if (s.age > 8.0) {
-        s.active = false;
-        s.mesh.visible = false;
-        continue;
-      }
-      if (s.mesh.position.y > 0.012 || s.vel.y > 0) {
-        s.vel.y -= 13.5 * dt;
-        s.mesh.position.addScaledVector(s.vel, dt);
-        s.mesh.rotation.x += s.angVel.x * dt;
-        s.mesh.rotation.y += s.angVel.y * dt;
-        s.mesh.rotation.z += s.angVel.z * dt;
+    // Update Instanced Brass Shells (1 draw call total, zero GC)
+    if (this.shellsDirty) {
+      let anyShellActive = false;
+      let matrixMutated = false;
+      for (let i = 0; i < SHELL_COUNT; i++) {
+        const s = this.shells[i];
+        if (!s.active) continue;
+        s.age += dt;
+        if (s.age > 6.5) {
+          s.active = false;
+          this.shellMesh.setMatrixAt(i, _zeroMatrix);
+          matrixMutated = true;
+          continue;
+        }
+        anyShellActive = true;
+        if (s.pos.y > 0.012 || s.vel.y > 0) {
+          s.vel.y -= 13.5 * dt;
+          s.pos.addScaledVector(s.vel, dt);
+          s.rot.x += s.angVel.x * dt;
+          s.rot.y += s.angVel.y * dt;
+          s.rot.z += s.angVel.z * dt;
 
-        if (s.mesh.position.y <= 0.012) {
-          s.mesh.position.y = 0.012;
-          s.vel.y = Math.abs(s.vel.y) * 0.35;
-          s.vel.x *= 0.55;
-          s.vel.z *= 0.55;
-          s.angVel.multiplyScalar(0.4);
-          if (!s.bounced) {
-            s.bounced = true;
-            soundEngine.playShellBounce();
+          if (s.pos.y <= 0.012) {
+            s.pos.y = 0.012;
+            s.vel.y = Math.abs(s.vel.y) * 0.35;
+            s.vel.x *= 0.55;
+            s.vel.z *= 0.55;
+            s.angVel.multiplyScalar(0.4);
+            if (!s.bounced) {
+              s.bounced = true;
+              soundEngine.playShellBounce();
+            }
+            if (s.vel.y < 0.35) {
+              s.vel.set(0, 0, 0);
+              s.angVel.set(0, 0, 0);
+            }
           }
-          if (s.vel.y < 0.35) {
-            s.vel.set(0, 0, 0);
-            s.angVel.set(0, 0, 0);
-          }
+          _dummy.position.copy(s.pos);
+          _dummy.rotation.copy(s.rot);
+          _dummy.scale.setScalar(1);
+          _dummy.updateMatrix();
+          this.shellMesh.setMatrixAt(i, _dummy.matrix);
+          matrixMutated = true;
         }
       }
+      if (matrixMutated) {
+        this.shellMesh.instanceMatrix.needsUpdate = true;
+      }
+      this.shellsDirty = anyShellActive;
     }
 
     // Update Dropped Magazines
@@ -579,6 +610,7 @@ export class BallisticsFXPool {
     this.scene.remove(this.group);
     this.shellGeo.dispose();
     this.shellMat.dispose();
+    this.shellMesh.dispose();
     this.magGeo.dispose();
     this.magMat.dispose();
     this.sparkGeo.dispose();

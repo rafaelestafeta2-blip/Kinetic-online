@@ -117,6 +117,10 @@ export interface BotNavData {
   hasRealCover?: boolean;
   /** Timestamp (seconds) until next cover search is allowed. */
   coverSearchAt?: number;
+  /** Staggered vision scan timer (seconds) so bots don't all raycast 45 LOS checks every single frame. */
+  visionScanTimer?: number;
+  /** Cached visible enemy id ('PLAYER' or bot.id) between vision scan ticks. */
+  cachedVisibleTargetId?: string | null;
 }
 
 export interface TacticalMapRoutes {
@@ -145,7 +149,7 @@ const _covRayOrigin = new THREE.Vector3();
 const _covRayDir = new THREE.Vector3();
 const _covHitPt = new THREE.Vector3();
 const _covHitNorm = new THREE.Vector3();
-const STEER_TEST_ANGLES = [0.5, -0.5, 1.0, -1.0, 1.55, -1.55, 2.15, -2.15, 2.65, -2.65];
+const STEER_TEST_ANGLES = [0.55, -0.55, 1.15, -1.15, 1.85, -1.85];
 
 export function dampAngleShortest(
   current: number,
@@ -717,8 +721,9 @@ export function checkBotLineOfSight(
   }
 
   if (activeGlbCollider && activeGlbCollider.ready) {
-    const hitDist = activeGlbCollider.raycastDistance(from, _losDir, Math.max(0.2, dist - 0.35));
-    if (hitDist !== null) return false;
+    if (activeGlbCollider.raycastBlocked(from, _losDir, Math.max(0.2, dist - 0.35))) {
+      return false;
+    }
   }
 
   if (!colliders || colliders.length === 0) {
@@ -849,7 +854,7 @@ export function findRealTacticalCoverSpot(
   // 2) Probe GLB triangle geometry rays to discover walls, pillars, doorways, and crates.
   if (activeGlbCollider && activeGlbCollider.ready) {
     _covRayOrigin.set(botPos.x, botPos.y + 0.95, botPos.z);
-    const rayAngles = [-1.25, 1.25, -1.75, 1.75, -2.25, 2.25, -2.75, 2.75, 3.14, 0.75, -0.75];
+    const rayAngles = [-1.25, 1.25, -1.85, 1.85, -2.55, 2.55, 3.14];
     for (let r = 0; r < rayAngles.length; r++) {
       const a = rayAngles[r];
       const ca = Math.cos(a);
@@ -873,12 +878,12 @@ export function findRealTacticalCoverSpot(
   }
 
   // 3) Near-field lateral / rear radial probes to catch recessed alcoves or low cover behind bot.
-  const baseAngles = [1.35, -1.35, 1.9, -1.9, 2.45, -2.45, 2.95, -2.95];
-  const radii = [2.4, 4.6, 7.2];
+  const baseAngles = [1.4, -1.4, 2.1, -2.1, 2.85, -2.85];
+  const radii = [2.6, 5.2];
   for (let ri = 0; ri < radii.length; ri++) {
     const rad = radii[ri];
     for (let ai = 0; ai < baseAngles.length; ai++) {
-      if (candX.length >= 34) break;
+      if (candX.length >= 16) break;
       const a = baseAngles[ai];
       const ca = Math.cos(a);
       const sa = Math.sin(a);
@@ -896,7 +901,7 @@ export function findRealTacticalCoverSpot(
   let bestCover: THREE.Vector3 | null = null;
   let bestPeek: THREE.Vector3 | null = null;
 
-  const evalLimit = Math.min(candX.length, 32);
+  const evalLimit = Math.min(candX.length, 12);
   for (let i = 0; i < evalLimit; i++) {
     let px = candX[i];
     let pz = candZ[i];
@@ -1004,6 +1009,7 @@ export function findRealTacticalCoverSpot(
       bestScore = score;
       bestCover = new THREE.Vector3(px, py, pz);
       bestPeek = foundPeekSpot;
+      if (foundPeekSpot && score >= 138) break;
     }
   }
 
@@ -1127,6 +1133,9 @@ export function moveBotWithPhysics(
             moveDirZ = _steerDir.z;
             nav.avoidAngle = ang;
             nav.avoidTimer = 0.42;
+            if (alt.movedDist >= step * 0.85 && progress > step * 0.35) {
+              break;
+            }
           }
         }
         attempt = best;
@@ -1191,9 +1200,17 @@ export function moveBotWithPhysics(
 
   const glbReady = Boolean(activeGlbCollider && activeGlbCollider.ready);
   const groundProbeY = bPos.y + 0.04;
-  let floorY = glbReady
-    ? activeGlbCollider!.getGroundHeight(bPos.x, groundProbeY, bPos.z)
-    : 0;
+  const stationaryOnCachedFloor =
+    glbReady &&
+    moveSpeed <= 0.05 &&
+    nav.lastValidGroundY != null &&
+    Math.abs(nav.verticalVel) < 0.05 &&
+    Math.abs(bPos.y - nav.lastValidGroundY) < 0.08;
+  let floorY = stationaryOnCachedFloor
+    ? nav.lastValidGroundY!
+    : glbReady
+      ? activeGlbCollider!.getGroundHeight(bPos.x, groundProbeY, bPos.z)
+      : 0;
 
   if (glbReady) {
     const echoedProbeMiss = Math.abs(floorY - groundProbeY) < 1e-4;
