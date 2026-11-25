@@ -54,6 +54,7 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
     const radarImgRef = useRef<HTMLImageElement | null>(null);
     const yardV2RadarImgRef = useRef<HTMLImageElement | null>(null);
     const objectD17RadarImgRef = useRef<HTMLImageElement | null>(null);
+    const bridgesV2RadarImgRef = useRef<HTMLImageElement | null>(null);
 
     useEffect(() => {
       const img = new Image();
@@ -71,6 +72,11 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
       imgD17.onload = () => {
         objectD17RadarImgRef.current = imgD17;
       };
+      const imgB2 = new Image();
+      imgB2.src = '/assets/bridges_v2_radar.webp';
+      imgB2.onload = () => {
+        bridgesV2RadarImgRef.current = imgB2;
+      };
     }, []);
 
     useEffect(() => {
@@ -84,6 +90,7 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
       const isYard = drillMode === 'YARD_BOMB_5V5';
       const isYardV2 = drillMode === 'YARD_V2_BOMB_5V5';
       const isObjectD17 = drillMode === 'OBJECT_D17_BOMB_5V5';
+      const isBridgesV2 = drillMode === 'BRIDGES_V2_BOMB_5V5';
       const isDust2 = drillMode === 'DUST2_BOMB_5V5';
       const isAssault = drillMode === 'ASSAULT_BOMB_5V5';
       const isIndustria = drillMode === 'INDUSTRIA_BOMB_5V5';
@@ -146,6 +153,19 @@ export const MinimapRadar: React.FC<MinimapRadarProps> = React.memo(
         const imgCenterZ = (5.72 - playerZ) * scale;
         ctx.drawImage(
           objectD17RadarImgRef.current,
+          imgCenterX - worldW / 2,
+          imgCenterZ - worldH / 2,
+          worldW,
+          worldH
+        );
+      } else if (isBridgesV2 && bridgesV2RadarImgRef.current) {
+        // Exact CS2 overview calibration (pos_x=-1779, pos_y=3268, scale=5.382061, 1024px, rotated +90deg)
+        const worldW = 140.0 * scale;
+        const worldH = 140.0 * scale;
+        const imgCenterX = (13.02 - playerX) * scale;
+        const imgCenterZ = (24.81 - playerZ) * scale;
+        ctx.drawImage(
+          bridgesV2RadarImgRef.current,
           imgCenterX - worldW / 2,
           imgCenterZ - worldH / 2,
           worldW,

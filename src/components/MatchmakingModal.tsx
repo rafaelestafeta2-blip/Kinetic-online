@@ -175,6 +175,11 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
                   title: 'OBJECT D17 HD',
                   sub: 'Workshop · KTX2 UASTC',
                 },
+                {
+                  id: 'BRIDGES_V2_BOMB_5V5' as DrillMode,
+                  title: 'BRIDGES 2.0 HD',
+                  sub: 'Workshop · KTX2 UASTC',
+                },
               ] as const
             ).map((m) => {
               const active = selectedMap === m.id;
@@ -242,6 +247,8 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
                         ? 'YARD 2.0 HD (.GLB)'
                       : selectedMap === 'OBJECT_D17_BOMB_5V5'
                         ? 'OBJECT D17 HD (.GLB)'
+                      : selectedMap === 'BRIDGES_V2_BOMB_5V5'
+                        ? 'BRIDGES 2.0 HD (.GLB)'
                       : 'DE_DUST2 (.GLB)'}
             </span>
           </div>

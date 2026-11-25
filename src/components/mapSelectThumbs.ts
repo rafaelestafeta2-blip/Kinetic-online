@@ -17,6 +17,7 @@ export const MAP_SELECT_THUMBS = {
   stationArena: resolveAssetUrl('/maps/station_arena/Preview1.png'),
   yard: '/assets/maps/thumbs/yard.jpg',
   objectD17: '/assets/maps/thumbs/object_d17.jpg',
+  bridgesV2: '/assets/maps/thumbs/bridges_v2.jpg',
   range: '/assets/maps/thumbs/range.jpg',
   killhouse: '/assets/maps/thumbs/killhouse.jpg',
 } as const;
@@ -51,6 +52,8 @@ export function thumbForDrillMode(mode: DrillMode | string): string {
       return MAP_SELECT_THUMBS.yard;
     case 'OBJECT_D17_BOMB_5V5':
       return MAP_SELECT_THUMBS.objectD17;
+    case 'BRIDGES_V2_BOMB_5V5':
+      return MAP_SELECT_THUMBS.bridgesV2;
     case 'FREE_RANGE':
       return MAP_SELECT_THUMBS.range;
     case 'KILLHOUSE_BLITZ':

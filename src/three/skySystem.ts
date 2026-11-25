@@ -217,6 +217,7 @@ export class TacticalSkySystem {
     const isDeSupply = mode === 'DE_SUPPLY_BOMB_5V5';
     const isYardV2 = mode === 'YARD_V2_BOMB_5V5';
     const isObjectD17 = mode === 'OBJECT_D17_BOMB_5V5';
+    const isBridgesV2 = mode === 'BRIDGES_V2_BOMB_5V5';
     const isStationArena = mode === 'STATION_CAPTURE_5V5' || mode === 'STATION_TDM_5V5';
     const isYard = mode === 'YARD_BOMB_5V5';
     this.isOutdoor =
@@ -232,6 +233,7 @@ export class TacticalSkySystem {
       isDeSupply ||
       isYardV2 ||
       isObjectD17 ||
+      isBridgesV2 ||
       isStationArena ||
       isYard;
 
@@ -239,11 +241,11 @@ export class TacticalSkySystem {
     const uniforms = this.sky.material.uniforms;
     const isMobile = isMobileGpuTarget();
 
-    if (isYardV2 || isObjectD17) {
-      // Source 2 Workshop daylight (Yard 2.0 desert / Object D17 industrial plains): crisp 52° sun + balanced bounce GI
+    if (isYardV2 || isObjectD17 || isBridgesV2) {
+      // Source 2 Workshop daylight (Yard 2.0 / Bridges 2.0 / Object D17): crisp 52°-56° sun + balanced bounce GI
       this.activeBiome = isObjectD17 ? 'outdoor' : 'yard';
-      const phi = THREE.MathUtils.degToRad(90 - (isObjectD17 ? 53 : 50));
-      const theta = THREE.MathUtils.degToRad(isObjectD17 ? 72 : 58);
+      const phi = THREE.MathUtils.degToRad(90 - (isBridgesV2 ? 56 : isObjectD17 ? 53 : 50));
+      const theta = THREE.MathUtils.degToRad(isBridgesV2 ? 46 : isObjectD17 ? 72 : 58);
       this.sunDirection.setFromSphericalCoords(1, phi, theta).normalize();
 
       uniforms.turbidity.value = isObjectD17 ? 2.8 : 4.6;
@@ -417,13 +419,14 @@ export class TacticalSkySystem {
 
     if (this.renderer) {
       const isAces = this.renderer.toneMapping === THREE.ACESFilmicToneMapping;
-      this.renderer.toneMappingExposure = isYardV2
-        ? isAces
-          ? 1.12
-          : 0.96
-        : isAces
-          ? 0.92
-          : 0.78;
+      this.renderer.toneMappingExposure =
+        isYardV2 || isBridgesV2
+          ? isAces
+            ? 1.12
+            : 0.96
+          : isAces
+            ? 0.92
+            : 0.78;
     }
   }
 

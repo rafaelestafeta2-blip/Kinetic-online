@@ -238,6 +238,22 @@ export const RESOURCE_PACK_DEFINITIONS: ResourcePackDefinition[] = [
     ],
   },
   {
+    id: 'pack_map_bridges_v2',
+    title: 'Mapa Bridges 2.0 HD (LOD0 Original)',
+    subtitle: 'Arena de pontes e canais da Steam Workshop Bomb 5v5',
+    category: 'MAPS',
+    recommended: true,
+    mapMode: 'BRIDGES_V2_BOMB_5V5',
+    files: [
+      { path: '/models/maps/bridges_v2_lod0.p0.bin', sizeBytes: 12_451_782 },
+      { path: '/models/maps/bridges_v2_lod0.p1.bin', sizeBytes: 12_451_782 },
+      { path: '/models/maps/bridges_v2_lod0.p2.bin', sizeBytes: 12_451_782 },
+      { path: '/models/maps/bridges_v2_lod0.p3.bin', sizeBytes: 12_451_782 },
+      { path: '/models/maps/bridges_v2_lod0.p4.bin', sizeBytes: 12_451_782 },
+      { path: '/models/maps/bridges_v2_lod0.p5.bin', sizeBytes: 12_451_778 },
+    ],
+  },
+  {
     id: 'pack_accessories',
     title: 'Miras, Silenciadores, Granadas & Kits',
     subtitle: 'Ópticas 3D (Red Dot, Holo, LPVO), supressores, pingentes, C4 e kits de classe',

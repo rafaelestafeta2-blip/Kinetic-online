@@ -102,6 +102,11 @@ const OFFICIAL_RANKED_MAP_POOL: Array<{
     subtitle: 'Complexo Industrial Steam Workshop · Plant the Bomb 5v5',
   },
   {
+    id: 'BRIDGES_V2_BOMB_5V5',
+    title: 'BRIDGES 2.0 HD',
+    subtitle: 'Pontes & Viadutos Steam Workshop · Plant the Bomb 5v5',
+  },
+  {
     id: 'STATION_TDM_5V5',
     title: 'STATION ARENA',
     subtitle: 'Estação Ferroviária · Mata-Mata em Equipe 5v5 (Alvo 40 Abates)',

@@ -170,7 +170,9 @@ export function applyGraphicsToEngine(
 
   const currentDrillMode = (engine.state as { drillMode?: string }).drillMode;
   const isSource2DaylightMode =
-    currentDrillMode === 'YARD_V2_BOMB_5V5' || currentDrillMode === 'OBJECT_D17_BOMB_5V5';
+    currentDrillMode === 'YARD_V2_BOMB_5V5' ||
+    currentDrillMode === 'OBJECT_D17_BOMB_5V5' ||
+    currentDrillMode === 'BRIDGES_V2_BOMB_5V5';
 
   // 2. Tonalidade ACES Filmic vs Linear
   const targetToneMapping = settings.acesToneMapping
@@ -268,6 +270,7 @@ export function applyGraphicsToEngine(
     mode === 'DE_DST_BOMB_5V5' ||
     mode === 'YARD_V2_BOMB_5V5' ||
     mode === 'OBJECT_D17_BOMB_5V5' ||
+    mode === 'BRIDGES_V2_BOMB_5V5' ||
     mode === 'CSGO_ASSAULT_BOMB_5V5' ||
     mode === 'MP_NUKED_BOMB_5V5' ||
     mode === 'DE_SUPPLY_BOMB_5V5'
@@ -297,7 +300,7 @@ export function applyGraphicsToEngine(
     scene.fog = null;
   } else if (!scene.fog) {
     const mode = (engine.state as { drillMode?: string }).drillMode;
-    if (mode === 'YARD_V2_BOMB_5V5') {
+    if (mode === 'YARD_V2_BOMB_5V5' || mode === 'BRIDGES_V2_BOMB_5V5') {
       scene.fog = new THREE.FogExp2(0xd2cdc3, 0.00175);
     } else if (mode === 'OBJECT_D17_BOMB_5V5') {
       scene.fog = new THREE.FogExp2(0xc8d2dc, 0.00145);

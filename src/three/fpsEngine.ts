@@ -315,6 +315,7 @@ export class TacticalFPSEngine {
   private deSupplyLevelData: Dust2LevelBundle;
   private yardV2LevelData: Dust2LevelBundle;
   private objectD17LevelData: Dust2LevelBundle;
+  private bridgesV2LevelData: Dust2LevelBundle;
   private stationArenaLevelData: Dust2LevelBundle;
   private yardBombSystem: YardBombSystem;
   private colliders: ColliderBox[] = [];
@@ -857,6 +858,10 @@ export class TacticalFPSEngine {
     this.objectD17LevelData.levelGroup.visible = false;
     this.scene.add(this.objectD17LevelData.levelGroup);
 
+    this.bridgesV2LevelData = buildV23MapLevel('BRIDGES_V2_BOMB_5V5', this.isSoftwareGl);
+    this.bridgesV2LevelData.levelGroup.visible = false;
+    this.scene.add(this.bridgesV2LevelData.levelGroup);
+
     this.stationArenaLevelData = buildStationArenaLevel(this.isSoftwareGl);
     this.stationArenaLevelData.levelGroup.visible = false;
     this.scene.add(this.stationArenaLevelData.levelGroup);
@@ -988,6 +993,7 @@ export class TacticalFPSEngine {
       deSupplyLevelData: this.deSupplyLevelData,
       yardV2LevelData: this.yardV2LevelData,
       objectD17LevelData: this.objectD17LevelData,
+      bridgesV2LevelData: this.bridgesV2LevelData,
       stationArenaLevelData: this.stationArenaLevelData,
       skySystem: this.skySystem,
       grenadeSystem: this.grenadeSystem,
@@ -1021,6 +1027,7 @@ export class TacticalFPSEngine {
       this.deSupplyLevelData,
       this.yardV2LevelData,
       this.objectD17LevelData,
+      this.bridgesV2LevelData,
       this.stationArenaLevelData,
       this.grenadeSystem
     );
@@ -1635,6 +1642,7 @@ export class TacticalFPSEngine {
     if (mode === 'DE_SUPPLY_BOMB_5V5') return this.deSupplyLevelData.collider;
     if (mode === 'YARD_V2_BOMB_5V5') return this.yardV2LevelData.collider;
     if (mode === 'OBJECT_D17_BOMB_5V5') return this.objectD17LevelData.collider;
+    if (mode === 'BRIDGES_V2_BOMB_5V5') return this.bridgesV2LevelData.collider;
     if (mode === 'STATION_CAPTURE_5V5' || mode === 'STATION_TDM_5V5') {
       return this.stationArenaLevelData.collider;
     }
@@ -1792,6 +1800,9 @@ export class TacticalFPSEngine {
     }
     if (mode === 'OBJECT_D17_BOMB_5V5') {
       return this.objectD17LevelData.collider.getGroundHeight(x, y, z);
+    }
+    if (mode === 'BRIDGES_V2_BOMB_5V5') {
+      return this.bridgesV2LevelData.collider.getGroundHeight(x, y, z);
     }
     if (mode === 'STATION_CAPTURE_5V5' || mode === 'STATION_TDM_5V5') {
       return this.stationArenaLevelData.collider.getGroundHeight(x, y, z);
@@ -3726,7 +3737,8 @@ export class TacticalFPSEngine {
     const isDeSupply = assetMode === 'DE_SUPPLY_BOMB_5V5';
     const isYardV2 = assetMode === 'YARD_V2_BOMB_5V5';
     const isObjectD17 = assetMode === 'OBJECT_D17_BOMB_5V5';
-    const isV23Map = isCsgoAssault || isDeDst || isMpNuked || isDeSupply || isYardV2 || isObjectD17;
+    const isBridgesV2 = assetMode === 'BRIDGES_V2_BOMB_5V5';
+    const isV23Map = isCsgoAssault || isDeDst || isMpNuked || isDeSupply || isYardV2 || isObjectD17 || isBridgesV2;
     const isStationArena =
       assetMode === 'STATION_CAPTURE_5V5' || assetMode === 'STATION_TDM_5V5';
     const isFreeRange = assetMode === 'FREE_RANGE';
@@ -3771,6 +3783,7 @@ export class TacticalFPSEngine {
     this.deSupplyLevelData.levelGroup.visible = isDeSupply;
     this.yardV2LevelData.levelGroup.visible = isYardV2;
     this.objectD17LevelData.levelGroup.visible = isObjectD17;
+    this.bridgesV2LevelData.levelGroup.visible = isBridgesV2;
     this.stationArenaLevelData.levelGroup.visible = isStationArena;
 
     const activeLevel = isDust2
@@ -3797,6 +3810,8 @@ export class TacticalFPSEngine {
               ? this.yardV2LevelData
             : isObjectD17
               ? this.objectD17LevelData
+            : isBridgesV2
+              ? this.bridgesV2LevelData
             : isStationArena
               ? this.stationArenaLevelData
             : isYard
@@ -3978,7 +3993,9 @@ export class TacticalFPSEngine {
                 ? this.deSupplyLevelData
                 : v23Mode === 'YARD_V2_BOMB_5V5'
                   ? this.yardV2LevelData
-                  : this.objectD17LevelData;
+                  : v23Mode === 'OBJECT_D17_BOMB_5V5'
+                    ? this.objectD17LevelData
+                    : this.bridgesV2LevelData;
       this.ensureGlbMapThenPlace(
         v23Bundle,
         () =>
@@ -5014,6 +5031,12 @@ export class TacticalFPSEngine {
         );
       } else if (this.state.drillMode === 'OBJECT_D17_BOMB_5V5') {
         this.objectD17LevelData.updateVisibility?.(
+          this.yawObject.position.x,
+          this.yawObject.position.y,
+          this.yawObject.position.z
+        );
+      } else if (this.state.drillMode === 'BRIDGES_V2_BOMB_5V5') {
+        this.bridgesV2LevelData.updateVisibility?.(
           this.yawObject.position.x,
           this.yawObject.position.y,
           this.yawObject.position.z

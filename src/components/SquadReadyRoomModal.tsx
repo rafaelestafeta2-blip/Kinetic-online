@@ -71,6 +71,7 @@ const NEW_MAP_BADGE_IDS = new Set<DrillMode>([
   'DE_SUPPLY_BOMB_5V5',
   'YARD_V2_BOMB_5V5',
   'OBJECT_D17_BOMB_5V5',
+  'BRIDGES_V2_BOMB_5V5',
 ]);
 
 interface SquadReadyRoomModalProps {

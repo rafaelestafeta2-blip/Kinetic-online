@@ -281,6 +281,8 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
             ? 'YARD 2.0 HD'
           : mode === 'OBJECT_D17_BOMB_5V5'
             ? 'OBJECT D17 HD'
+          : mode === 'BRIDGES_V2_BOMB_5V5'
+            ? 'BRIDGES 2.0 HD'
           : mode === 'STATION_CAPTURE_5V5' || mode === 'STATION_TDM_5V5'
             ? 'STATION ARENA'
           : mode === 'ASSAULT_BOMB_5V5'
@@ -386,6 +388,7 @@ export const YardMatchLoadingModal: React.FC<YardMatchLoadingModalProps> = ({
       mode === 'DE_SUPPLY_BOMB_5V5' ||
       mode === 'YARD_V2_BOMB_5V5' ||
       mode === 'OBJECT_D17_BOMB_5V5' ||
+      mode === 'BRIDGES_V2_BOMB_5V5' ||
       mode === 'STATION_CAPTURE_5V5' ||
       mode === 'STATION_TDM_5V5' ||
       mode === 'FREE_RANGE' ||

@@ -60,6 +60,7 @@ export type DrillMode =
   | 'DE_SUPPLY_BOMB_5V5'
   | 'YARD_V2_BOMB_5V5'
   | 'OBJECT_D17_BOMB_5V5'
+  | 'BRIDGES_V2_BOMB_5V5'
   | 'STATION_CAPTURE_5V5'
   | 'STATION_TDM_5V5'
   /** Isolated GLB+floor harness (no online / bomb / bots). */

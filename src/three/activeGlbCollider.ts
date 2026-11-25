@@ -22,6 +22,7 @@ export interface GlbColliderHost {
   deSupplyLevelData: LevelWithCollider;
   yardV2LevelData: LevelWithCollider;
   objectD17LevelData: LevelWithCollider;
+  bridgesV2LevelData: LevelWithCollider;
   stationArenaLevelData: LevelWithCollider;
 }
 
@@ -53,6 +54,8 @@ export function getActiveGlbCollider(
       return engine.yardV2LevelData.collider;
     case 'OBJECT_D17_BOMB_5V5':
       return engine.objectD17LevelData.collider;
+    case 'BRIDGES_V2_BOMB_5V5':
+      return engine.bridgesV2LevelData.collider;
     case 'STATION_CAPTURE_5V5':
     case 'STATION_TDM_5V5':
       return engine.stationArenaLevelData.collider;
@@ -76,6 +79,7 @@ export function isGlbNavMeshMode(mode: DrillMode): boolean {
     mode === 'DE_SUPPLY_BOMB_5V5' ||
     mode === 'YARD_V2_BOMB_5V5' ||
     mode === 'OBJECT_D17_BOMB_5V5' ||
+    mode === 'BRIDGES_V2_BOMB_5V5' ||
     mode === 'STATION_CAPTURE_5V5' ||
     mode === 'STATION_TDM_5V5'
   );

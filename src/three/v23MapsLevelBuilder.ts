@@ -15,7 +15,8 @@ export type V23BombMapMode =
   | 'MP_NUKED_BOMB_5V5'
   | 'DE_SUPPLY_BOMB_5V5'
   | 'YARD_V2_BOMB_5V5'
-  | 'OBJECT_D17_BOMB_5V5';
+  | 'OBJECT_D17_BOMB_5V5'
+  | 'BRIDGES_V2_BOMB_5V5';
 
 export interface V23MapConfig {
   mode: V23BombMapMode;
@@ -143,6 +144,25 @@ export const V23_MAP_CONFIGS: Record<V23BombMapMode, V23MapConfig> = {
       return 'GALPÃO CENTRAL (OBJECT D17 MID)';
     },
   },
+  BRIDGES_V2_BOMB_5V5: {
+    mode: 'BRIDGES_V2_BOMB_5V5',
+    label: 'BRIDGES 2.0 HD',
+    glbUrl: resolveAssetUrl('/models/maps/bridges_v2_lod0.glb'),
+    floorYLift: 0,
+    attackerSpawn: new THREE.Vector3(-1.81, 0.85, 68.17),
+    defenderSpawn: new THREE.Vector3(-1.32, -0.30, -20.08),
+    spawnYaw: 0,
+    bombSiteA: new THREE.Vector3(-12.35, 3.21, 23.09),
+    bombSiteB: new THREE.Vector3(36.29, 3.19, 17.75),
+    getCallout: (x, y, z) => {
+      if (z > 52) return 'BASE VANGUARD (T SPAWN // PONTE NORTE)';
+      if (z < -10) return 'BASE BLACKTHORN (CT SPAWN // CANAL SUL)';
+      if (x < -2 && z > 10 && z < 38) return 'BOMBA A (PÁTIO OESTE // TENDA MILITAR)';
+      if (x > 22 && z > 4 && z < 34) return 'BOMBA B (PRAÇA LESTE // PONTE B)';
+      if (y < 0.2) return 'CANAL DE ÁGUA / PASSAGEM INFERIOR (CANAL)';
+      return 'PONTES CENTRAIS (BRIDGES 2.0 MID)';
+    },
+  },
 };
 
 export function isV23BombMapMode(mode: DrillMode | undefined | null): mode is V23BombMapMode {
@@ -152,7 +172,8 @@ export function isV23BombMapMode(mode: DrillMode | undefined | null): mode is V2
     mode === 'MP_NUKED_BOMB_5V5' ||
     mode === 'DE_SUPPLY_BOMB_5V5' ||
     mode === 'YARD_V2_BOMB_5V5' ||
-    mode === 'OBJECT_D17_BOMB_5V5'
+    mode === 'OBJECT_D17_BOMB_5V5' ||
+    mode === 'BRIDGES_V2_BOMB_5V5'
   );
 }
 
@@ -238,18 +259,23 @@ export async function loadV23MapGeometry(
       mapTransformGroup.add(modelRoot);
 
       const softDecalOrGlassRe =
-        /decal|dcal|graffiti|graf|wall_dirt|wall_leaks|wall_cracks|wall_old_paint|puddle|stain|overlay|poster|e_logo|plant_arrow|plant_two|notes|glass|window|water|stripe_yellow|parkingstripe|asphalt_broken|garbage_a|industrial_set_.*_diff/i;
+        /decal|dcal|graffiti|graf|wall_dirt|wall_leaks|wall_cracks|wall_old_paint|puddle|stain|overlay|poster|e_logo|plant_arrow|plant_two|notes|glass|window|water|anubis_water_canal|bombsite_.*_spray|stripe_yellow|parkingstripe|asphalt_broken|garbage_a|industrial_set_.*_diff/i;
       const nonColliderDecalRe =
-        /decal|dcal|graffiti|graf|wall_dirt|wall_leaks|wall_cracks|wall_old_paint|puddle|stain|overlay|poster|e_logo|plant_arrow|plant_two|notes|grass_floor|grass_lawn_translusent|carpet_fringe|ivy|leaves_narrow|round_leaved|barbed_wire|washing|house_wires|rags|distance_bushes|oak_tree|background_house|dogwood_branch|maple_tree_leaves|urban_tree_small_1_leaves|stripe_yellow|parkingstripe|asphalt_broken|garbage_a|garbage_c|industrial_set_.*_diff/i;
+        /decal|dcal|graffiti|graf|wall_dirt|wall_leaks|wall_cracks|wall_old_paint|puddle|stain|overlay|poster|e_logo|plant_arrow|plant_two|notes|bombsite_.*_spray|anubis_water_canal|grass_floor|grass_lawn|falen_leaves|ch2_detail_foliage|imported_tall_grass|inferno_grass|black_poplar_leaves|jungle_walls_vegetation|thorn|carpet_fringe|ivy|leaves_narrow|round_leaved|barbed_wire|washing|house_wires|rags|distance_bushes|oak_tree|background_house|house_background|dogwood_branch|maple_tree_leaves|urban_tree_small_1_leaves|stripe_yellow|parkingstripe|asphalt_broken|garbage_a|garbage_c|industrial_set_.*_diff/i;
       const isSource2Yard = mode === 'YARD_V2_BOMB_5V5';
       const isSource2ObjectD17 = mode === 'OBJECT_D17_BOMB_5V5';
-      const isSource2Workshop = isSource2Yard || isSource2ObjectD17;
+      const isSource2BridgesV2 = mode === 'BRIDGES_V2_BOMB_5V5';
+      const isSource2Workshop = isSource2Yard || isSource2ObjectD17 || isSource2BridgesV2;
       const workshopOuterBounds = isSource2ObjectD17
         ? { minX: -62, maxX: 42, minZ: -52, maxZ: 64 }
-        : { minX: -82, maxX: 96, minZ: -85, maxZ: 98 };
+        : isSource2BridgesV2
+          ? { minX: -152, maxX: 124, minZ: -92, maxZ: 188 }
+          : { minX: -82, maxX: 96, minZ: -85, maxZ: 98 };
       const workshopColliderBounds = isSource2ObjectD17
         ? { minX: -58, maxX: 38, minZ: -48, maxZ: 60 }
-        : { minX: -76, maxX: 90, minZ: -80, maxZ: 94 };
+        : isSource2BridgesV2
+          ? { minX: -148, maxX: 120, minZ: -88, maxZ: 184 }
+          : { minX: -76, maxX: 90, minZ: -80, maxZ: 94 };
       const _tmpBox = new THREE.Box3();
       mapTransformGroup.updateMatrixWorld(true);
 
@@ -384,7 +410,7 @@ export async function loadV23MapGeometry(
             shouldCastShadow = false;
           } else if (std.alphaTest > 0 || std.transparent) {
             // True alpha cutouts (foliage, fences, barbed wire, grates, hanging fabric)
-            const minCutoff = /big_fences_set|scaffoldinggrate|cargo_sign/i.test(matName)
+            const minCutoff = /big_fences_set|scaffoldinggrate|cargo_sign|fence_netting|wooden_chips/i.test(matName)
               ? 0.22
               : 0.35;
             std.alphaTest = Math.max(std.alphaTest || 0, minCutoff);
@@ -393,7 +419,7 @@ export async function loadV23MapGeometry(
             std.side = THREE.DoubleSide;
             // Canopies/fabric/trees cast shadows; tiny grass tufts/wires/debris skip shadow pass for 60 FPS
             if (
-              /grass|flower|wire|barb|rope|chain|washing|fringe|rags|leaves|ivy|bushes|dogwood|garbage/i.test(
+              /grass|flower|wire|barb|rope|chain|washing|fringe|rags|leaves|foliage|thorn|vegetation|ivy|bushes|dogwood|garbage/i.test(
                 matName
               )
             ) {
@@ -407,7 +433,7 @@ export async function loadV23MapGeometry(
             std.side = THREE.DoubleSide;
             // Ground/sand/dirt/terrain never needs to cast shadows onto itself (saves huge mobile shadow-pass cost)
             if (
-              /sand_a|groundrough|asphalt|road|dirt|stones_a|rubble|background_house|terrain|grass_lawn/i.test(
+              /sand_a|groundrough|bridges_ground|ground|ch2_blend_asphalt|sett_paving|river_rocks|cliff_rock|cliff_wall|asphalt|road|dirt|stones_a|rubble|background_house|house_background|terrain|grass_lawn/i.test(
                 matName
               )
             ) {

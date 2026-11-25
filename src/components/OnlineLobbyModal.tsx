@@ -35,6 +35,7 @@ const PRIVATE_ROOM_MAPS: DrillMode[] = [
   'DE_SUPPLY_BOMB_5V5',
   'YARD_V2_BOMB_5V5',
   'OBJECT_D17_BOMB_5V5',
+  'BRIDGES_V2_BOMB_5V5',
   'YARD_BOMB_5V5',
 ];
 
@@ -59,6 +60,7 @@ const MAP_LABELS: Record<string, { title: string; subtitle: string }> = {
   DE_SUPPLY_BOMB_5V5: { title: 'DE_SUPPLY BASE', subtitle: 'Base de Suprimentos • Bomb A / B' },
   YARD_V2_BOMB_5V5: { title: 'YARD 2.0 HD', subtitle: 'Complexo Tático Desértico • Bomb A / B' },
   OBJECT_D17_BOMB_5V5: { title: 'OBJECT D17 HD', subtitle: 'Complexo Industrial • Bomb A / B' },
+  BRIDGES_V2_BOMB_5V5: { title: 'BRIDGES 2.0 HD', subtitle: 'Pontes & Viadutos Remastered • Bomb A / B' },
   YARD_BOMB_5V5: { title: 'YARD TÁTICO', subtitle: 'Pátio de Contêineres • Bomb A / B' },
 };
 

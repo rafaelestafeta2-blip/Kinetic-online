@@ -100,6 +100,7 @@ export interface MatchArenaPrepareParams {
   deSupplyLevelData: Dust2LevelBundle;
   yardV2LevelData: Dust2LevelBundle;
   objectD17LevelData: Dust2LevelBundle;
+  bridgesV2LevelData: Dust2LevelBundle;
   stationArenaLevelData: Dust2LevelBundle;
   skySystem: TacticalSkySystem;
   grenadeSystem: TacticalGrenadeSystem;
@@ -141,6 +142,7 @@ export async function prepareMatchArena(
     deSupplyLevelData,
     yardV2LevelData,
     objectD17LevelData,
+    bridgesV2LevelData,
     stationArenaLevelData,
     skySystem,
     grenadeSystem,
@@ -171,7 +173,9 @@ export async function prepareMatchArena(
               ? yardV2LevelData
               : assetMode === 'OBJECT_D17_BOMB_5V5'
                 ? objectD17LevelData
-                : null;
+                : assetMode === 'BRIDGES_V2_BOMB_5V5'
+                  ? bridgesV2LevelData
+                  : null;
   const isStationArena =
     assetMode === 'STATION_CAPTURE_5V5' || assetMode === 'STATION_TDM_5V5';
   const isYard = assetMode === 'YARD_BOMB_5V5';
@@ -224,6 +228,7 @@ export async function prepareMatchArena(
   deSupplyLevelData.levelGroup.visible = false;
   yardV2LevelData.levelGroup.visible = false;
   objectD17LevelData.levelGroup.visible = false;
+  bridgesV2LevelData.levelGroup.visible = false;
   stationArenaLevelData.levelGroup.visible = false;
 
   const loadingManager = new THREE.LoadingManager();
@@ -702,6 +707,7 @@ export function cleanupMatchArenaAssets(
   deSupplyLevelData: Dust2LevelBundle,
   yardV2LevelData: Dust2LevelBundle,
   objectD17LevelData: Dust2LevelBundle,
+  bridgesV2LevelData: Dust2LevelBundle,
   stationArenaLevelData: Dust2LevelBundle,
   grenadeSystem?: TacticalGrenadeSystem
 ): void {
@@ -718,6 +724,7 @@ export function cleanupMatchArenaAssets(
   deSupplyLevelData.levelGroup.visible = false;
   yardV2LevelData.levelGroup.visible = false;
   objectD17LevelData.levelGroup.visible = false;
+  bridgesV2LevelData.levelGroup.visible = false;
   stationArenaLevelData.levelGroup.visible = false;
   yardLevelData.levelGroup.visible = false;
   facilityLevelData.levelGroup.visible = false;
@@ -736,6 +743,7 @@ export function cleanupMatchArenaAssets(
   disposeV23MapGeometry(deSupplyLevelData);
   disposeV23MapGeometry(yardV2LevelData);
   disposeV23MapGeometry(objectD17LevelData);
+  disposeV23MapGeometry(bridgesV2LevelData);
   disposeStationArenaMapGeometry(stationArenaLevelData);
 
   // 3. Limpa granadas ativas, fumaça e luzes temporárias
