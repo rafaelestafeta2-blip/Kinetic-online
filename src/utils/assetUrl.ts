@@ -90,6 +90,11 @@ export function resolveAssetUrl(localOrAbsolutePath: string): string {
   }
 
   if (isHeavyAsset) {
+    // Yard 2.0 LOD0 zero-simplification package is bundled directly in the app origin
+    // so an older or un-uploaded external CDN object never serves the simplified 32MB version.
+    if (normalized.endsWith('/yard_v2_lod0.glb')) {
+      return appendRevisionParam(localOrAbsolutePath);
+    }
     if (firebaseStorageTarget) {
       const objectPath = firebaseStorageTarget.prefix
         ? `${firebaseStorageTarget.prefix}${normalized}`

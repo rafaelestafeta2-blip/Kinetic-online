@@ -81,9 +81,9 @@ async function startServer(): Promise<void> {
   });
 
   const OTA_MANIFEST = {
-    version: process.env.KINETIC_OTA_VERSION?.trim() || '2.5.0-R2',
+    version: process.env.KINETIC_OTA_VERSION?.trim() || '2.6.0-YARD-HD',
     assetRevision:
-      process.env.KINETIC_ASSET_REVISION?.trim() || '2026.11.20-v18',
+      process.env.KINETIC_ASSET_REVISION?.trim() || '2026.11.25-yard-lod0',
     cdnBaseUrl: process.env.VITE_ASSET_CDN_URL?.trim() || '',
     publishedAt: '2026-11-20T18:30:00.000Z',
     patchTitle: 'ATUALIZAÇÃO 2.5 · LOJA PREMIUM, AEMONDIR & V18 SPECTRE',

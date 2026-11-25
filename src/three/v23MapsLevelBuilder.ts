@@ -105,7 +105,7 @@ export const V23_MAP_CONFIGS: Record<V23BombMapMode, V23MapConfig> = {
   YARD_V2_BOMB_5V5: {
     mode: 'YARD_V2_BOMB_5V5',
     label: 'YARD 2.0 HD',
-    glbUrl: resolveAssetUrl('/models/maps/yard_v2_2k.glb'),
+    glbUrl: resolveAssetUrl('/models/maps/yard_v2_lod0.glb'),
     floorYLift: 0,
     attackerSpawn: new THREE.Vector3(-36.73, 1.38, 28.27),
     defenderSpawn: new THREE.Vector3(50.60, 0.15, -4.95),

@@ -13,7 +13,7 @@ import {
 } from './assetDownloadTracker';
 import { resolveAssetUrl } from './assetUrl';
 
-export const RESOURCE_PACK_CACHE_NAME = 'kinetic-resource-packs-v1';
+export const RESOURCE_PACK_CACHE_NAME = 'kinetic-resource-packs-v2';
 
 export type ResourcePackCategory = 'MAPS' | 'OPERATORS' | 'WEAPONS' | 'ACCESSORIES';
 
@@ -208,12 +208,12 @@ export const RESOURCE_PACK_DEFINITIONS: ResourcePackDefinition[] = [
   },
   {
     id: 'pack_map_yard_v2',
-    title: 'Mapa Yard 2.0 HD (KTX2 UASTC)',
+    title: 'Mapa Yard 2.0 HD (LOD0 Original)',
     subtitle: 'Complexo tático desértico completo da Steam Workshop Bomb 5v5',
     category: 'MAPS',
     recommended: true,
     mapMode: 'YARD_V2_BOMB_5V5',
-    files: [{ path: '/models/maps/yard_v2_2k.glb', sizeBytes: 33_435_728 }],
+    files: [{ path: '/models/maps/yard_v2_lod0.glb', sizeBytes: 40_516_864 }],
   },
   {
     id: 'pack_accessories',

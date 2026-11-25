@@ -33,8 +33,8 @@ export interface InstalledOtaState {
 const OTA_STORAGE_KEY = 'kinetic_ota_installed_state_v1';
 
 const FALLBACK_MANIFEST: OtaManifest = {
-  version: '2.5.0-R2',
-  assetRevision: '2026.11.20-v18',
+  version: '2.6.0-YARD-HD',
+  assetRevision: '2026.11.25-yard-lod0',
   cdnBaseUrl: '',
   publishedAt: '2026-11-20T18:30:00.000Z',
   patchTitle: 'ATUALIZAÇÃO 2.5 · LOJA PREMIUM, AEMONDIR & V18 SPECTRE',
